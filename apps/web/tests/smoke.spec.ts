@@ -555,15 +555,17 @@ test("host onboarding opens a mobile first-movement launchpad", async ({ page },
     firstRun.getByRole("heading", { name: "Prepare your first timber movement" })
   ).toBeVisible()
   await expect(firstRun.getByText(/your host workspace is created/i)).toBeVisible()
-  await expect(firstRun.getByText(/live publication stays off/i)).toBeVisible()
+  // The completed-load percentage fee is retired, so a new host can put work
+  // live without an agreement or a card.
+  await expect(firstRun.getByText(/finish the operating record to put your first movement live/i)).toBeVisible()
   const readiness = firstRun
   await expect(readiness.getByText("Add a landing", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Add a lane", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Add a pay rate", { exact: true })).toBeVisible()
   await expect(readiness.getByText("Prepare a draft", { exact: true })).toBeVisible()
-  await expect(readiness.getByText("Host billing activation", { exact: true })).toBeVisible()
-  await expect(readiness.getByText(/accept the current 5% agreement and attach a card/i)).toBeVisible()
-  await expect(readiness.getByText(/workspace setup itself does not charge you/i)).toBeVisible()
+  await expect(readiness.getByText("Live publication", { exact: true })).toBeVisible()
+  await expect(readiness.getByText(/publishing needs no agreement or card/i).first()).toBeVisible()
+  await expect(readiness.getByText(/accept the current 5% agreement/i)).toHaveCount(0)
   const hostContinuation = readiness.getByRole("button", {
     name: "Continue to the host work you opened"
   })

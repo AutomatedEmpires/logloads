@@ -44,18 +44,29 @@ function currentAgreement(termsVersion = PERCENTAGE_V1_TERMS_VERSION) {
 }
 
 describe("host card setup eligibility", () => {
-  it("requires the exact current agreement and this host's rollout admission", () => {
+  it("opens nothing for a retired percentage agreement, even with enrollment allowed", () => {
     const state = source({
       organizationBillingAccounts: [currentAgreement()]
     })
 
-    expect(hostCardSetupEligibility(state, HOST, true)).toMatchObject({
-      allowed: true,
-      basis: "accepted_percentage_v1"
+    for (const enrollmentAllowed of [true, false]) {
+      expect(hostCardSetupEligibility(state, HOST, enrollmentAllowed)).toMatchObject({
+        allowed: false,
+        basis: "agreement_required",
+        message: expect.stringMatching(/percentage fee is retired/)
+      })
+    }
+  })
+
+  it("still services an unsettled fee recorded under a historical agreement", () => {
+    const state = source({
+      organizationBillingAccounts: [currentAgreement()],
+      platformFeeEvents: [{ invoiceId: null, organizationId: HOST, status: "accrued" }]
     })
+
     expect(hostCardSetupEligibility(state, HOST, false)).toMatchObject({
-      allowed: false,
-      basis: "agreement_required"
+      allowed: true,
+      basis: "unsettled_obligation"
     })
   })
 

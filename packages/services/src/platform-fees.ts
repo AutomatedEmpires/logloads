@@ -1,6 +1,5 @@
 import {
   auditEventSchema,
-  computePlatformFeeCents,
   deterministicUuidV5,
   frozenPlatformFeeBps,
   formatMoney,
@@ -8,13 +7,13 @@ import {
   invoicePeriodFor,
   invoiceSubtotalCents,
   LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
+  PERCENTAGE_FEE_RETIRED_CODE,
+  PERCENTAGE_FEE_RETIRED_MESSAGE,
   percentageFeeEventId,
   platformFeeEventId,
   platformFeeEventSchema,
-  PLATFORM_FEE_BPS,
   readFrozenDriverPay,
   type Assignment,
-  type AssignmentStatus,
   type HostInvoice,
   type HostInvoiceStatus,
   type InvoicePeriod,
@@ -35,7 +34,15 @@ import { assertCondition, assertFound, createUuid, nowIso } from "./utils"
  * movements accrued, what a host owes, and the monthly bill each fee lands on.
  * Subscription-v1 never writes these rows; its movement usage lives separately.
  *
- * WHAT IS BEING CHARGED. A host posts a load and states what it pays the driver.
+ * THE FEE IS RETIRED. No new fee is accrued (docs/DECISIONS.md, 2026-11-01: no
+ * new percentage obligation may be created by current code). `accruePlatformFee`
+ * still finds a fee that was already recorded, so a retried completion reads
+ * the historical row rather than a refusal, and otherwise answers `retired`
+ * without writing. Everything else here — invoices, voids, settlement and the
+ * summary — keeps reading and reconciling the rows recorded before the
+ * retirement exactly as they were written.
+ *
+ * WHAT WAS CHARGED. A host posts a load and states what it pays the driver.
  * LogLoads charges the HOST a percentage of that stated pay, ON TOP of it, once
  * the load is completed. Nothing in this module reduces driver pay, and nothing
  * here holds, escrows, routes or pays out driver money: driver funds move host →
@@ -122,30 +129,7 @@ function supplementalHostInvoiceId(
   )
 }
 
-// ── What may be billed ────────────────────────────────────────────────────────
-
-/**
- * Whether an assignment in this status can carry a delivered haul.
- *
- * An exhaustive record, not an `includes` list: adding an assignment status will
- * not compile until somebody decides whether a host owes a fee for it.
- *
- * `hauled` is billable because the assignment row lags the trip. A host confirms
- * the delivered record while the trip is at the destination or unloading, and the
- * assignment only reaches `completed` when the trip does. Refusing `hauled` would
- * silently skip the fee on a haul both parties already agreed was delivered.
- */
-const ASSIGNMENT_STATUS_CAN_CARRY_A_COMPLETED_HAUL: Record<AssignmentStatus, boolean> = {
-  accepted: false,
-  cancelled: false,
-  checked_in: false,
-  completed: true,
-  declined: false,
-  hauled: true,
-  loading: false,
-  offered: false,
-  requested: false
-}
+// ── Bill states ───────────────────────────────────────────────────────────────
 
 /**
  * Which statuses a bill may be marked paid from.
@@ -284,32 +268,43 @@ function feeEventsForOrganization(
 export interface AccruePlatformFeeInput {
   assignmentId: string
   /**
-   * ATTRIBUTION ONLY — never authorization. Accrual is not a discretionary money
-   * action somebody chooses to take; it is the ledger recording a completion the
-   * caller was already authorized to settle. Gating it on `manage_billing` would
-   * mean a dispatcher confirming a delivery silently fails to bill for it, since
-   * dispatchers deliberately hold no billing right. The actor is recorded so the
-   * charge can be traced back to the person who settled the haul.
+   * ATTRIBUTION ONLY — never authorization. Kept so existing callers compile;
+   * the retired accrual writes nothing, so nothing is attributed.
    */
   actorUserId?: string | null
   /**
-   * A caller may assert the rate it expects, but never override the rate the host
-   * accepted. The accepted assignment snapshot is the sole billing authority.
+   * Kept so existing callers compile. It can never select or override a rate:
+   * no new fee is accrued at any rate.
    */
   feeBps?: number
 }
 
 export type AccruePlatformFeeResult =
-  /** A fee was written for this assignment by this call. */
+  /**
+   * A fee was written by this call. No longer produced: kept because audit
+   * metadata recorded before the retirement carries it.
+   */
   | { outcome: "accrued"; event: PlatformFeeEvent }
-  /** A fee already existed. Nothing was written. THE DOUBLE-BILLING DEFENCE. */
+  /** A fee was recorded before the retirement. Nothing was written. */
   | { outcome: "already_accrued"; event: PlatformFeeEvent }
-  /** A fee existed and was permanently withdrawn. It must not be raised again. */
+  /** A recorded fee was permanently withdrawn. It must not be raised again. */
   | { outcome: "already_voided"; event: PlatformFeeEvent }
-  /** The load states no driver pay, so there is no base to charge a percentage of. */
+  /**
+   * Historical refusals, no longer produced. Kept because audit metadata and
+   * reconciliation readers written before the retirement compare against them.
+   */
   | { outcome: "no_basis"; assignmentId: string; reason: string }
-  /** Nobody has agreed this haul was delivered, so nothing is owed yet. */
   | { outcome: "not_completed"; assignmentId: string; reason: string }
+  /**
+   * The percentage fee is retired, so nothing was written. Every movement
+   * without a recorded fee gets this answer, on every call.
+   */
+  | {
+      outcome: "retired"
+      assignmentId: string
+      code: typeof PERCENTAGE_FEE_RETIRED_CODE
+      reason: string
+    }
 
 /**
  * The delivered haul behind an assignment, as the two parties agreed it.
@@ -327,27 +322,6 @@ function confirmedHaulForAssignment(
       trip.completionStatus === "confirmed" &&
       trip.status === "completed"
   )
-}
-
-/** The percentage obligation exists only once both independent facts exist. */
-function percentageFeeTriggerAt(trip: TripV2): string | null {
-  if (!trip.completionConfirmedAt || !trip.completedAt) {
-    return null
-  }
-
-  const confirmationTime = Date.parse(trip.completionConfirmedAt)
-  const physicalCompletionTime = Date.parse(trip.completedAt)
-
-  if (
-    !Number.isFinite(confirmationTime) ||
-    !Number.isFinite(physicalCompletionTime)
-  ) {
-    return null
-  }
-
-  return physicalCompletionTime >= confirmationTime
-    ? trip.completedAt
-    : trip.completionConfirmedAt
 }
 
 /**
@@ -375,27 +349,27 @@ export function assignmentUsesPercentageBilling(assignment: Assignment): boolean
 }
 
 /**
- * Records the fee for one completed load. AT MOST ONE PER ASSIGNMENT, EVER.
+ * Answers a completed load's fee question. It never writes a new fee.
  *
- * Idempotent by design rather than by luck: completion confirmation can be
- * retried by a client that lost the response, and a compare-and-swap conflict
- * replays this whole function against a fresh draft. Both paths land on the same
- * deterministic id, find the existing fee, write nothing, and return it.
+ * The percentage fee is retired. A movement that already has a recorded fee
+ * returns it (`already_accrued` or `already_voided`), so a retried completion
+ * reads the historical row instead of a refusal that would look like "nothing
+ * was ever charged". Every other movement gets `retired`, with no event, no
+ * audit row and no state change, however often it is asked. The answer does
+ * not depend on `LOGLOADS_FEE_COLLECTION`, the caller, the frozen terms or the
+ * clock.
  *
- * The at-most-one check matches on the deterministic id OR on the assignment. The
- * id alone would miss a fee that reached the ledger under some other id — a hand
- * repair, an import, a future code path — and would then raise a second charge
- * for a load that was already billed.
- *
- * `driverPayCents` and `feeBps` are FROZEN onto the event. The charge must stay
- * explainable after the posting is edited, cancelled or archived, and a later rate
- * change must re-rate nothing.
+ * The lookup matches on the deterministic id OR on the movement, so a fee that
+ * reached the ledger under some other id is still recognised as history.
  */
 export function accruePlatformFee(
   state: LogLoadsDatabaseState,
   input: AccruePlatformFeeInput,
-  at = nowIso()
+  at?: string
 ): AccruePlatformFeeResult {
+  // Nothing is written, so the clock cannot change the answer.
+  void at
+
   const assignmentId = input.assignmentId
 
   assertCondition(
@@ -431,10 +405,8 @@ export function accruePlatformFee(
       movementAssignmentIds.has(candidate.assignmentId)
   )
 
-  // Deliberately BEFORE the completion and basis checks. A fee that was legitimately
-  // raised must survive a later edit that would no longer qualify the load — and
-  // re-checking first would let a retry after such an edit fall through to a refusal
-  // that reads like "nothing was ever charged".
+  // A fee recorded before the retirement is history, and a retry reads it back
+  // rather than a refusal that would read like "nothing was ever charged".
   if (existing) {
     const expectedBillingModel = assignment.billingModel === "percentage_v1"
       ? "percentage_v1"
@@ -454,214 +426,14 @@ export function accruePlatformFee(
     }
   }
 
-  if (!assignmentUsesPercentageBilling(assignment)) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "no_basis",
-      reason:
-        "This assignment is not frozen to percentage billing; subscription usage cannot enter the percentage-fee ledger"
-    }
-  }
-
-  const subscriptionUsage = state.networkUsageEvents.find(
-    (usage) =>
-      usage.status !== "reversed" &&
-      (
-        usage.loadMovementId === movementId ||
-        movementAssignmentIds.has(usage.assignmentId)
-      )
-  )
-
-  if (subscriptionUsage) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "no_basis",
-      reason: `Physical movement ${movementId} already has Network usage ${subscriptionUsage.id}`
-    }
-  }
-
-  if (!ASSIGNMENT_STATUS_CAN_CARRY_A_COMPLETED_HAUL[assignment.status]) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "not_completed",
-      reason: `This haul is ${assignment.status.replaceAll("_", " ")}; a fee is charged on completed loads only`
-    }
-  }
-
-  const trip = confirmedHaulForAssignment(state, assignment)
-
-  if (!trip) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "not_completed",
-      reason: "Nobody has confirmed what this haul delivered, so there is nothing to charge for yet"
-    }
-  }
-
-  if (!haulHasBillableDelivery(trip)) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "not_completed",
-      reason:
-        "The confirmed completion records no physical delivery, so no platform fee is owed"
-    }
-  }
-
-  const percentageV1 = assignment.billingModel === "percentage_v1"
-  if (!percentageV1 && !assignment.driverPaymentReceivedAt) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "not_completed",
-      reason:
-        "This legacy agreement earns its fee only after the assigned driver confirms receipt of the stated pay"
-    }
-  }
-
-  if (
-    !percentageV1 &&
-    (
-      assignment.driverPaymentReceivedAmountCents === null ||
-      !assignment.driverPaymentReceivedCurrency
-    )
-  ) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "no_basis",
-      reason:
-        "This legacy receipt does not record the amount and currency the driver actually received"
-    }
-  }
-
-  if (
-    !trip.completionConfirmedAt ||
-    !Number.isFinite(Date.parse(trip.completionConfirmedAt))
-  ) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "no_basis",
-      reason:
-        "The confirmed haul has no trustworthy completion timestamp; review it before billing"
-    }
-  }
-
-  const percentageTriggerAt = percentageV1
-    ? percentageFeeTriggerAt(trip)
-    : null
-
-  if (percentageV1 && !percentageTriggerAt) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "no_basis",
-      reason:
-        "The confirmed haul has no trustworthy physical-completion and host-confirmation timestamps; review it before billing"
-    }
-  }
-
-  const frozenDriverPay = readFrozenDriverPay(assignment.termsSnapshot)
-
-  if (!frozenDriverPay) {
-    // Accruing zero here would put a real fee row on a load with no stated pay, and
-    // a percentage of nothing presented as a charge is a fabricated one. The refusal
-    // carries no event, so a caller cannot mistake it for a charge.
-    return {
-      assignmentId: assignment.id,
-      outcome: "no_basis",
-      reason:
-        "This assignment has no frozen driver pay and currency, so a fee cannot be derived honestly"
-    }
-  }
-
-  if (
-    frozenDriverPay.currency !==
-    LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
-  ) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "no_basis",
-      reason:
-        `Percentage fees can accrue only for ${LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY} work; this assignment remains unbilled`
-    }
-  }
-
-  const driverPayCents = frozenDriverPay.amountCents
-  const feeBps = frozenPlatformFeeBps(assignment.termsSnapshot)
-
-  if (feeBps === null) {
-    return {
-      assignmentId: assignment.id,
-      outcome: "no_basis",
-      reason:
-        "This assignment has no active authoritative platform-fee terms frozen at host acceptance"
-    }
-  }
-
-  assertCondition(
-    input.feeBps === undefined || input.feeBps === feeBps,
-    `The requested fee rate ${String(input.feeBps)} bps does not match the accepted ${feeBps} bps`
-  )
-  const actorUserId = input.actorUserId ?? null
-  // Percentage-v1 earns only when physical completion and host confirmation are
-  // both true, so the later timestamp is authoritative regardless of event order.
-  // Historical legacy agreements retain their accepted receipt trigger exactly;
-  // deploying the new model must never create debts for earlier unpaid movements.
-  const occurredAt = percentageV1
-    ? percentageTriggerAt as string
-    : assignment.driverPaymentReceivedAt as string
-
-  const event = platformFeeEventSchema.parse({
+  // The fee is retired. Nothing below the history lookup may write: a
+  // completion, the billing cron and a direct service call all end here.
+  return {
     assignmentId: assignment.id,
-    billingModel:
-      assignment.billingModel === "percentage_v1"
-        ? "percentage_v1"
-        : "legacy_percentage",
-    createdAt: at,
-    driverPayCents,
-    feeBps,
-    feeCents: computePlatformFeeCents(driverPayCents, feeBps),
-    id: eventId,
-    invoiceId: null,
-    loadPostingId: load.id,
-    loadMovementId: movementId,
-    occurredAt,
-    // The HOST organization that posted the work. Derived from the posting, never
-    // taken from the caller: whoever asks for the accrual does not get to name who
-    // is charged, and it can never be the hauling side.
-    organizationId: load.companyId,
-    status: "accrued",
-    truckSlotId: assignment.truckSlotId,
-    updatedAt: at,
-    voidReason: null
-  })
-
-  state.platformFeeEvents.push(event)
-  insertBillingAuditEvent(state, {
-    action: "platform_fee_accrued",
-    actorUserId,
-    at,
-    entityId: event.id,
-    entityType: "platform_fee_event",
-    metadata: {
-      assignmentId: assignment.id,
-      driverPayCents: event.driverPayCents,
-      feeBps: event.feeBps,
-      feeCents: event.feeCents,
-      loadPostingId: load.id,
-      organizationId: event.organizationId,
-      loadMovementId: movementId,
-      billingTrigger: percentageV1
-        ? "host_completion"
-        : "driver_payment_receipt",
-      receivedAmountCents: percentageV1
-        ? null
-        : assignment.driverPaymentReceivedAmountCents,
-      receivedCurrency: percentageV1
-        ? null
-        : assignment.driverPaymentReceivedCurrency,
-      tripId: trip.id
-    }
-  })
-
-  return { event, outcome: "accrued" }
+    code: PERCENTAGE_FEE_RETIRED_CODE,
+    outcome: "retired",
+    reason: PERCENTAGE_FEE_RETIRED_MESSAGE
+  }
 }
 
 export interface PlatformFeeReconciliationResult {
@@ -672,11 +444,14 @@ export interface PlatformFeeReconciliationResult {
 }
 
 /**
- * Repairs movements that are missing their deterministic fee. Percentage-v1
- * revisits host-confirmed physical deliveries; legacy revisits only movements
- * whose driver confirmed receipt under the historical agreement. Movement
- * identity makes the scan replay-safe, and one malformed row cannot block the
- * rest.
+ * Reports movements that would once have been repaired with a missing fee.
+ *
+ * The fee is retired, so nothing is repaired: every candidate is answered
+ * `retired` and nothing is written, on every run. The scan still lists them so
+ * an operator can see which completed percentage movements carry no recorded
+ * fee. Percentage-v1 candidates are host-confirmed physical deliveries; legacy
+ * candidates are movements whose driver confirmed receipt under the historical
+ * agreement. One malformed row cannot block the rest.
  */
 export function reconcileMissingPlatformFees(
   state: LogLoadsDatabaseState,
@@ -1379,9 +1154,9 @@ export interface HostFeeSummaryInput {
 export interface HostFeeSummary {
   organizationId: string
   /**
-   * The CURRENT rate, for quoting work that has not happened yet. It is not the
-   * rate of any fee below — each of those carries its own frozen rate — and it is
-   * named `current` so no surface can present it as one.
+   * The rate work that has not happened yet is charged: zero, because the
+   * percentage fee is retired. It is not the rate of any fee below — each of
+   * those carries its own frozen rate.
    */
   currentFeeBps: number
   /** The month now accruing. */
@@ -1432,7 +1207,7 @@ export function hostFeeSummary(
   return {
     accruedCents: invoiceSubtotalCents(accrued),
     accruedEventCount: accrued.length,
-    currentFeeBps: PLATFORM_FEE_BPS,
+    currentFeeBps: 0,
     currentPeriod,
     currentPeriodAccruedCents: invoiceSubtotalCents(currentPeriodAccrued),
     currentPeriodEventCount: currentPeriodAccrued.length,

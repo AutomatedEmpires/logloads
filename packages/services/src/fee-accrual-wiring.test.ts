@@ -4,20 +4,26 @@ import {
   computePlatformFeeCents,
   organizationMembershipSchema,
   organizationRoleCan,
+  PERCENTAGE_FEE_RETIRED_CODE,
+  PERCENTAGE_FEE_RETIRED_MESSAGE,
   percentageFeeEventId,
-  PLATFORM_FEE_BPS
+  platformFeeEventSchema,
+  PLATFORM_FEE_BPS,
+  type PlatformFeeEvent
 } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { createLogLoadsServices } from "./index"
 import { reconcileMissingPlatformFees } from "./platform-fees"
 
 /**
- * A fee is earned when the host authoritatively confirms the completed movement.
- * Off-platform driver-payment evidence remains a separate later workflow.
+ * The completed-load percentage fee is retired. Completing a load, retrying the
+ * completion, physical completion after a destination confirmation, driver
+ * payment receipt and the billing cron must all leave the fee ledger alone,
+ * while a fee recorded before the retirement is still read back unchanged.
  *
- * These tests assert that production wiring, not only the fee arithmetic.
+ * These tests drive the production wiring, not only the ledger function.
  */
 function settleableHaul() {
   const services = createLogLoadsServices(createInMemoryDatabase())
@@ -78,6 +84,11 @@ function settleableHaul() {
   }
 }
 
+/**
+ * A delivered percentage_v1 haul whose assignment carries the fee-bearing terms
+ * an assignment committed before the retirement froze. The strongest case: the
+ * terms still say a fee accrues, and still nothing may be written.
+ */
 function forceSettleableState(
   fixture: ReturnType<typeof settleableHaul>,
   driverPayCents: number | null
@@ -124,6 +135,40 @@ function forceSettleableState(
   return { held, live, posting }
 }
 
+/** The fee row exactly as the retired accrual wrote it before the retirement. */
+function recordHistoricalFee(
+  fixture: ReturnType<typeof settleableHaul>,
+  overrides: Partial<PlatformFeeEvent> = {}
+): PlatformFeeEvent {
+  const { assignment, load, services } = fixture
+  const held = services.state.assignments.find((candidate) => candidate.id === assignment.id)!
+  const movementId = held.loadMovementId ?? held.id
+  const recordedAt = "2026-06-20T15:00:00.000Z"
+  const event = platformFeeEventSchema.parse({
+    assignmentId: held.id,
+    billingModel: "percentage_v1",
+    createdAt: recordedAt,
+    driverPayCents: 52_500,
+    feeBps: PLATFORM_FEE_BPS,
+    feeCents: computePlatformFeeCents(52_500, PLATFORM_FEE_BPS),
+    id: percentageFeeEventId(movementId),
+    invoiceId: null,
+    loadMovementId: movementId,
+    loadPostingId: load.id,
+    occurredAt: recordedAt,
+    organizationId: load.companyId,
+    status: "accrued",
+    truckSlotId: held.truckSlotId,
+    updatedAt: recordedAt,
+    voidReason: null,
+    ...overrides
+  })
+
+  services.state.platformFeeEvents.push(event)
+
+  return event
+}
+
 function confirmDelivery(fixture: ReturnType<typeof settleableHaul>) {
   return fixture.services.settleHaulCompletion({
     actorUserId: fixture.hostOperator.userId,
@@ -151,31 +196,310 @@ function confirmReceived(fixture: ReturnType<typeof settleableHaul>) {
   })
 }
 
-describe("host completion confirmation raises the platform fee", () => {
-  it("writes exactly one fee from frozen driver pay before any payment receipt", () => {
+function retiredAnswer(assignmentId: string) {
+  return {
+    assignmentId,
+    code: PERCENTAGE_FEE_RETIRED_CODE,
+    outcome: "retired",
+    reason: PERCENTAGE_FEE_RETIRED_MESSAGE
+  }
+}
+
+function accrualAudits(fixture: ReturnType<typeof settleableHaul>) {
+  return fixture.services.state.auditEvents.filter(
+    (event) => event.action === "platform_fee_accrued"
+  )
+}
+
+function lastCompletionAudit(fixture: ReturnType<typeof settleableHaul>) {
+  return fixture.services.state.auditEvents
+    .filter((event) => event.action === "haul_completion_confirmed")
+    .at(-1)
+}
+
+describe("completing a load records no new percentage fee", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("confirms the delivery and writes no fee, even under fee-bearing historical terms", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+
+    const completion = confirmDelivery(fixture)
+
+    expect(completion.trip.completionStatus).toBe("confirmed")
+    expect(completion.platformFeeOutcome).toBe("retired")
+    expect(completion.platformFee).toEqual(retiredAnswer(fixture.assignment.id))
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+    expect(accrualAudits(fixture)).toHaveLength(0)
+    expect(lastCompletionAudit(fixture)?.metadata).toMatchObject({
+      platformFeeCents: null,
+      platformFeeEventId: null,
+      platformFeeOutcome: "retired"
+    })
+  })
+
+  it("writes no fee with LOGLOADS_FEE_COLLECTION and LOGLOADS_PERCENTAGE_ENROLLMENT set to enabled", () => {
+    vi.stubEnv("LOGLOADS_FEE_COLLECTION", "enabled")
+    vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "enabled")
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+
+    expect(confirmDelivery(fixture).platformFeeOutcome).toBe("retired")
+    expect(
+      reconcileMissingPlatformFees(fixture.services.state, "2026-07-01T06:00:00.000Z")
+        .map((row) => row.outcome)
+    ).toEqual(["retired"])
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+    expect(accrualAudits(fixture)).toHaveLength(0)
+  })
+
+  it("writes no fee when physical completion follows a confirmation at the destination", () => {
+    const fixture = settleableHaul()
+    const { held, live } = forceSettleableState(fixture, 52_500)
+    live.completedAt = null
+    live.status = "unloading"
+    held.completedAt = null
+    held.status = "hauled"
+
+    for (const pack of fixture.services.state.routePacks) {
+      if (
+        pack.snapshot &&
+        (
+          pack.assignmentId === fixture.assignment.id ||
+          (!pack.assignmentId && pack.loadPostingId === fixture.load.id)
+        )
+      ) {
+        pack.snapshot.completionEvidence = []
+      }
+    }
+
+    expect(confirmDelivery(fixture).platformFeeOutcome).toBe("retired")
+
+    const completion = fixture.services.progressTripStatus({
+      actorUserId: fixture.driver.userId,
+      nextStatus: "completed",
+      organizationId: fixture.driverMembership.organizationId,
+      source: "driver",
+      tripId: fixture.trip.id
+    })
+
+    expect(completion.trip.status).toBe("completed")
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+    expect(accrualAudits(fixture)).toHaveLength(0)
+  })
+
+  it("answers every accrual retry identically and changes nothing", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    confirmDelivery(fixture)
+    const before = structuredClone(fixture.services.state)
+
+    for (const at of ["2026-06-20T15:00:00.000Z", "2026-07-01T06:00:00.000Z", undefined]) {
+      expect(
+        fixture.services.accruePlatformFee(
+          { actorUserId: fixture.hostBilling.userId, assignmentId: fixture.assignment.id, feeBps: PLATFORM_FEE_BPS },
+          at
+        )
+      ).toEqual(retiredAnswer(fixture.assignment.id))
+    }
+
+    expect(fixture.services.state).toEqual(before)
+  })
+
+  it("writes no fee for a legacy haul after the driver confirms receipt", () => {
+    const fixture = settleableHaul()
+    const { held } = forceSettleableState(fixture, 52_500)
+    held.billingModel = "legacy_percentage"
+
+    expect(confirmDelivery(fixture).platformFeeOutcome).toBe("retired")
+    markSent(fixture)
+    const receipt = confirmReceived(fixture)
+
+    expect(receipt.platformFeeOutcome).toBe("not_applicable")
+    expect(
+      reconcileMissingPlatformFees(fixture.services.state, "2026-07-01T06:00:00.000Z")
+        .map((row) => row.outcome)
+    ).toEqual(["retired"])
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+  })
+
+  it.each([
+    "rejected_at_scale",
+    "access_blocked",
+    "equipment_failure",
+    "weather_hold"
+  ] as const)("confirms a %s zero-delivery record without a fee", (exceptionType) => {
+    const fixture = settleableHaul()
+    const { live } = forceSettleableState(fixture, 52_500)
+    live.deliveredQuantity = { unit: "tons", value: 0 }
+    live.haulException = {
+      note: "The movement closed without a physical delivery.",
+      reportedAt: "2026-06-20T14:59:00.000Z",
+      type: exceptionType
+    }
+
+    const completion = confirmDelivery(fixture)
+
+    expect(completion.trip.completionStatus).toBe("confirmed")
+    expect(completion.platformFeeOutcome).toBe("retired")
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+  })
+
+  it("writes no fee when the host disputes the delivered record", () => {
     const fixture = settleableHaul()
     const { posting } = forceSettleableState(fixture, 52_500)
 
-    const completion = confirmDelivery(fixture)
-    expect(completion.platformFeeOutcome).toBe("accrued")
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
+    fixture.services.settleHaulCompletion({
+      actorUserId: fixture.hostOperator.userId,
+      decision: "dispute",
+      organizationId: posting.companyId,
+      reason: "Short by four tons against the ticket",
+      tripId: fixture.trip.id
+    })
 
-    markSent(fixture)
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
-
-    const receipt = confirmReceived(fixture)
-    const events = fixture.services.state.platformFeeEvents
-
-    expect(receipt.platformFeeOutcome).toBe("not_applicable")
-    expect(events).toHaveLength(1)
-    expect(events[0]!.assignmentId).toBe(fixture.assignment.id)
-    expect(events[0]!.organizationId).toBe(posting.companyId)
-    expect(events[0]!.status).toBe("accrued")
-    expect(events[0]!.driverPayCents).toBe(52_500)
-    expect(events[0]!.feeCents).toBe(computePlatformFeeCents(52_500, PLATFORM_FEE_BPS))
-    expect(events[0]!.feeCents).toBe(2_625)
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
+    expect(() => markSent(fixture)).toThrow(/confirm the delivered record/i)
   })
 
+  it("lets the billing cron repair nothing and write nothing, run after run", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    confirmDelivery(fixture)
+    const before = structuredClone(fixture.services.state)
+    const expected = [
+      {
+        assignmentId: fixture.assignment.id,
+        eventId: null,
+        outcome: "retired",
+        reason: PERCENTAGE_FEE_RETIRED_MESSAGE
+      }
+    ]
+
+    expect(reconcileMissingPlatformFees(fixture.services.state, "2026-07-01T06:00:00.000Z")).toEqual(expected)
+    expect(reconcileMissingPlatformFees(fixture.services.state, "2026-08-01T06:00:00.000Z")).toEqual(expected)
+    expect(fixture.services.state).toEqual(before)
+  })
+})
+
+describe("fees recorded before the retirement stay readable", () => {
+  it("reads a recorded fee back on a retried completion without writing another", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    const recorded = recordHistoricalFee(fixture)
+    const recordedCopy = structuredClone(recorded)
+
+    const completion = confirmDelivery(fixture)
+
+    expect(completion.platformFeeOutcome).toBe("already_accrued")
+    expect(completion.platformFee).toEqual({ event: recordedCopy, outcome: "already_accrued" })
+    expect(fixture.services.state.platformFeeEvents).toEqual([recordedCopy])
+    expect(lastCompletionAudit(fixture)?.metadata).toMatchObject({
+      platformFeeCents: 2_625,
+      platformFeeEventId: recordedCopy.id,
+      platformFeeOutcome: "already_accrued"
+    })
+    expect(accrualAudits(fixture)).toHaveLength(0)
+  })
+
+  it("keeps a withdrawn fee final when completion is retried", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    recordHistoricalFee(fixture)
+    confirmDelivery(fixture)
+
+    expect(
+      fixture.services.voidPlatformFee({
+        actorUserId: fixture.hostBilling.userId,
+        assignmentId: fixture.assignment.id,
+        organizationId: fixture.load.companyId,
+        reason: "Delivery was reversed after confirmation"
+      }).outcome
+    ).toBe("voided")
+
+    // A corrected delivery can be submitted after the original confirmation was
+    // withdrawn. The movement identity is the same, so the void stays final.
+    const live = fixture.services.state.tripsV2.find(
+      (trip) => trip.id === fixture.trip.id
+    )!
+    live.completionConfirmedAt = null
+    live.completionConfirmedByUserId = null
+    live.completionStatus = "submitted"
+
+    const retried = confirmDelivery(fixture)
+
+    expect(retried.platformFeeOutcome).toBe("already_voided")
+    expect(retried.platformFee).toMatchObject({
+      event: { status: "voided" },
+      outcome: "already_voided"
+    })
+    expect(lastCompletionAudit(fixture)?.metadata).toMatchObject({
+      platformFeeCents: null,
+      platformFeeEventId: null,
+      platformFeeOutcome: "already_voided"
+    })
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
+  })
+
+  it("keeps the recorded fee base when the driver later records a short payment", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    const recorded = structuredClone(recordHistoricalFee(fixture))
+    confirmDelivery(fixture)
+    markSent(fixture)
+
+    const receipt = fixture.services.confirmDriverPaymentReceived({
+      actorUserId: fixture.driver.userId,
+      amountCents: 50_000,
+      assignmentId: fixture.assignment.id,
+      currency: "usd",
+      organizationId: fixture.driverMembership.organizationId
+    })
+    const paymentAudit = fixture.services.state.auditEvents
+      .filter((event) => event.action === "driver_payment_received")
+      .at(-1)
+
+    expect(receipt.assignment).toMatchObject({
+      driverPaymentReceivedAmountCents: 50_000,
+      driverPaymentReceivedCurrency: "USD"
+    })
+    expect(fixture.services.state.platformFeeEvents).toEqual([recorded])
+    expect(paymentAudit?.metadata).toMatchObject({
+      amountCents: 50_000,
+      currency: "USD",
+      matchesExpected: false
+    })
+    expect(
+      fixture.services.state.notifications
+        .filter((notification) => notification.userId === fixture.hostBilling.userId)
+        .at(-1)?.body
+    ).toMatch(/differs from the accepted amount/i)
+  })
+
+  it("keeps completion when a recorded fee is cross-wired, and rewrites nothing", () => {
+    const fixture = settleableHaul()
+    forceSettleableState(fixture, 52_500)
+    const crossWired = structuredClone(
+      recordHistoricalFee(fixture, {
+        organizationId: "33333333-3333-4333-8333-333333333339"
+      })
+    )
+
+    const completion = confirmDelivery(fixture)
+    const failures = fixture.services.state.auditEvents.filter(
+      (event) => event.action === "platform_fee_accrual_failed"
+    )
+
+    expect(completion.trip.completionStatus).toBe("confirmed")
+    expect(completion.platformFeeOutcome).toBe("error")
+    expect(failures).toHaveLength(1)
+    expect(failures[0]?.entityId).toBe(fixture.assignment.id)
+    expect(fixture.services.state.platformFeeEvents).toEqual([crossWired])
+  })
+})
+
+describe("residual driver-pay settlement does not depend on a fee", () => {
   it("keeps only the completed-haul payment receipt path open after organization lock", () => {
     const fixture = settleableHaul()
     forceSettleableState(fixture, 52_500)
@@ -197,6 +521,7 @@ describe("host completion confirmation raises the platform fee", () => {
       matchesExpected: true,
       platformFeeOutcome: "not_applicable"
     })
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
   })
 
   it("lets the exact assigned owner-operator finish a residual payment receipt", () => {
@@ -315,228 +640,6 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(state).toEqual(before)
   })
 
-  it("waits for physical completion when the host confirms at the destination", () => {
-    const fixture = settleableHaul()
-    const { held, live } = forceSettleableState(fixture, 52_500)
-    live.completedAt = null
-    live.status = "unloading"
-    held.completedAt = null
-    held.status = "hauled"
-
-    for (const pack of fixture.services.state.routePacks) {
-      if (
-        pack.snapshot &&
-        (
-          pack.assignmentId === fixture.assignment.id ||
-          (!pack.assignmentId && pack.loadPostingId === fixture.load.id)
-        )
-      ) {
-        pack.snapshot.completionEvidence = []
-      }
-    }
-
-    const confirmation = confirmDelivery(fixture)
-
-    expect(confirmation.platformFeeOutcome).toBe("not_completed")
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
-
-    const completion = fixture.services.progressTripStatus({
-      actorUserId: fixture.driver.userId,
-      nextStatus: "completed",
-      organizationId: fixture.driverMembership.organizationId,
-      source: "driver",
-      tripId: fixture.trip.id
-    })
-
-    expect(completion.trip.status).toBe("completed")
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
-    expect(fixture.services.state.platformFeeEvents[0]).toMatchObject({
-      assignmentId: fixture.assignment.id,
-      feeCents: 2_625,
-      occurredAt: completion.trip.completedAt
-    })
-    expect(
-      fixture.services.progressTripStatus({
-        actorUserId: fixture.driver.userId,
-        nextStatus: "completed",
-        organizationId: fixture.driverMembership.organizationId,
-        source: "driver",
-        tripId: fixture.trip.id
-      }).changed
-    ).toBe(false)
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
-  })
-
-  it.each([
-    "rejected_at_scale",
-    "access_blocked",
-    "equipment_failure",
-    "weather_hold"
-  ] as const)("confirms a %s zero-delivery record without accruing a fee", (exceptionType) => {
-    const fixture = settleableHaul()
-    const { live } = forceSettleableState(fixture, 52_500)
-    live.deliveredQuantity = { unit: "tons", value: 0 }
-    live.haulException = {
-      note: "The movement closed without a physical delivery.",
-      reportedAt: "2026-06-20T14:59:00.000Z",
-      type: exceptionType
-    }
-
-    const completion = confirmDelivery(fixture)
-
-    expect(completion.trip.completionStatus).toBe("confirmed")
-    expect(completion.platformFeeOutcome).toBe("not_completed")
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
-  })
-
-  it("is idempotent when completion and later receipt confirmation are retried", () => {
-    const fixture = settleableHaul()
-    forceSettleableState(fixture, 52_500)
-
-    const first = confirmDelivery(fixture)
-    const firstId = fixture.services.state.platformFeeEvents[0]!.id
-    const second = fixture.services.accruePlatformFee({
-      assignmentId: fixture.assignment.id
-    })
-    markSent(fixture)
-    const firstReceipt = confirmReceived(fixture)
-    const secondReceipt = confirmReceived(fixture)
-
-    expect(first.platformFeeOutcome).toBe("accrued")
-    expect(second.outcome).toBe("already_accrued")
-    expect(firstReceipt.changed).toBe(true)
-    expect(firstReceipt.platformFeeOutcome).toBe("not_applicable")
-    expect(secondReceipt.changed).toBe(false)
-    expect(secondReceipt.platformFeeOutcome).toBe("not_applicable")
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
-    expect(fixture.services.state.platformFeeEvents[0]!.id).toBe(firstId)
-  })
-
-  it("keeps a withdrawn fee final when completion confirmation is retried", () => {
-    const fixture = settleableHaul()
-    forceSettleableState(fixture, 52_500)
-
-    expect(confirmDelivery(fixture).platformFeeOutcome).toBe("accrued")
-    expect(
-      fixture.services.voidPlatformFee({
-        actorUserId: fixture.hostBilling.userId,
-        assignmentId: fixture.assignment.id,
-        organizationId: fixture.load.companyId,
-        reason: "Delivery was reversed after confirmation"
-      }).outcome
-    ).toBe("voided")
-
-    // A corrected delivery can be submitted after the original confirmation
-    // was withdrawn. The movement identity remains the same, so this second
-    // settlement must preserve the final void rather than revive its amount.
-    const live = fixture.services.state.tripsV2.find(
-      (trip) => trip.id === fixture.trip.id
-    )!
-    live.completionConfirmedAt = null
-    live.completionConfirmedByUserId = null
-    live.completionStatus = "submitted"
-
-    const retried = confirmDelivery(fixture)
-    const completionAudit = fixture.services.state.auditEvents
-      .filter((event) => event.action === "haul_completion_confirmed")
-      .at(-1)
-
-    expect(retried.platformFeeOutcome).toBe("already_voided")
-    expect(retried.platformFee).toMatchObject({
-      event: { status: "voided" },
-      outcome: "already_voided"
-    })
-    expect(completionAudit?.metadata).toMatchObject({
-      platformFeeCents: null,
-      platformFeeEventId: null,
-      platformFeeOutcome: "already_voided"
-    })
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
-  })
-
-  it("repairs a confirmed assignment whose fee basis was initially incomplete", () => {
-    const fixture = settleableHaul()
-    const { held } = forceSettleableState(fixture, 52_500)
-    held.termsSnapshot = { ...held.termsSnapshot, driverPayCents: null }
-
-    const completion = confirmDelivery(fixture)
-    const completed = fixture.services.state.assignments.find(
-      (candidate) => candidate.id === fixture.assignment.id
-    )!
-
-    expect(completion.platformFeeOutcome).toBe("no_basis")
-    expect(completion.trip.completionStatus).toBe("confirmed")
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
-
-    completed.termsSnapshot = {
-      ...completed.termsSnapshot,
-      currency: "USD",
-      driverPayCents: 52_500
-    }
-
-    const reconciled = reconcileMissingPlatformFees(
-      fixture.services.state,
-      "2026-07-01T06:00:00.000Z"
-    )
-
-    expect(reconciled).toEqual([
-      {
-        assignmentId: fixture.assignment.id,
-        eventId: percentageFeeEventId(completed.loadMovementId ?? completed.id),
-        outcome: "accrued",
-        reason: null
-      }
-    ])
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
-    expect(fixture.services.state.platformFeeEvents[0]).toMatchObject({
-      assignmentId: fixture.assignment.id,
-      occurredAt: completion.trip.completionConfirmedAt
-    })
-    expect(reconcileMissingPlatformFees(fixture.services.state)).toEqual([])
-  })
-
-  it("preserves completion through billing exceptions and repairs deterministically", () => {
-    const fixture = settleableHaul()
-    const { held } = forceSettleableState(fixture, 52_500)
-    const originalTruckSlotId = held.truckSlotId
-
-    held.truckSlotId = "not-a-uuid"
-
-    const first = confirmDelivery(fixture)
-    const failures = fixture.services.state.auditEvents.filter(
-      (event) => event.action === "platform_fee_accrual_failed"
-    )
-    const reconciled = reconcileMissingPlatformFees(
-      fixture.services.state,
-      "2026-07-01T06:00:00.000Z"
-    )
-    const reconciliationFailures = fixture.services.state.auditEvents.filter(
-      (event) => event.action === "platform_fee_reconciliation_failed"
-    )
-
-    expect(first.trip.completionStatus).toBe("confirmed")
-    expect(first.platformFeeOutcome).toBe("error")
-    expect(failures).toHaveLength(1)
-    expect(failures.every((event) => event.entityId === fixture.assignment.id)).toBe(true)
-    expect(reconciled).toEqual([
-      {
-        assignmentId: fixture.assignment.id,
-        eventId: null,
-        outcome: "error",
-        reason: expect.any(String)
-      }
-    ])
-    expect(reconciliationFailures).toHaveLength(1)
-    expect(reconciliationFailures[0]?.entityId).toBe(fixture.assignment.id)
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
-
-    held.truckSlotId = originalTruckSlotId
-    expect(reconcileMissingPlatformFees(fixture.services.state)).toMatchObject([
-      { assignmentId: fixture.assignment.id, outcome: "accrued" }
-    ])
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
-  })
-
   it("uses the frozen currency when telling the driver what the host sent", () => {
     const fixture = settleableHaul()
     const { held } = forceSettleableState(fixture, 52_500)
@@ -551,22 +654,6 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(notice?.body).toContain("CA$525.00")
   })
 
-  it("raises no fee when the host disputes the delivered record", () => {
-    const fixture = settleableHaul()
-    const { posting } = forceSettleableState(fixture, 52_500)
-
-      fixture.services.settleHaulCompletion({
-      actorUserId: fixture.hostOperator.userId,
-      decision: "dispute",
-      organizationId: posting.companyId,
-      reason: "Short by four tons against the ticket",
-      tripId: fixture.trip.id
-    })
-
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
-    expect(() => markSent(fixture)).toThrow(/confirm the delivered record/i)
-  })
-
   it("still settles a legacy haul whose frozen pay is missing", () => {
     const fixture = settleableHaul()
     const { held } = forceSettleableState(fixture, null)
@@ -577,7 +664,7 @@ describe("host completion confirmation raises the platform fee", () => {
     expect(() => markSent(fixture)).toThrow(/no frozen driver pay/i)
   })
 
-  it("records the fee on completion and keeps the receipt audit independent", () => {
+  it("keeps the receipt audit independent of any fee", () => {
     const fixture = settleableHaul()
     forceSettleableState(fixture, 52_500)
     confirmDelivery(fixture)
@@ -597,52 +684,6 @@ describe("host completion confirmation raises the platform fee", () => {
       matchesExpected: true
     })
     expect(receipt?.actorUserId).toBe(fixture.driver.userId)
-    expect(
-      fixture.services.state.auditEvents
-        .filter((event) => event.action === "haul_completion_confirmed")
-        .at(-1)?.metadata
-    ).toMatchObject({
-      platformFeeEventId: fixture.services.state.platformFeeEvents[0]!.id,
-      platformFeeOutcome: "accrued"
-    })
-  })
-
-  it("preserves a short payment as a detectable receipt without changing the host-stated fee base", () => {
-    const fixture = settleableHaul()
-    forceSettleableState(fixture, 52_500)
-    confirmDelivery(fixture)
-    markSent(fixture)
-
-    const receipt = fixture.services.confirmDriverPaymentReceived({
-      actorUserId: fixture.driver.userId,
-      amountCents: 50_000,
-      assignmentId: fixture.assignment.id,
-      currency: "usd",
-      organizationId: fixture.driverMembership.organizationId
-    })
-    const paymentAudit = fixture.services.state.auditEvents
-      .filter((event) => event.action === "driver_payment_received")
-      .at(-1)
-
-    expect(receipt.assignment).toMatchObject({
-      driverPaymentReceivedAmountCents: 50_000,
-      driverPaymentReceivedCurrency: "USD"
-    })
-    expect(fixture.services.state.platformFeeEvents[0]).toMatchObject({
-      driverPayCents: 52_500,
-      feeBps: PLATFORM_FEE_BPS,
-      feeCents: 2_625
-    })
-    expect(paymentAudit?.metadata).toMatchObject({
-      amountCents: 50_000,
-      currency: "USD",
-      matchesExpected: false
-    })
-    expect(
-      fixture.services.state.notifications
-        .filter((notification) => notification.userId === fixture.hostBilling.userId)
-        .at(-1)?.body
-    ).toMatch(/differs from the accepted amount/i)
   })
 
   it("refuses anyone other than the assigned driver and any cancelled assignment", () => {
@@ -660,7 +701,7 @@ describe("host completion confirmation raises the platform fee", () => {
         organizationId: fixture.load.companyId
       })
     ).toThrow(/assigned driver/i)
-    expect(fixture.services.state.platformFeeEvents).toHaveLength(1)
+    expect(fixture.services.state.platformFeeEvents).toHaveLength(0)
 
     const cancelled = fixture.services.state.assignments.find(
       (candidate) => candidate.id === fixture.assignment.id

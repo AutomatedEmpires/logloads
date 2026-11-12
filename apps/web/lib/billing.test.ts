@@ -1605,12 +1605,23 @@ describe("chargeHostInvoice", () => {
 // ── Starting the card attach flow ─────────────────────────────────────────────
 
 describe("startHostCardSetup", () => {
+  /**
+   * The percentage fee is retired, so an accepted agreement no longer opens
+   * card setup. A fee recorded before the retirement that is still owed does.
+   */
+  function owesHistoricalFee(state: LogLoadsDatabaseState, organizationId: string) {
+    state.platformFeeEvents.push(
+      feeEvent({ assignmentId: ASSIGNMENT_ONE, driverPayCents: 52_500, organizationId, status: "accrued" })
+    )
+  }
+
   it("creates one customer for a host that has none and stores it", async () => {
     const state = seedState()
     const organization = organizationOfType(state, "landing_source")
     const stripe = fakeStripe()
 
     state.hostBillingProfiles = []
+    owesHistoricalFee(state, organization.id)
 
     const setup = await startHostCardSetup({
       now: () => AT,
@@ -1641,6 +1652,8 @@ describe("startHostCardSetup", () => {
     const stripe = fakeStripe()
     const existing = findHostBillingProfile(state, organization.id)?.stripeCustomerId
 
+    owesHistoricalFee(state, organization.id)
+
     await startHostCardSetup({
       organization,
       percentageEnrollmentAllowed: true,
@@ -1651,6 +1664,34 @@ describe("startHostCardSetup", () => {
 
     expect(stripe.callNames()).toEqual(["createSetupIntent"])
     expect(stripe.inputFor("createSetupIntent")?.customerId).toBe(existing)
+  })
+
+  it("refuses a host whose only basis is the retired agreement, even with enrollment allowed", async () => {
+    const state = seedState()
+    const organization = organizationOfType(state, "landing_source")
+    const stripe = fakeStripe()
+
+    state.hostBillingProfiles = []
+    state.platformFeeEvents = state.platformFeeEvents.filter(
+      (event) => event.organizationId !== organization.id
+    )
+    state.hostInvoices = state.hostInvoices.filter(
+      (invoice) => invoice.organizationId !== organization.id
+    )
+
+    const setup = await startHostCardSetup({
+      now: () => AT,
+      organization,
+      percentageEnrollmentAllowed: true,
+      port: stripe.port,
+      publishableKey: "pk_test",
+      state: stateAccess(state)
+    })
+
+    expect(setup.ok).toBe(false)
+    expect(setup.ok === false && setup.outcome).toBe("refused")
+    expect(stripe.callNames()).toEqual([])
+    expect(state.hostBillingProfiles).toEqual([])
   })
 
   it("refuses an unenrolled host before creating any Stripe object or billing row", async () => {
