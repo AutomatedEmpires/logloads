@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   withdrawInterestWithReason: vi.fn()
 }))
 
+// The actions record product events through lib/analytics/server.ts, a server-only module (#330); those events are
+// tested in lib/analytics/call-sites.test.ts.
+vi.mock("server-only", () => ({}))
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }))
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }))
 vi.mock("../rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }))

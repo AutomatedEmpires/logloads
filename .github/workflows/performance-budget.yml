@@ -70,21 +70,48 @@ jobs:
           version: 2.121.0
 
       # The same isolated stack as extended-validation; the app bootstraps the seeded operating state into it.
+      # tools/db-check.sh retries the stack start up to 3 times from a clean slate (#323).
       - name: Start the isolated Supabase stack
+        timeout-minutes: 15
         run: pnpm db:assert
 
       - name: Build production application
         id: build
+        timeout-minutes: 15
         run: pnpm --filter @logloads/web build 2>&1 | tee "$PERF_OUT/next-build.log"
+
+      # As in ci.yml: the browser is cached per Playwright version, and the apt install is retried up to 3 times.
+      - name: Read the Playwright version
+        id: playwright-version
+        run: echo "version=$(pnpm --filter @logloads/web exec playwright --version | awk '{print $NF}')" >>"$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
 
       - name: Install Playwright browsers
         id: playwright-browsers
-        run: pnpm --filter @logloads/web exec playwright install --with-deps chromium
+        timeout-minutes: 10
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm --filter @logloads/web exec playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::Playwright install attempt ${attempt} of 3 failed."
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep $((attempt * 20))
+              sudo apt-get update || true
+            fi
+          done
+          exit 1
 
       # #137 criterion 3, and the job text before any map code: the DS-05 cases tagged #137, which extended-validation
       # also runs with the whole suite.
       - name: Map code loads only on request (DS-05)
         id: map-code
+        timeout-minutes: 10
         run: pnpm test:e2e:design-system --grep "#137"
 
       - name: Upload map-code traces

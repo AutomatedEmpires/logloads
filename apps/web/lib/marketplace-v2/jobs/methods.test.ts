@@ -31,7 +31,8 @@ import {
   JOB_NOT_FOUND,
   JOB_STATUS_CHOICE,
   normalizedJobsMethods,
-  RESUME_ATTESTATION_REQUIRED
+  RESUME_ATTESTATION_REQUIRED,
+  type JobLifecycleEvents
 } from "./methods"
 import type { NormalizedJobsStore, StoredOwnJob } from "./store"
 
@@ -220,6 +221,19 @@ function fakeStore(viewer: MarketplaceV2Viewer, leak = false): NormalizedJobsSto
   }
 }
 
+/** What the group reported (#330): the change, the listing's status before it, and whether its transaction had closed. */
+let reported: Array<{ kind: "stopped" | "resumed"; jobId: string; before: MarketplaceJobStatus; status?: string; organizationId: string; afterCommit: boolean }>
+let openTransactions: number
+
+const recordingEvents: JobLifecycleEvents = {
+  async resumed(viewer, before) {
+    reported.push({ afterCommit: openTransactions === 0, before: before.status, jobId: before.id, kind: "resumed", organizationId: viewer.organizationId })
+  },
+  async stopped(viewer, before, status) {
+    reported.push({ afterCommit: openTransactions === 0, before: before.status, jobId: before.id, kind: "stopped", organizationId: viewer.organizationId, status })
+  }
+}
+
 function methods(options: { leak?: boolean } = {}): MarketplaceJobsPort {
   const context: NormalizedFeatureContext = {
     asAccount: async () => {
@@ -227,12 +241,18 @@ function methods(options: { leak?: boolean } = {}): MarketplaceJobsPort {
     },
     asViewer: async (viewer, work, { readOnly }) => {
       transactions.push({ organizationId: viewer.organizationId, readOnly, userId: viewer.userId })
-      return work({ viewer } as unknown as MarketplaceCalls)
+      openTransactions += 1
+
+      try {
+        return await work({ viewer } as unknown as MarketplaceCalls)
+      } finally {
+        openTransactions -= 1
+      }
     },
     now: () => NOW
   }
 
-  return normalizedJobsMethods(context, (calls) => fakeStore((calls as unknown as { viewer: MarketplaceV2Viewer }).viewer, options.leak))
+  return normalizedJobsMethods(context, (calls) => fakeStore((calls as unknown as { viewer: MarketplaceV2Viewer }).viewer, options.leak), recordingEvents)
 }
 
 const writes = () => log.filter((entry) => ["editTerms", "reactivate", "setStatus"].includes(entry.op))
@@ -249,6 +269,8 @@ beforeEach(() => {
   interests = []
   log = []
   transactions = []
+  reported = []
+  openTransactions = 0
 
   addJob(ACTIVE, MILL, NORTH, "active", { createdDaysAgo: 1 })
   addJob(PAUSED, MILL, NORTH, "paused", { createdDaysAgo: 2 })
@@ -349,6 +371,14 @@ describe("setJobStatus: pause, mark filled, close", () => {
     expect(transactions).toEqual([{ organizationId: MILL, readOnly: false, userId: "user_owner" }])
   })
 
+  it.each(changes)("%s reports one job_stopped once the change has committed, with the listing as it was (#330)", async (_label, jobId, status) => {
+    const before = jobs.get(jobId)!.record.job.status
+
+    await methods().setJobStatus(viewerOf("owner"), jobId, status)
+
+    expect(reported).toEqual([{ afterCommit: true, before, jobId, kind: "stopped", organizationId: MILL, status }])
+  })
+
   it.each([
     [PAUSED, "paused"],
     [FILLED, "filled"],
@@ -356,6 +386,27 @@ describe("setJobStatus: pause, mark filled, close", () => {
   ] as const)("asking for the status a job already has writes nothing (a retried request is safe): %s", async (jobId, status) => {
     await methods().setJobStatus(viewerOf("owner"), jobId, status)
     expect(writes()).toEqual([])
+    expect(reported).toEqual([])
+  })
+
+  it("reports nothing when the write fails", async () => {
+    const port = normalizedJobsMethods(
+      { asAccount: async () => undefined as never, asViewer: async (viewer, work) => work({ viewer } as unknown as MarketplaceCalls), now: () => NOW },
+      (calls) => ({
+        ...fakeStore((calls as unknown as { viewer: MarketplaceV2Viewer }).viewer),
+        reactivate: async () => {
+          throw new Error("connection reset")
+        },
+        setStatus: async () => {
+          throw new Error("connection reset")
+        }
+      }),
+      recordingEvents
+    )
+
+    await expect(port.setJobStatus(viewerOf("owner"), ACTIVE, "paused")).rejects.toThrow("connection reset")
+    await expect(port.resumeJob(viewerOf("owner"), PAUSED, reconfirmed())).rejects.toThrow("connection reset")
+    expect(reported).toEqual([])
   })
 
   it.each([
@@ -367,6 +418,7 @@ describe("setJobStatus: pause, mark filled, close", () => {
   ] as const)("refuses an invalid change before the store: %s → %s", async (jobId, status, message) => {
     expect(await refusal(methods().setJobStatus(viewerOf("owner"), jobId, status))).toEqual({ code: "23514", message })
     expect(writes()).toEqual([])
+    expect(reported).toEqual([])
   })
 
   it("refuses a status that is not a stop status before reaching the store", async () => {
@@ -384,6 +436,8 @@ describe("resumeJob: back on the marketplace with a fresh attestation", () => {
 
     expect(writes()).toEqual([{ args: [jobId], op: "reactivate", userId: "user_owner" }])
     expect(log.find((entry) => entry.op === "ownJobs")?.args).toEqual([MILL, { jobId, lock: true }])
+    // #330: one job_reconfirmed with resumed: true, after the commit, with the stopped listing as it was.
+    expect(reported).toEqual([{ afterCommit: true, before: jobs.get(jobId)!.record.job.status, jobId, kind: "resumed", organizationId: MILL }])
   })
 
   it("refuses without a fresh reconfirm attestation, before reaching the store", async () => {
@@ -404,6 +458,7 @@ describe("resumeJob: back on the marketplace with a fresh attestation", () => {
   ])("refuses %s without writing", async (jobId, message) => {
     expect(await refusal(methods().resumeJob(viewerOf("owner"), jobId, reconfirmed()))).toEqual({ code: "23514", message })
     expect(writes()).toEqual([])
+    expect(reported).toEqual([])
   })
 
   it("leaves a hold the business cannot read to the store, which refuses a held job itself", async () => {
