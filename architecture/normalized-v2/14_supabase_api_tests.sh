@@ -191,7 +191,7 @@ expect_err "a reply without a message is refused (H3)" "23514" "needs a message"
 
 echo "[6/7] Tenant isolation and privilege escalation..."
 api "$T_RIVAL" POST rpc/reconfirm_job_posting "{\"p_job_id\":\"$JOB\"}"
-expect_err "a rival landing cannot reconfirm another organization's job" "42501"
+expect_err "a rival landing cannot reconfirm another organization's job: it reads as not found (31-O)" "P0002" "Job not found"
 api "$T_RIVAL" PATCH "job_postings?id=eq.$JOB" '{"title":"Hijacked"}'
 [[ "$(q "select title from marketplace.job_postings where id = '${JOB}'::uuid;")" == "API Sawlog Run" ]] || fail "a rival PATCH changed another organization's job"
 pass "a rival PATCH changes nothing (HTTP $HTTP; RLS filters the row)"

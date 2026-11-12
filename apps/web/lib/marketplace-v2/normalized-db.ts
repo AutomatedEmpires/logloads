@@ -51,24 +51,32 @@ interface FunctionSpec {
   args: Readonly<Record<string, ArgumentType>>
   /** Callable in an anonymous (public discovery) session. */
   anonymous: boolean
+  /**
+   * Granted to `anon` and to no other role: callable only in an anonymous session, never as a signed-in person. Such
+   * a function writes, so it needs `asAnon(..., { readOnly: false })`.
+   */
+  anonymousOnly?: true
   /** `rows`: a set-returning function; `value`: one scalar; `void`: nothing. */
   returns: "rows" | "value" | "void"
 }
 
 /**
  * The closed list of database functions the adapter may call. Names, argument names and argument types match the SQL
- * exactly (architecture/normalized-v2, stages 01-26).
+ * exactly (architecture/normalized-v2, stages 01-31).
  *
  * Every function here is SECURITY DEFINER with a pinned `search_path`, is granted EXECUTE to `authenticated` (and to
  * `anon` only where `anonymous` is true) and never to `service_role`; `normalized-adapter.contract.test.ts` proves
- * those grants against the database. A SECURITY DEFINER function bypasses row-level security, so its own checks are
+ * those grants against the database. The one exception is the signed-out unsubscribe link, `anonymousOnly`: granted
+ * to `anon` and to no one else. A SECURITY DEFINER function bypasses row-level security, so its own checks are
  * the whole access rule. Each entry added for port v3 (#269) states that rule: who may call it and which in-function
  * checks it relies on. A function is added only with that review, and `normalized-db.test.ts` lists every reviewed
  * name: an entry that is not in that list fails the test.
  *
  * Never catalogued: anything granted to `service_role` only (the email worker's `claim_email_notifications`,
- * `complete_email_notification`, `record_email_provider_event` and `enqueue_job_alerts`; billing events; identity
- * sync), and helpers with no EXECUTE grant (`eligible_invitation_recipients`). This connection cannot become
+ * `complete_email_notification`, `record_email_provider_event`, `enqueue_job_alerts` and `issue_unsubscribe_token`,
+ * which mints the unsubscribe links; billing events; identity sync), and helpers with no EXECUTE grant
+ * (`eligible_invitation_recipients`, `hmac_sha256`, `job_confirmation_current`). `job_takes_new_interest` serves a
+ * row-level security policy and is not called from here. This connection cannot become
  * `service_role` (HF-22).
  */
 export const MARKETPLACE_FUNCTIONS = {
@@ -178,7 +186,8 @@ export const MARKETPLACE_FUNCTIONS = {
   },
   // Authenticated. Checks `job.publish` on the job's business (as above); locks the job row. Landing scope:
   // `tg_landing_scope_guard` on the `job_postings` update. Never re-activates (that is `reactivate_job_posting`) and
-  // refuses a draft. Audited.
+  // refuses a draft. Audited. Since 31, like `reconfirm_job_posting` and `reactivate_job_posting`: a job of a business
+  // the caller does not belong to gets the same "Job not found" (P0002) as an id that does not exist.
   set_job_posting_status: { anonymous: false, args: { p_job_id: "uuid", p_status: "text" }, returns: "void" },
   // Authenticated. Checks `job.publish` on the job's business; needs `p_attest_available = true`; refuses a moderation
   // hold, a passed expiry and invalid pay. Landing scope: `tg_landing_scope_guard`. Returns the confirmation time. Audited.
@@ -251,6 +260,14 @@ export const MARKETPLACE_FUNCTIONS = {
   // Authenticated. Changes only rows where `recipient_user_id = current_user_id()` and the channel is in-app; at most
   // 200 ids; anyone else's ids change nothing. Returns how many changed.
   mark_notifications_read: { anonymous: false, args: { p_notification_ids: "uuid[]" }, returns: "value" },
+  // The signed-out unsubscribe link (#252; stage 31, reviewed in #294). `anon` ONLY: not `authenticated`, not
+  // `service_role`. The token is the whole access rule: the function checks its HMAC-SHA-256 signature against a key
+  // that never leaves the database, its expiry, and that it was not used before, then turns off the one (person,
+  // business, category, channel) preference the token names and audits it. It returns nothing and raises nothing for
+  // a malformed, forged, expired or used token, so it reveals nothing about the person or the business; show the
+  // same confirmation whatever happens. It writes: call it with `asAnon(..., { readOnly: false })`, from a POST.
+  // Tokens are minted by the email worker (`issue_unsubscribe_token`, `service_role` only, never catalogued).
+  unsubscribe_with_token: { anonymous: true, anonymousOnly: true, args: { p_token: "text" }, returns: "void" },
 
   // --- boosts (#254) ---
   // Authenticated. `has_org_role(job's org, owner/manager/staff, seat)`. Returns counts only (the radius, opted-in
@@ -415,8 +432,11 @@ export interface MarketplaceCalls {
 }
 
 export interface MarketplaceDb {
-  /** Public discovery: the `anon` role, no identity, read-only. */
-  asAnon<T>(work: (calls: MarketplaceCalls) => Promise<T>): Promise<T>
+  /**
+   * Public discovery: the `anon` role, no identity. Read-only unless `readOnly` is false, which only the signed-out
+   * unsubscribe link needs (`unsubscribe_with_token`, the one function `anon` holds that writes).
+   */
+  asAnon<T>(work: (calls: MarketplaceCalls) => Promise<T>, options?: { readOnly?: boolean }): Promise<T>
   /** One transaction as the given person (`authenticated` role). Read-only unless `readOnly` is false. */
   asUser<T>(principal: MarketplacePrincipal, work: (calls: MarketplaceCalls) => Promise<T>, options?: { readOnly?: boolean }): Promise<T>
   close(): Promise<void>
@@ -774,6 +794,10 @@ function callsFor(tx: TransactionSql, anonymous: boolean): MarketplaceCalls {
         throw new TypeError(`marketplace.${fn} needs a signed-in person`)
       }
 
+      if (!anonymous && (MARKETPLACE_FUNCTIONS[fn] as FunctionSpec).anonymousOnly) {
+        throw new TypeError(`marketplace.${fn} runs only in a signed-out session`)
+      }
+
       const { text, values } = marketplaceCallStatement(fn, args)
       const result = await tx.unsafe(text, values)
       const returns = MARKETPLACE_FUNCTIONS[fn].returns
@@ -934,7 +958,7 @@ export function createPostgresMarketplaceDb(options: PostgresMarketplaceDbOption
   }
 
   return {
-    asAnon: async (work) => run("read only", "anon", ANON_CLAIMS, work),
+    asAnon: async (work, runOptions) => run(runOptions?.readOnly === false ? "read write" : "read only", "anon", ANON_CLAIMS, work),
 
     asUser: async (principal, work, runOptions) =>
       run(runOptions?.readOnly === false ? "read write" : "read only", "authenticated", principalClaims(principal), work),
