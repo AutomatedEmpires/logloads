@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { attestAvailability, MARKETPLACE_AVAILABILITY_ATTESTATION, marketplaceJobDraftSchema, marketplaceV2FeatureSupport } from "@logloads/contracts"
+import { attestAvailability, MARKETPLACE_AVAILABILITY_ATTESTATION, marketplaceJobDraftSchema } from "@logloads/contracts"
 
 import { createNormalizedMarketplaceV2 } from "../normalized-adapter"
 import {
@@ -239,7 +239,8 @@ describe("the own-job statements (#247)", () => {
   const ownRow = (status: string) => ({ ...publicRow(status), ...facts })
 
   it("turns the jobs group on in the adapter", () => {
-    expect(wired().supports).toEqual(marketplaceV2FeatureSupport(["billing", "jobs"]))
+    // Only this group's flag: other groups turn on in their own tasks (the full set is the port v3 test's).
+    expect(wired().supports.jobs).toBe(true)
   })
 
   it("locks the job, reads it and closes it, in one write transaction as the person", async () => {

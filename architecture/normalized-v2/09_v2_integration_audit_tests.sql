@@ -230,8 +230,15 @@ begin
   perform pg_temp.fails(format('select * from marketplace.list_authoring_landings(%L)', o_haul), '42501', 'cannot publish',
     'a fleet driver without a landing seat gets no authoring landings');
   perform pg_temp.as_jwt('authenticated', 'a9_rival');
-  perform pg_temp.fails(format('select marketplace.reconfirm_job_posting(%L)', j1), '42501', 'cannot confirm|not available', 'a rival landing cannot reconfirm another org''s job');
-  perform pg_temp.fails(format('select marketplace.set_job_posting_status(%L, %L)', j1, 'closed'), '42501', '', 'a rival landing cannot change another org''s job status');
+  if to_regprocedure('marketplace.job_confirmation_current(timestamptz)') is null then
+    perform pg_temp.fails(format('select marketplace.reconfirm_job_posting(%L)', j1), '42501', 'cannot confirm|not available', 'a rival landing cannot reconfirm another org''s job');
+    perform pg_temp.fails(format('select marketplace.set_job_posting_status(%L, %L)', j1, 'closed'), '42501', '', 'a rival landing cannot change another org''s job status');
+  else
+    -- From 31 (31-O) another business's job reads exactly as a job that does not exist. Stage 32 runs this suite on
+    -- the 31 schema.
+    perform pg_temp.fails(format('select marketplace.reconfirm_job_posting(%L)', j1), 'P0002', '^Job not found$', 'a rival landing cannot reconfirm another org''s job (from 31: not found)');
+    perform pg_temp.fails(format('select marketplace.set_job_posting_status(%L, %L)', j1, 'closed'), 'P0002', '^Job not found$', 'a rival landing cannot change another org''s job status (from 31: not found)');
+  end if;
   perform pg_temp.as_jwt('service_role');
   perform pg_temp.fails(format($q$select marketplace.publish_job_posting(p_landing_id => %L, p_title => 'Service role', p_equipment_codes => array['log_truck'],
     p_trucks_requested => 1, p_pay_unit => 'per_ton', p_pay_amount_cents => 900, p_attest_available => true)$q$, l_land),
