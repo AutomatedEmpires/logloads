@@ -50,13 +50,13 @@
       "id": "job",
       "label": "A job page (the board's first job)",
       "path": "/v2/work/:job",
-      "$comment": "requests 44 -> 45 (#242, landing overview #133). The page's byte weight is unchanged: one stylesheet split in two. Next's CSS chunking (loose mode) merges modules greedily, in order of their positions across every route. The overview at /v2/landing adds another route that loads the @logloads/ui primitives, and InterestForm.module.css (4.7 KB, the job page's interest sheet) now gets its own file instead of joining the primitives' file (18.4 KB). Before, the two were one 23.1 KB file. Same bytes, one more request. Stopping it would take a cssChunking change in next.config.ts or dropping the primitives barrel from the overview.",
+      "$comment": "requests 44 -> 45 (#242, landing overview #133). The page's byte weight is unchanged: one stylesheet split in two. Next's CSS chunking (loose mode) merges modules greedily, in order of their positions across every route. The overview at /v2/landing adds another route that loads the @logloads/ui primitives, and InterestForm.module.css (4.7 KB, the job page's interest sheet) now gets its own file instead of joining the primitives' file (18.4 KB). Before, the two were one 23.1 KB file. Same bytes, one more request. Stopping it would take a cssChunking change in next.config.ts or dropping the primitives barrel from the overview. requests 45 -> 46 (#279, design audit 1 C1): app/v2/error.tsx, the V2 error boundary, is a client component, so Next loads its own chunk on every V2 route. Script requests 21 -> 22, script 260.4 -> 266.4 KiB (still under 270); stylesheets unchanged. Any segment error boundary costs this one request.",
       "budget": {
         "lcpMs": 6000,
         "tbtMs": 300,
         "cls": 0.1,
         "transferKiB": 665,
-        "requests": 45,
+        "requests": 46,
         "scriptKiB": 270,
         "thirdPartyRequests": 0
       },

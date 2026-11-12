@@ -86,8 +86,8 @@ begin
     raise exception 'the seed needs the normalized schema: apply the migration chain first' using errcode = '55000';
   end if;
   select string_agg(version, ',' order by applied_at, version) into v_ledger from marketplace.schema_migrations;
-  if v_ledger is distinct from '06,11,12,16,18,23,26' then
-    raise exception 'the seed is written for the migration ledger 06,11,12,16,18,23,26; this database records %', coalesce(v_ledger, '(nothing)')
+  if v_ledger is distinct from '06,11,12,16,18,23,26,29,31' then
+    raise exception 'the seed is written for the migration ledger 06,11,12,16,18,23,26,29,31; this database records %', coalesce(v_ledger, '(nothing)')
       using errcode = '55000';
   end if;
 

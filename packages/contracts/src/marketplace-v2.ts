@@ -485,7 +485,7 @@ export function snapToPublicGrid(point: Coordinates): Coordinates {
   return { lat: snapCoordinate(point.lat), lng: snapCoordinate(point.lng) }
 }
 
-function exactMilesToPublicPoint(from: Coordinates, job: Pick<MarketplaceJobCardView, "origin">): number | null {
+function exactMilesToPublicPoint(from: Coordinates, job: { origin: Pick<MarketplaceJobCardView["origin"], "approximatePoint"> }): number | null {
   const point = job.origin.approximatePoint
   return point ? haversineMiles(snapToPublicGrid(from), point) : null
 }
@@ -570,7 +570,20 @@ export function filterMarketplaceJobs<T extends MarketplaceJobCardView>(jobs: re
   })
 }
 
-function newestFirst(a: MarketplaceJobCardView, b: MarketplaceJobCardView): number {
+/**
+ * The fields the discovery order reads. A job has them all; a keyset cursor (#280) keeps a copy of the last job on a
+ * page, so the next page can start after it even when that job has since closed or changed.
+ */
+export interface MarketplaceJobOrderKey {
+  id: string
+  title: string
+  lastConfirmedAt: string | null
+  lastModifiedAt: string
+  pay: Pick<MarketplacePay, "amountCents" | "unit">
+  origin: Pick<MarketplaceJobCardView["origin"], "approximatePoint">
+}
+
+function newestFirst(a: MarketplaceJobOrderKey, b: MarketplaceJobOrderKey): number {
   if (a.lastConfirmedAt && !b.lastConfirmedAt) return -1
   if (!a.lastConfirmedAt && b.lastConfirmedAt) return 1
   const aKey = a.lastConfirmedAt ?? a.lastModifiedAt
@@ -579,7 +592,7 @@ function newestFirst(a: MarketplaceJobCardView, b: MarketplaceJobCardView): numb
 }
 
 /** A stated amount on a comparable basis; negotiable, "other" and unstated pay have none. */
-function comparablePay(job: MarketplaceJobCardView): { unit: MarketplacePayUnit; cents: number } | null {
+function comparablePay(job: Pick<MarketplaceJobOrderKey, "pay">): { unit: MarketplacePayUnit; cents: number } | null {
   const { amountCents, unit } = job.pay
   return amountCents !== null && unit !== null && unit !== "negotiable" && unit !== "other" ? { cents: amountCents, unit } : null
 }
@@ -603,38 +616,47 @@ export function marketplaceComparablePayUnits(jobs: readonly MarketplaceJobCardV
  *   it is "newest".
  * - "pay": grouped by basis in a fixed order, highest stated amount first within each basis; jobs without a
  *   comparable amount (negotiable, other, not stated) last. Amounts on different bases are never compared.
- * Sponsored placement is not applied (no boosts).
+ * Sponsored placement is not applied (no boosts). The job id breaks any remaining tie (`compareMarketplaceJobs`).
  */
 export function sortMarketplaceJobs<T extends MarketplaceJobCardView>(
   jobs: readonly T[],
   options: Pick<MarketplaceJobFilters, "near" | "sort"> = {}
 ): T[] {
-  const sort = options.sort ?? "newest"
-  const near = options.near ?? null
+  return [...jobs].sort((a, b) => compareMarketplaceJobs(a, b, options))
+}
 
+/**
+ * The discovery order of `sortMarketplaceJobs` as a comparator: negative when `a` comes first. The job id breaks every
+ * remaining tie, so the order is total and the same on every read. A keyset cursor that holds the last job's order key
+ * therefore resumes exactly after it, with no job repeated or skipped (#280).
+ */
+export function compareMarketplaceJobs(
+  a: MarketplaceJobOrderKey,
+  b: MarketplaceJobOrderKey,
+  options: Pick<MarketplaceJobFilters, "near" | "sort"> = {}
+): number {
+  return discoveryOrder(a, b, options.sort ?? "newest", options.near ?? null) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
+function discoveryOrder(a: MarketplaceJobOrderKey, b: MarketplaceJobOrderKey, sort: MarketplaceJobSort, near: Coordinates | null): number {
   if (sort === "nearest" && near) {
-    const miles = new Map(jobs.map((job) => [job.id, exactMilesToPublicPoint(near, job)]))
-    return [...jobs].sort((a, b) => {
-      const aMiles = miles.get(a.id) ?? null
-      const bMiles = miles.get(b.id) ?? null
-      if (aMiles !== null && bMiles === null) return -1
-      if (aMiles === null && bMiles !== null) return 1
-      return (aMiles ?? 0) - (bMiles ?? 0) || newestFirst(a, b)
-    })
+    const aMiles = exactMilesToPublicPoint(near, a)
+    const bMiles = exactMilesToPublicPoint(near, b)
+    if (aMiles !== null && bMiles === null) return -1
+    if (aMiles === null && bMiles !== null) return 1
+    return (aMiles ?? 0) - (bMiles ?? 0) || newestFirst(a, b)
   }
 
   if (sort === "pay") {
-    return [...jobs].sort((a, b) => {
-      const aPay = comparablePay(a)
-      const bPay = comparablePay(b)
-      if (aPay && !bPay) return -1
-      if (!aPay && bPay) return 1
-      if (!aPay || !bPay) return newestFirst(a, b)
-      return PAY_UNIT_ORDER.indexOf(aPay.unit) - PAY_UNIT_ORDER.indexOf(bPay.unit) || bPay.cents - aPay.cents || newestFirst(a, b)
-    })
+    const aPay = comparablePay(a)
+    const bPay = comparablePay(b)
+    if (aPay && !bPay) return -1
+    if (!aPay && bPay) return 1
+    if (!aPay || !bPay) return newestFirst(a, b)
+    return PAY_UNIT_ORDER.indexOf(aPay.unit) - PAY_UNIT_ORDER.indexOf(bPay.unit) || bPay.cents - aPay.cents || newestFirst(a, b)
   }
 
-  return [...jobs].sort(newestFirst)
+  return newestFirst(a, b)
 }
 
 // ---------------------------------------------------------------------------

@@ -253,3 +253,20 @@ describe("landing business setup and plans (#127, B1–B2)", () => {
     expect(page).not.toContain("name=\"displayName\"")
   })
 })
+
+describe("the landings list's errors (#279, C2)", () => {
+  it("shows fixed copy for ?error=, never its words", async () => {
+    const page = await html(LandingsPage({ searchParams: search({ error: "Your account is locked. Call 541-555-0100 to keep your listings.", landing: UPPER }) }))
+
+    expect(page).not.toContain("541-555-0100")
+    expect(page).toMatch(/role="alert"[^>]*><p>Something went wrong on our side\. Try again in a moment\.<\/p><\/div>/)
+  })
+
+  it("offers the way out at the plan's cap, and plans while billing is inactive", async () => {
+    const cap = await html(LandingsPage({ searchParams: search({ error: "landing_cap", landing: UPPER }) }))
+    expect(cap).toMatch(/role="alert"[^>]*><p>Your plan&#x27;s active landings are all in use\.<\/p><p><a href="#landings">Pause another landing<\/a> or <a href="\/v2\/start\/landing#plans">see plans<\/a>/)
+
+    const billing = await html(LandingsPage({ searchParams: search({ error: "landing_billing_inactive", landing: UPPER }) }))
+    expect(billing).toMatch(/role="alert"[^>]*><p>Billing isn&#x27;t active yet[^<]*<\/p><p><a href="\/v2\/start\/landing#plans">See plans<\/a>/)
+  })
+})

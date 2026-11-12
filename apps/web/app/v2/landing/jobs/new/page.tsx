@@ -4,6 +4,7 @@ import { Button, EmptyState } from "@logloads/ui/primitives"
 
 import { EditorNotice, JobEditorAside, JobEditorLayout, JobEditorStepForm, RestoredNotice, StepIssuesNotice } from "@/components/v2/JobEditor"
 import { draftQueryString, draftValuesFromQuery } from "@/lib/marketplace-v2/draft-params"
+import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { jobEditorChecklist, jobEditorPreview, REVIEW_JOB_PATH, resolveJobEditorScreen } from "@/lib/marketplace-v2/job-editor"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
@@ -58,7 +59,8 @@ export default async function NewJobPage({ searchParams }: { searchParams: Searc
     redirect(`${REVIEW_JOB_PATH}?${[draftQueryString(values), restored ? "restored=1" : ""].filter(Boolean).join("&")}`)
   }
 
-  const error = one(query.error)
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
   const now = new Date().toISOString()
   const preview = jobEditorPreview(values, landings, { now, posterName: access.organizationName, posterOrganizationId: viewer.organizationId })
 
@@ -67,7 +69,7 @@ export default async function NewJobPage({ searchParams }: { searchParams: Searc
       aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} preview={{ job: preview?.job ?? null }} values={values} />}
       organizationName={access.organizationName}
     >
-      {error ? <EditorNotice tone="critical">{error}</EditorNotice> : <StepIssuesNotice count={screen.issues.length} />}
+      {failure ? <EditorNotice tone="critical">{failure.message}</EditorNotice> : <StepIssuesNotice count={screen.issues.length} />}
       {restored ? <RestoredNotice /> : null}
       <JobEditorStepForm
         issues={screen.issues}

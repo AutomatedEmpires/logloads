@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
-# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..28>
+# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..32>
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
@@ -431,6 +431,131 @@ SUITES
     [[ "$rc" == "0" ]] || exit "$rc"
     grep -q "ALL TEAM SEAT AND OUTBOX CONCURRENCY TESTS PASSED" "$LOG" || { echo "STAGE 28: runner did not report completion" >&2; exit 1; }
     { echo "### Stage 28 seat invitations and outbox concurrency (last seat, invitation against membership, accept against revoke, two workers, invitation against downgrade)"; echo '```'; grep -E "^\[|ok:|overlap" "$LOG" || true; echo '```'; } >> "$SUMMARY"
+    ;;
+  29)
+    # Which marketplace functions 29 changes, by source and by grant: exactly the four it redefines. It adds and drops
+    # none, and no grant changes.
+    FN_SRC_SQL="select p.oid::regprocedure::text || '|' || md5(p.prosrc) from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
+    FN_ACL_SQL="select p.oid::regprocedure::text || '|' || coalesce(array_to_string(p.proacl, ','), '') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
+    q "$FN_SRC_SQL" | LC_ALL=C sort > "$LOG_DIR/stage29-src-before.txt"; q "$FN_ACL_SQL" | LC_ALL=C sort > "$LOG_DIR/stage29-acl-before.txt"
+    run_migration "$DIR/29_v2_landing_scope_hardening.sql"
+    q "$FN_SRC_SQL" | LC_ALL=C sort > "$LOG_DIR/stage29-src-after.txt"; q "$FN_ACL_SQL" | LC_ALL=C sort > "$LOG_DIR/stage29-acl-after.txt"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23,26,29' from marketplace.schema_migrations;"
+    REMOVED="$(LC_ALL=C comm -23 <(cut -d'|' -f1 "$LOG_DIR/stage29-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage29-src-after.txt") | paste -sd, -)"
+    ADDED="$(LC_ALL=C comm -13 <(cut -d'|' -f1 "$LOG_DIR/stage29-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage29-src-after.txt") | paste -sd, -)"
+    [[ -z "$REMOVED$ADDED" ]] || { echo "POST-STAGE CHECK FAILED: 29 dropped [$REMOVED] and added [$ADDED]; it should do neither" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 29 adds and drops no function" | tee -a "$LOG"
+    CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage29-src-before.txt" "$LOG_DIR/stage29-src-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
+    EXPECTED_CHANGED="marketplace.count_eligible_invitation_recipients(uuid,integer,interval),marketplace.estimate_boost_audience(uuid,text),marketplace.respond_to_interest(uuid,text,boolean,uuid,text),marketplace.tg_landing_scope_guard()"
+    [[ "$CHANGED" == "$EXPECTED_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 29 changed [$CHANGED], expected [$EXPECTED_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 29 redefines exactly tg_landing_scope_guard and respond_to_interest (29-P2), and count_eligible_invitation_recipients and estimate_boost_audience (29-P3)" | tee -a "$LOG"
+    ACL_CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage29-acl-before.txt" "$LOG_DIR/stage29-acl-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
+    [[ -z "$ACL_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 29 changed the grants of [$ACL_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: no function's grants changed" | tee -a "$LOG"
+    check "29-P2: the guard limits a landing-side response by a member of the hauling business, and respond_to_interest checks the job's landing" "select (select prosrc like '%v_landing_response%' from pg_proc where oid = 'marketplace.tg_landing_scope_guard()'::regprocedure) and (select prosrc like '%marketplace.job_scope_allows(v_row.job_id)%' from pg_proc where oid = 'marketplace.respond_to_interest(uuid, text, boolean, uuid, text)'::regprocedure);"
+    check "29-P3: both audience counts check the job's landing" "select bool_and(prosrc like '%marketplace.job_scope_allows(p_job_id)%') and count(*) = 2 from pg_proc where oid in ('marketplace.count_eligible_invitation_recipients(uuid, integer, interval)'::regprocedure, 'marketplace.estimate_boost_audience(uuid, text)'::regprocedure);"
+    check "29: respond_to_interest and the audience counts stay executable by authenticated only; the guard's trigger function by no API role" "select bool_and(has_function_privilege('authenticated', f, 'EXECUTE') and not has_function_privilege('anon', f, 'EXECUTE') and not has_function_privilege('service_role', f, 'EXECUTE')) and not has_function_privilege('authenticated', 'marketplace.tg_landing_scope_guard()', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.tg_landing_scope_guard()', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.tg_landing_scope_guard()', 'EXECUTE') from unnest(array['marketplace.respond_to_interest(uuid, text, boolean, uuid, text)', 'marketplace.count_eligible_invitation_recipients(uuid, integer, interval)', 'marketplace.estimate_boost_audience(uuid, text)']::regprocedure[]) f;"
+    check "26-B: the landing-scope guard is still installed on its seven tables" "select count(distinct c.relname) = 7 from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relnamespace = 'marketplace'::regnamespace and t.tgname = 'landing_scope_guard' and t.tgenabled = 'O' and t.tgfoid = 'marketplace.tg_landing_scope_guard()'::regprocedure;"
+    ;;
+  30)
+    run_sql "$DIR/30_v2_landing_scope_hardening_tests.sql"
+    grep -q "ALL LANDING-SCOPE HARDENING (29-P2, 29-P3) TESTS PASSED" "$LOG" || { echo "STAGE 30: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations where slug like 's29-%';"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 41 ]] || { echo "STAGE 30: only $PASSES PASS notices; expected at least 41" >&2; exit 1; }
+    # Regression: the earlier suites run again on the 29 schema, 27 (26-B, which 29 changes) included. 24 pins the
+    # ledger at 23 and is not re-run; its rules run again through 17, 19 and 21.
+    while IFS='|' read -r SUITE NOTICE; do
+      RLOG="$LOG_DIR/stage30-rerun-${SUITE%%_*}.log"
+      echo "== psql -X -v ON_ERROR_STOP=1 -f $SUITE (again, on the 29 schema)" | tee "$RLOG"
+      psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -f "$DIR/$SUITE" >> "$RLOG" 2>&1 \
+        || { echo "STAGE 30: $SUITE failed on the 29 schema (see $RLOG)" | tee -a "$LOG" >&2; tail -n 30 "$RLOG" >&2; exit 1; }
+      grep -qF "$NOTICE" "$RLOG" || { echo "STAGE 30: $SUITE did not reach its final PASS notice on the 29 schema" | tee -a "$LOG" >&2; exit 1; }
+      echo "  check ok: $SUITE passes again on the 29 schema" | tee -a "$LOG" | tee -a "$SUMMARY"
+    done <<'SUITES'
+04_tests.sql|PASS: All normalized-v2 integration
+07_v2_contract_tests.sql|ALL V2 CONTRACT ALIGNMENT & FOUNDER DECISION (V2-DEC-01..03) TESTS PASSED
+09_v2_integration_audit_tests.sql|ALL V2 INTEGRATION AUDIT TESTS PASSED
+13_v2_phase3_tests.sql|ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED
+21_v2_auth_claims_membership_tests.sql|ALL IDENTITY-CLAIM AND MEMBERSHIP-REVOCATION (#112 DATABASE LAYER) TESTS PASSED
+17_v2_identity_membership_tests.sql|ALL IDENTITY, MEMBERSHIP AND QUALIFICATION (B-1, B-2, B-5) TESTS PASSED
+19_v2_review_106_tests.sql|ALL REVIEW-106 HARDENING (HF-03, HF-05, HF-06, HF-15, HF-16, HF-17, HF-18) TESTS PASSED
+27_v2_team_seats_saved_jobs_outbox_tests.sql|ALL SEAT INVITATION, LANDING SCOPE, SAVED JOB AND NOTIFICATION OUTBOX (26-A..26-D) TESTS PASSED
+SUITES
+    check "the re-run suites rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
+    ;;
+  31)
+    # What 31 changes, by function source, function grant, table and policy: it redefines exactly eight functions, adds
+    # exactly five functions and two tables, replaces three policies, and changes no grant of an existing function.
+    FN_SRC_SQL="select p.oid::regprocedure::text || '|' || md5(p.prosrc) from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
+    FN_ACL_SQL="select p.oid::regprocedure::text || '|' || coalesce(array_to_string(p.proacl, ','), '') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
+    TABLES_SQL="select c.relname from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p') order by 1;"
+    POLICY_SQL="select tablename || '.' || policyname || '|' || md5(coalesce(qual, '') || '|' || coalesce(with_check, '') || '|' || cmd || '|' || array_to_string(roles, ',')) from pg_policies where schemaname = 'marketplace' order by 1;"
+    q "$FN_SRC_SQL" | LC_ALL=C sort > "$LOG_DIR/stage31-src-before.txt"; q "$FN_ACL_SQL" | LC_ALL=C sort > "$LOG_DIR/stage31-acl-before.txt"
+    q "$TABLES_SQL" | LC_ALL=C sort > "$LOG_DIR/stage31-tables-before.txt"; q "$POLICY_SQL" | LC_ALL=C sort > "$LOG_DIR/stage31-policies-before.txt"
+    run_migration "$DIR/31_v2_reply_gate_reconfirmation_unsubscribe.sql"
+    q "$FN_SRC_SQL" | LC_ALL=C sort > "$LOG_DIR/stage31-src-after.txt"; q "$FN_ACL_SQL" | LC_ALL=C sort > "$LOG_DIR/stage31-acl-after.txt"
+    q "$TABLES_SQL" | LC_ALL=C sort > "$LOG_DIR/stage31-tables-after.txt"; q "$POLICY_SQL" | LC_ALL=C sort > "$LOG_DIR/stage31-policies-after.txt"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations','notification_unsubscribe_keys','notification_unsubscribe_uses'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23,26,29,31' from marketplace.schema_migrations;"
+    # Function names only: the argument list is printed with or without the extensions schema, by search_path.
+    REMOVED="$(LC_ALL=C comm -23 <(cut -d'|' -f1 "$LOG_DIR/stage31-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage31-src-after.txt") | sed 's/(.*//' | paste -sd, -)"
+    ADDED="$(LC_ALL=C comm -13 <(cut -d'|' -f1 "$LOG_DIR/stage31-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage31-src-after.txt") | sed 's/(.*//' | paste -sd, -)"
+    EXPECTED_ADDED="marketplace.hmac_sha256,marketplace.issue_unsubscribe_token,marketplace.job_confirmation_current,marketplace.job_takes_new_interest,marketplace.unsubscribe_with_token"
+    [[ -z "$REMOVED" && "$ADDED" == "$EXPECTED_ADDED" ]] || { echo "POST-STAGE CHECK FAILED: 31 dropped [$REMOVED] and added [$ADDED]; expected none dropped and [$EXPECTED_ADDED] added" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 31 drops no function and adds exactly job_confirmation_current and job_takes_new_interest (31-R) and hmac_sha256, issue_unsubscribe_token, unsubscribe_with_token (31-U)" | tee -a "$LOG"
+    CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage31-src-before.txt" "$LOG_DIR/stage31-src-after.txt" | awk -F'|' '$2 != $3 {print $1}' | sed 's/(.*//' | paste -sd, -)"
+    EXPECTED_CHANGED="marketplace.can_view_landing_private,marketplace.list_marketplace_jobs,marketplace.reactivate_job_posting,marketplace.reconfirm_job_posting,marketplace.respond_to_interest,marketplace.search_job_postings,marketplace.set_job_posting_status,marketplace.submit_expression_of_interest"
+    [[ "$CHANGED" == "$EXPECTED_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 31 changed [$CHANGED], expected [$EXPECTED_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 31 redefines exactly can_view_landing_private and respond_to_interest (31-P1), list_marketplace_jobs, search_job_postings and submit_expression_of_interest (31-R), and reconfirm_job_posting, set_job_posting_status and reactivate_job_posting (31-O)" | tee -a "$LOG"
+    ACL_CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage31-acl-before.txt" "$LOG_DIR/stage31-acl-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
+    [[ -z "$ACL_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 31 changed the grants of [$ACL_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: no existing function's grants changed" | tee -a "$LOG"
+    TABLES_DIFF="$(LC_ALL=C comm -3 "$LOG_DIR/stage31-tables-before.txt" "$LOG_DIR/stage31-tables-after.txt" | tr -d '\t' | paste -sd, -)"
+    [[ "$TABLES_DIFF" == "notification_unsubscribe_keys,notification_unsubscribe_uses" ]] || { echo "POST-STAGE CHECK FAILED: 31 changed the table list by [$TABLES_DIFF]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 31 adds exactly the tables notification_unsubscribe_keys and notification_unsubscribe_uses" | tee -a "$LOG"
+    POLICY_DIFF="$(LC_ALL=C comm -3 <(cut -d'|' -f1 "$LOG_DIR/stage31-policies-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage31-policies-after.txt") | tr -d '\t' | paste -sd, -)"
+    POLICY_CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage31-policies-before.txt" "$LOG_DIR/stage31-policies-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
+    [[ -z "$POLICY_DIFF" && "$POLICY_CHANGED" == "expressions_of_interest.interests_hauler_insert,promotion_redemptions.promotion_redemptions_read,promotions.promotions_read" ]] || { echo "POST-STAGE CHECK FAILED: 31 added or dropped policies [$POLICY_DIFF] and changed [$POLICY_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 31 adds and drops no policy and changes exactly interests_hauler_insert (31-R) and promotion_redemptions_read and promotions_read (31-F)" | tee -a "$LOG"
+    check "31-P1: can_view_landing_private asks for a replied inquiry, and respond_to_interest refuses sharing before a reply" "select (select prosrc like '%e.status = ''replied''%' and prosrc not like '%not in (''withdrawn'', ''declined'')%' from pg_proc where oid = 'marketplace.can_view_landing_private(uuid)'::regprocedure) and (select prosrc like '%Reply to this inquiry before sharing%' from pg_proc where oid = 'marketplace.respond_to_interest(uuid, text, boolean, uuid, text)'::regprocedure);"
+    check "31-R: both lists and new interest use the one day-14 rule" "select bool_and(p.prosrc like '%marketplace.job_confirmation_current(%') and count(*) = 3 from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.proname in ('list_marketplace_jobs', 'search_job_postings', 'submit_expression_of_interest');"
+    check "31-R: a direct INSERT of an inquiry is held to the same rule (interests_hauler_insert asks job_takes_new_interest, authenticated only)" "select (select with_check like '%job_takes_new_interest(job_id)%' from pg_policies where schemaname = 'marketplace' and tablename = 'expressions_of_interest' and policyname = 'interests_hauler_insert') and has_function_privilege('authenticated', 'marketplace.job_takes_new_interest(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.job_takes_new_interest(uuid)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.job_takes_new_interest(uuid)', 'EXECUTE');"
+    check "31-O: the three lifecycle functions answer another business's job as not found" "select bool_and(p.prosrc like '%if not found or not marketplace.has_org_role(v_job.org_id, array[''owner'', ''manager'', ''staff'', ''driver'']) then%') and count(*) = 3 from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.proname in ('reconfirm_job_posting', 'set_job_posting_status', 'reactivate_job_posting');"
+    check "31-U: unsubscribe_with_token is executable by anon only, issue_unsubscribe_token by service_role only, the helpers by no API role" "select has_function_privilege('anon', 'marketplace.unsubscribe_with_token(text)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.unsubscribe_with_token(text)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.unsubscribe_with_token(text)', 'EXECUTE') and has_function_privilege('service_role', 'marketplace.issue_unsubscribe_token(uuid, uuid, text, text, interval)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.issue_unsubscribe_token(uuid, uuid, text, text, interval)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.issue_unsubscribe_token(uuid, uuid, text, text, interval)', 'EXECUTE') and (select bool_and(not has_function_privilege(r, f, 'EXECUTE')) from unnest(array['marketplace.hmac_sha256(bytea, bytea)', 'marketplace.job_confirmation_current(timestamptz)']::regprocedure[]) f, unnest(array['anon', 'authenticated', 'service_role']) r);"
+    check "31-U: unsubscribe_with_token is the only volatile marketplace function anon can execute" "select count(*) = 1 and bool_and(p.proname = 'unsubscribe_with_token') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.provolatile = 'v' and has_function_privilege('anon', p.oid, 'EXECUTE');"
+    check "31-U: the key and used-token tables have no policy, and 31 stored no key and no token" "select not exists (select 1 from pg_policies where schemaname = 'marketplace' and tablename like 'notification_unsubscribe_%') and (select count(*) from marketplace.notification_unsubscribe_keys) + (select count(*) from marketplace.notification_unsubscribe_uses) = 0;"
+    ;;
+  32)
+    run_sql "$DIR/32_v2_reply_gate_reconfirmation_unsubscribe_tests.sql"
+    grep -q "ALL REPLY GATE, RECONFIRMATION, UNSUBSCRIBE, FOUNDING OFFER AND NOT-FOUND (31-P1, 31-R, 31-U, 31-F, 31-O) TESTS PASSED" "$LOG" || { echo "STAGE 32: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no test organizations, signing keys or used tokens left)" "select (select count(*) from marketplace.organizations where slug like 's31-%') + (select count(*) from marketplace.notification_unsubscribe_keys) + (select count(*) from marketplace.notification_unsubscribe_uses) = 0;"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 97 ]] || { echo "STAGE 32: only $PASSES PASS notices; expected at least 97" >&2; exit 1; }
+    # Regression: the earlier suites run again on the 31 schema, 30 (29's suite, whose sharing steps 31-P1 changes)
+    # included. 24 pins the ledger at 23 and is not re-run; its rules run again through 17, 19 and 21.
+    while IFS='|' read -r SUITE NOTICE; do
+      RLOG="$LOG_DIR/stage32-rerun-${SUITE%%_*}.log"
+      echo "== psql -X -v ON_ERROR_STOP=1 -f $SUITE (again, on the 31 schema)" | tee "$RLOG"
+      psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -f "$DIR/$SUITE" >> "$RLOG" 2>&1 \
+        || { echo "STAGE 32: $SUITE failed on the 31 schema (see $RLOG)" | tee -a "$LOG" >&2; tail -n 30 "$RLOG" >&2; exit 1; }
+      grep -qF "$NOTICE" "$RLOG" || { echo "STAGE 32: $SUITE did not reach its final PASS notice on the 31 schema" | tee -a "$LOG" >&2; exit 1; }
+      echo "  check ok: $SUITE passes again on the 31 schema" | tee -a "$LOG" | tee -a "$SUMMARY"
+    done <<'SUITES'
+04_tests.sql|PASS: All normalized-v2 integration
+07_v2_contract_tests.sql|ALL V2 CONTRACT ALIGNMENT & FOUNDER DECISION (V2-DEC-01..03) TESTS PASSED
+09_v2_integration_audit_tests.sql|ALL V2 INTEGRATION AUDIT TESTS PASSED
+13_v2_phase3_tests.sql|ALL PHASE 3 POLICY (F1-F5) AND BILLING-ORDERING TESTS PASSED
+21_v2_auth_claims_membership_tests.sql|ALL IDENTITY-CLAIM AND MEMBERSHIP-REVOCATION (#112 DATABASE LAYER) TESTS PASSED
+17_v2_identity_membership_tests.sql|ALL IDENTITY, MEMBERSHIP AND QUALIFICATION (B-1, B-2, B-5) TESTS PASSED
+19_v2_review_106_tests.sql|ALL REVIEW-106 HARDENING (HF-03, HF-05, HF-06, HF-15, HF-16, HF-17, HF-18) TESTS PASSED
+27_v2_team_seats_saved_jobs_outbox_tests.sql|ALL SEAT INVITATION, LANDING SCOPE, SAVED JOB AND NOTIFICATION OUTBOX (26-A..26-D) TESTS PASSED
+30_v2_landing_scope_hardening_tests.sql|ALL LANDING-SCOPE HARDENING (29-P2, 29-P3) TESTS PASSED
+SUITES
+    check "the re-run suites rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac

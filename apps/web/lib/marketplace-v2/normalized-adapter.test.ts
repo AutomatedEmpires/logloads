@@ -234,6 +234,97 @@ describe("normalized adapter: identity and discovery", () => {
   })
 })
 
+describe("normalized adapter: Find work pages (#280)", () => {
+  const jobId = (index: number) => `11111111-aaaa-4aaa-8aaa-${String(index).padStart(12, "0")}`
+  const board = (count: number) => Array.from({ length: count }, (_, index) => jobRow({
+    job_id: jobId(index),
+    last_modified_at: new Date(Date.UTC(2026, 10, 3, 0, count - index)).toISOString(),
+    public_road_notes: "Gravel for the last 2 mi",
+    slug: jobId(index)
+  }))
+
+  it("reads a page with ONE anonymous call, each job with its public detail, never one call per job", async () => {
+    responses.list_marketplace_jobs = board(60)
+
+    const first = await adapter().listJobPage({}, { limit: 25 })
+    expect(first.items).toHaveLength(25)
+    expect(first.items[0]).toMatchObject({ id: jobId(0), publicAccessRequirements: [], publicRoadNotes: "Gravel for the last 2 mi" })
+    expect(recorded).toEqual([
+      { args: { p_accepting_only: true, p_equipment: null, p_limit: 200, p_org_id: null, p_pay_unit: null, p_query: null }, fn: "list_marketplace_jobs", session: "anon" }
+    ])
+
+    const second = await adapter().listJobPage({}, { after: first.nextCursor, limit: 25 })
+    expect(second.start).toBe(25)
+    expect(second.items.map((job) => job.id)).toEqual(Array.from({ length: 25 }, (_, index) => jobId(index + 25)))
+    expect(storeCalls()).toEqual(["list_marketplace_jobs", "list_marketplace_jobs"])
+    expect(principal).not.toHaveBeenCalled()
+  })
+
+  it("counts exactly below the function's row limit, and as a floor once the function filled it", async () => {
+    responses.list_marketplace_jobs = board(199)
+    expect((await adapter().listJobPage({})).total).toEqual({ count: 199, exact: true })
+
+    responses.list_marketplace_jobs = board(200)
+    expect((await adapter().listJobPage({})).total).toEqual({ count: 200, exact: false })
+
+    // The filters the function cannot take yet are applied to its rows before counting: a floor, still never a total.
+    expect((await adapter().listJobPage({ product: "Pulpwood" })).total).toEqual({ count: 0, exact: false })
+  })
+
+  it("asks nothing for filters that can match nothing", async () => {
+    expect(await adapter().listJobPage({ posterOrganizationId: "not-a-business" })).toMatchObject({ items: [], total: { count: 0, exact: true } })
+    expect(recorded).toEqual([])
+  })
+})
+
+describe("normalized adapter: inquiry pages (#280, audit K1)", () => {
+  const LATER = "66666666-eeee-4eee-8eee-eeeeeeeeeee2"
+
+  it("reads the active business's inquiries once, as the person and read-only, on the side asked for", async () => {
+    responses.list_marketplace_interests = [interestRow(), interestRow({ id: LATER, updated_at: "2026-11-03T11:30:00+00:00" })]
+
+    const page = await adapter().listInterestPage(haulerViewer, "hauler", { limit: 1 })
+    expect(page.items.map((interest) => interest.id)).toEqual([LATER])
+    expect(page.total).toEqual({ count: 2, exact: true })
+    expect(recorded).toEqual([
+      { args: { p_org_id: HAUL, p_side: "hauler" }, fn: "list_marketplace_interests", principal: PRINCIPAL, readOnly: true, session: "user" }
+    ])
+
+    const next = await adapter().listInterestPage(haulerViewer, "hauler", { after: page.nextCursor, limit: 1 })
+    expect(next.items.map((interest) => interest.id)).toEqual([INTEREST])
+    expect(next.nextCursor).toBeNull()
+  })
+
+  it("never returns or counts another business's inquiry, even if the store did", async () => {
+    responses.list_marketplace_interests = [interestRow(), interestRow({ hauler_org_id: OTHER, id: LATER, landing_org_id: OTHER })]
+
+    const hauler = await adapter().listInterestPage(haulerViewer, "hauler")
+    expect(hauler.items.map((interest) => interest.haulerOrganization.id)).toEqual([HAUL])
+    expect(hauler.total.count).toBe(1)
+
+    const landing = await adapter().listInterestPage(landingViewer, "landing")
+    expect(landing.items.map((interest) => interest.landingOrganization.id)).toEqual([LAND])
+    expect(recorded.at(-1)?.args).toEqual({ p_org_id: LAND, p_side: "landing" })
+  })
+
+  it("does not use one business's cursor for another business", async () => {
+    responses.list_marketplace_interests = [interestRow(), interestRow({ id: LATER, updated_at: "2026-11-03T11:30:00+00:00" })]
+    const mine = await adapter().listInterestPage(haulerViewer, "hauler", { limit: 1 })
+
+    responses.list_marketplace_interests = [interestRow({ hauler_org_id: OTHER }), interestRow({ hauler_org_id: OTHER, id: LATER, updated_at: "2026-11-03T11:30:00+00:00" })]
+    const theirs = await adapter().listInterestPage({ organizationId: OTHER, userId: USER }, "hauler", { after: mine.nextCursor, limit: 1 })
+    expect(theirs).toMatchObject({ restarted: true, start: 0 })
+    expect(theirs.items.map((interest) => interest.id)).toEqual([LATER])
+  })
+
+  it("refuses an unknown side and a malformed business before reaching the store", async () => {
+    await expect(adapter().listInterestPage(haulerViewer, "both" as never)).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    await expect(adapter().listInterestPage({ organizationId: "x'; --", userId: USER }, "hauler")).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    expect(recorded).toEqual([])
+    expect(principal).not.toHaveBeenCalled()
+  })
+})
+
 describe("normalized adapter: inquiries stay inside the active business", () => {
   it("returns the stored inquiry after submitting it for the viewer's own hauling business", async () => {
     responses.submit_expression_of_interest = [{ created: true, interest_id: INTEREST }]

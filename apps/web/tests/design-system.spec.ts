@@ -1490,7 +1490,8 @@ test.describe("equipment on a page: the interest sheet (#148 criterion 4)", () =
 
     // The server re-checks every count: one edited past the listing is refused, and no interest is sent.
     const [first] = GRANITE_CREEK.setups
-    const refusal = `Your profile lists ${first.units} x ${first.label}`
+    // The refusal comes back as a code with fixed copy (#279): the URL carries no words, not even the truck's label.
+    const refusal = "You offered more trucks than your business profile lists."
     await setups.filter({ hasText: first.label }).locator("input[type='hidden'][name='equipmentCount']").evaluate((input, count) => {
       (input as HTMLInputElement).value = String(count)
     }, first.units + 1)
@@ -1506,7 +1507,7 @@ test.describe("equipment on a page: the interest sheet (#148 criterion 4)", () =
     expect(redirect, "the action redirects back to the job").toBeTruthy()
     const target = new URL(redirect!, page.url())
     expect(target.pathname).toBe(jobPath)
-    expect(target.searchParams.get("error")).toContain(refusal)
+    expect(target.searchParams.get("error")).toBe("equipment_over_listed")
 
     await openV2(page, `${target.pathname}${target.search}`)
     await expect(page.getByRole("alert").filter({ hasText: refusal })).toBeVisible()

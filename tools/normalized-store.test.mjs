@@ -102,10 +102,10 @@ test("the migration chain is exactly the files and order CI applies", () => {
   for (const job of ["normalized-adapter-ci.yml:adapter-contract", "normalized-v2-ci.yml:postgres17-contract-alignment", "normalized-v2-ci.yml:supabase-local-stack"]) {
     assert.ok(full.includes(job), `${job} applies the whole chain`)
   }
-  assert.deepEqual(LEDGER_CHAIN, ["06", "11", "12", "16", "18", "23", "26"])
+  assert.deepEqual(LEDGER_CHAIN, ["06", "11", "12", "16", "18", "23", "26", "29", "31"])
   // The seed and the adapter contract test expect the same ledger.
-  assert.match(read(SEED_FILE), /'06,11,12,16,18,23,26'/)
-  assert.match(read("apps/web/lib/marketplace-v2/normalized-adapter.contract.test.ts"), /toBe\("06,11,12,16,18,23,26"\)/)
+  assert.match(read(SEED_FILE), /'06,11,12,16,18,23,26,29,31'/)
+  assert.match(read("apps/web/lib/marketplace-v2/normalized-adapter.contract.test.ts"), /toBe\("06,11,12,16,18,23,26,29,31"\)/)
 })
 
 test("the seeded-store CI jobs deploy through this tool, not a second copy of the chain", () => {
@@ -222,7 +222,7 @@ test("identity settings use the adapter's bounds", () => {
 test("schema plan: fresh, part of the way, current, or refused", () => {
   const files = (plan) => plan.pending.map((entry) => entry.file.slice(0, 2))
 
-  assert.deepEqual(files(computeSchemaPlan({ schema: false })), ["01", "02", "03", "06", "11", "12", "16", "18", "23", "26"])
+  assert.deepEqual(files(computeSchemaPlan({ schema: false })), ["01", "02", "03", "06", "11", "12", "16", "18", "23", "26", "29", "31"])
   // PostGIS: absent or already in `extensions` is fine; elsewhere only a stamped disposable database lets 01 move it.
   assert.equal(computeSchemaPlan({ postgis: "extensions", schema: false, stamped: false }).status, "absent")
   assert.equal(computeSchemaPlan({ postgis: "public", schema: false, stamped: true }).status, "absent")
@@ -231,9 +231,9 @@ test("schema plan: fresh, part of the way, current, or refused", () => {
   assert.match(pilotFirst.reason, /PostGIS is installed in schema "public".*before the pilot migrations/)
   // Supabase exposes an empty schema before it exists; nothing in it yet.
   assert.equal(computeSchemaPlan({ objects: 0, schema: true }).status, "absent")
-  assert.deepEqual(files(computeSchemaPlan({ b01: true, b02: false, b03: false, objects: 40, schema: true })), ["02", "03", "06", "11", "12", "16", "18", "23", "26"])
-  assert.deepEqual(files(computeSchemaPlan({ b01: true, b02: true, b03: true, objects: 90, schema: true })), ["06", "11", "12", "16", "18", "23", "26"])
-  assert.deepEqual(files(computeSchemaPlan({ b01: true, b02: true, b03: true, ledger: ["06", "11", "12"], objects: 90, schema: true })), ["16", "18", "23", "26"])
+  assert.deepEqual(files(computeSchemaPlan({ b01: true, b02: false, b03: false, objects: 40, schema: true })), ["02", "03", "06", "11", "12", "16", "18", "23", "26", "29", "31"])
+  assert.deepEqual(files(computeSchemaPlan({ b01: true, b02: true, b03: true, objects: 90, schema: true })), ["06", "11", "12", "16", "18", "23", "26", "29", "31"])
+  assert.deepEqual(files(computeSchemaPlan({ b01: true, b02: true, b03: true, ledger: ["06", "11", "12"], objects: 90, schema: true })), ["16", "18", "23", "26", "29", "31"])
 
   const current = computeSchemaPlan({ b01: true, b02: true, b03: true, ledger: [...LEDGER_CHAIN], objects: 300, schema: true })
   assert.equal(current.status, "current")
@@ -453,7 +453,7 @@ test("schema without --apply plans the whole chain and changes nothing", async (
 
   assert.equal(code, 0)
   assert.deepEqual(writes(calls), [])
-  assert.match(out, /pending: 01_schema\.sql, 02_access\.sql, 03_entitlements\.sql, 06_v2_contract_alignment\.sql, .*23_v2_round2_hardening\.sql, 26_v2_team_seats_saved_jobs_outbox\.sql/)
+  assert.match(out, /pending: 01_schema\.sql, 02_access\.sql, 03_entitlements\.sql, 06_v2_contract_alignment\.sql, .*23_v2_round2_hardening\.sql, 26_v2_team_seats_saved_jobs_outbox\.sql, 29_v2_landing_scope_hardening\.sql, 31_v2_reply_gate_reconfirmation_unsubscribe\.sql/)
   assert.match(out, /18 revokes EXECUTE from PUBLIC/)
   assert.match(out, /create logloads_marketplace_adapter: LOGIN NOINHERIT/)
   assert.match(out, /dry run only/)
@@ -489,7 +489,7 @@ test("schema --apply on a current store is a no-op", async () => {
 
   assert.equal(code, 0, out)
   assert.deepEqual(writes(calls), [])
-  assert.match(out, /up to date \(ledger 06,11,12,16,18,23,26\)/)
+  assert.match(out, /up to date \(ledger 06,11,12,16,18,23,26,29,31\)/)
   assert.match(out, /keep logloads_marketplace_adapter and its password/)
 })
 

@@ -22,6 +22,8 @@ import styles from "@/components/v2/InquiryConversation.module.css"
 import { InquiryReplyComposer } from "@/components/v2/InquiryReplyComposer"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { haulerReplyAction, withdrawInterestAction } from "@/lib/marketplace-v2/actions"
+import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
+import { v2FailureMessage } from "@/lib/marketplace-v2/error-log"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import {
   chooseInquiryTab,
@@ -102,11 +104,13 @@ export default async function MyInquiriesPage({ searchParams }: { searchParams: 
     try {
       interests = await listHaulerInquiries(workspace.id, actor.profile.id)
     } catch (error) {
-      refusal = withBusinessSwitchNote(error instanceof Error ? error.message : "Inquiries are not available for this business.")
+      // A store refusal keeps its words; anything else is logged and named by fixed copy and a reference (#279).
+      refusal = withBusinessSwitchNote(v2FailureMessage(error, "inquiries.hauler_list"))
     }
   }
 
-  const error = one(query.error) || null
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
   const counts = inquiryTabCounts(interests, HAULER_INQUIRY_TABS, haulerQueueOf)
   const requested = interests.find((interest) => interest.id === one(query.inquiry)) ?? null
   const tab = chooseInquiryTab(one(query.tab), requested ? haulerQueueOf(requested) : null, counts, HAULER_INQUIRY_TABS)
@@ -136,7 +140,7 @@ export default async function MyInquiriesPage({ searchParams }: { searchParams: 
             layout="single"
             main={
               <>
-                {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
+                {failure ? <PageNotice role="alert" tone="critical">{failure.message}</PageNotice> : null}
                 {refusal ? (
                   <PageNotice>{refusal}</PageNotice>
                 ) : (
@@ -161,7 +165,7 @@ export default async function MyInquiriesPage({ searchParams }: { searchParams: 
             layout={selected ? "split" : "single"}
             main={
               <>
-                {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
+                {failure ? <PageNotice role="alert" tone="critical">{failure.message}</PageNotice> : null}
                 <Section
                   description={rows.length > 0 ? "Newest activity first. Select one to read and reply." : undefined}
                   title={rows.length > 0 ? `${rows.length} ${current.label.toLowerCase()} inquir${rows.length === 1 ? "y" : "ies"}` : current.label}
