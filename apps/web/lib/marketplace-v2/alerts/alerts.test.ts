@@ -2,16 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { alertsCatalogueReady, normalizedAlerts } from "./index"
-import { savedJobFromRow, savedJobSearchFromRow } from "./mapping"
-import { alertMethods, createAlertUnsubscribeToken, unsubscribeAlert } from "./methods"
-import { ALERT_STATEMENTS, ALERT_STATEMENT_NAMES, alertStatement, type AlertStatementName } from "./statements"
+import { MARKETPLACE_V2_FEATURES } from "@logloads/contracts"
+
+import { normalizedAlerts } from "./index"
+import { changedFromRow, savedJobFromRow, savedJobSearchFromRow } from "./mapping"
+import { createAlertUnsubscribeToken, unsubscribeAlert } from "./methods"
+import { ALERT_QUERY_NAMES, ALERT_UNSUBSCRIBE_STATEMENT, alertUnsubscribeStatement } from "./statements"
 import { createNormalizedMarketplaceV2, type NormalizedFeatureContext } from "../normalized-adapter"
-import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "../normalized-db"
+import { MARKETPLACE_FUNCTIONS, type MarketplaceCalls, type MarketplaceDb, type MarketplacePrincipal } from "../normalized-db"
+import { MARKETPLACE_QUERIES, marketplaceQueryStatement, type MarketplaceQueryName } from "../normalized-queries"
 import {
-  MarketplaceFeatureUnavailableError,
   MarketplaceRefusalError,
   MarketplaceStoreError,
+  marketplaceV2FeatureMethods,
   type MarketplaceV2Viewer
 } from "../port"
 
@@ -26,15 +29,26 @@ const JOB = "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const SEARCH = "22222222-bbbb-4bbb-8bbb-222222222222"
 const NOW = new Date("2026-11-10T12:00:00.000Z")
 const PRINCIPAL: MarketplacePrincipal = { audience: "logloads-test-audience", issuer: "https://clerk.logloads.test", subject: CLERK }
+const NOT_AVAILABLE = "This is not available to your account."
+/** The roles every alerts table's row-level security admits (`my_org_ids` in 02 and 26): any active member. */
+const MEMBER_CHECK = "marketplace.has_org_role($1::text::uuid, array['owner', 'manager', 'staff', 'driver']::text[])"
 
 const viewer: MarketplaceV2Viewer = { organizationId: ORG, userId: CLERK }
 const other: MarketplaceV2Viewer = { organizationId: OTHER_ORG, userId: OTHER_CLERK }
+
+/** What the store answers a member of the active business for each write: one row, saying whether anything changed. */
+const MEMBER_WRITES: Partial<Record<MarketplaceQueryName, unknown[]>> = {
+  alert_delete_job_search: [{ changed: true }],
+  alert_save_job: [{ changed: true }],
+  alert_set_notification_preference: [{ changed: true }],
+  alert_unsave_job: [{ changed: true }]
+}
 
 interface Recorded { kind: "call" | "query"; name: string; args: unknown; readOnly?: boolean }
 
 let recorded: Recorded[]
 let calls: Record<string, unknown[]>
-let queries: Record<string, unknown[]>
+let queries: Partial<Record<MarketplaceQueryName, unknown[]>>
 let failure: { name: string; error: Error } | null
 let principal: ReturnType<typeof vi.fn>
 let context: NormalizedFeatureContext
@@ -55,7 +69,9 @@ function fakeDb(): MarketplaceDb {
     inquiryParties: async () => null,
     landingStatement: async () => [],
     async query(name, values) {
-      recorded.push({ args: values, kind: "query", name, readOnly })
+      // The real store binds through the same function, so a value of the wrong type or count never reaches SQL.
+      const bound = marketplaceQueryStatement(name, values)
+      recorded.push({ args: bound.values, kind: "query", name, readOnly })
       if (failure?.name === name) throw failure.error
       return queries[name] ?? []
     },
@@ -70,6 +86,7 @@ function fakeDb(): MarketplaceDb {
   }
 }
 
+/** The live adapter, with the alerts group as it ships. `context` is the one it hands the group. */
 function useAdapter(): ReturnType<typeof createNormalizedMarketplaceV2> {
   return createNormalizedMarketplaceV2({
     db: fakeDb(),
@@ -77,9 +94,9 @@ function useAdapter(): ReturnType<typeof createNormalizedMarketplaceV2> {
       alerts: {
         methods: (given) => {
           context = given
-          return alertMethods(given)
+          return normalizedAlerts.methods(given)
         },
-        supported: false
+        supported: normalizedAlerts.supported
       }
     },
     now: () => NOW,
@@ -111,7 +128,7 @@ function openJob(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   recorded = []
   calls = {}
-  queries = {}
+  queries = { ...MEMBER_WRITES }
   failure = null
   principal = vi.fn(async (candidate: MarketplaceV2Viewer) => {
     if (candidate.userId !== CLERK && candidate.userId !== OTHER_CLERK) {
@@ -122,28 +139,66 @@ beforeEach(() => {
   useAdapter()
 })
 
-describe("alert statements", () => {
-  it("binds every value and never selects an email address", () => {
-    const texts = ALERT_STATEMENT_NAMES.map((name) => ALERT_STATEMENTS[name].text).join("\n")
+describe("alert statements are catalogued (#316)", () => {
+  const text = (name: MarketplaceQueryName): string => MARKETPLACE_QUERIES[name].text
 
-    expect(texts).not.toMatch(/user_contacts|delivery_address|email/i)
+  it("names every signed-in alerts statement in MARKETPLACE_QUERIES, and list_saved_jobs in MARKETPLACE_FUNCTIONS", () => {
+    expect([...ALERT_QUERY_NAMES].sort()).toEqual([
+      "alert_delete_job_search",
+      "alert_insert_job_search",
+      "alert_list_job_searches",
+      "alert_list_notification_preferences",
+      "alert_save_job",
+      "alert_set_notification_preference",
+      "alert_unsave_job",
+      "alert_update_job_search",
+      "alert_viewer_user"
+    ])
 
-    for (const name of ALERT_STATEMENT_NAMES) {
-      const bound = alertStatement(name, Array.from({ length: ALERT_STATEMENTS[name].params }, () => ORG))
-
-      expect(bound.text).not.toContain(ORG)
-      expect(bound.values).toEqual(Array.from({ length: ALERT_STATEMENTS[name].params }, () => ORG))
+    for (const name of ALERT_QUERY_NAMES) {
+      expect(Object.prototype.hasOwnProperty.call(MARKETPLACE_QUERIES, name), name).toBe(true)
     }
 
-    expect(() => alertStatement("alert_save_job", [ORG])).toThrow(TypeError)
+    expect(MARKETPLACE_FUNCTIONS.list_saved_jobs).toEqual({ anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" })
   })
 
-  it("scopes signed-in writes to the session and leaves unsubscribe independent of a session", () => {
-    const save = ALERT_STATEMENTS.alert_save_job.text
-    const insert = ALERT_STATEMENTS.alert_insert_job_search.text
-    const update = ALERT_STATEMENTS.alert_update_job_search.text
+  it("binds the active business as $1 to every statement, and checks the person is an active member of it", () => {
+    for (const name of ALERT_QUERY_NAMES) {
+      expect(MARKETPLACE_QUERIES[name].args[0], name).toBe("uuid")
+      expect(text(name), name).toContain("$1::text::uuid")
+      expect(text(name), name).toContain(MEMBER_CHECK)
+    }
+  })
+
+  it("binds every value, refuses a value of the wrong type or count, and never selects an email address", () => {
+    const texts = ALERT_QUERY_NAMES.map(text).join("\n")
+
+    expect(texts).not.toMatch(/user_contacts|delivery_address|email/i)
+    expect(marketplaceQueryStatement("alert_save_job", [ORG, JOB])).toEqual({ text: text("alert_save_job"), values: [ORG, JOB] })
+    expect(marketplaceQueryStatement("alert_insert_job_search", [ORG, "Fir", "{}", true]).values).toEqual([ORG, "Fir", "{}", "true"])
+    expect(marketplaceQueryStatement("alert_update_job_search", [ORG, SEARCH, "Fir", "{}", false]).values).toEqual([ORG, SEARCH, "Fir", "{}", "false"])
+    expect(marketplaceQueryStatement("alert_set_notification_preference", [ORG, "job_alert", "email", false]).values)
+      .toEqual([ORG, "job_alert", "email", "false"])
+    expect(marketplaceQueryStatement("alert_viewer_user", [ORG]).values).toEqual([ORG])
+
+    for (const name of ALERT_QUERY_NAMES) {
+      const values = MARKETPLACE_QUERIES[name].args.map((type) => (type === "boolean" ? true : type === "uuid" ? ORG : "x"))
+
+      expect(marketplaceQueryStatement(name, values).text, name).not.toContain(ORG)
+    }
+
+    expect(() => marketplaceQueryStatement("alert_save_job", [ORG])).toThrow(TypeError)
+    expect(() => marketplaceQueryStatement("alert_save_job", [ORG, "x'; delete from marketplace.saved_jobs; --"])).toThrow(TypeError)
+    expect(() => marketplaceQueryStatement("alert_insert_job_search", [ORG, "Fir", "{}", "true"])).toThrow(TypeError)
+  })
+
+  it("keeps the person to current_user_id() and writes only the granted columns", () => {
+    const save = text("alert_save_job")
+    const insert = text("alert_insert_job_search")
+    const update = text("alert_update_job_search")
     const setClause = update.slice(update.indexOf("set"), update.indexOf("where"))
 
+    // saved_jobs and saved_searches take the person from the column default (`current_user_id()`).
     expect(save).toMatch(/insert into marketplace\.saved_jobs \(org_id, job_id\)/)
     expect(save).toContain("on conflict (user_id, org_id, job_id) do nothing")
     expect(save).not.toContain("current_user_id()")
@@ -158,22 +213,48 @@ describe("alert statements", () => {
     expect(update).toContain("owner_user_id = marketplace.current_user_id()")
     expect(update).toContain("kind = 'jobs'")
 
-    const sessionScoped: AlertStatementName[] = [
+    const personScoped: MarketplaceQueryName[] = [
       "alert_unsave_job",
       "alert_list_job_searches",
+      "alert_update_job_search",
       "alert_delete_job_search",
       "alert_list_notification_preferences",
       "alert_set_notification_preference",
       "alert_viewer_user"
     ]
 
-    for (const name of sessionScoped) {
-      expect(ALERT_STATEMENTS[name].text, name).toContain("marketplace.current_user_id()")
+    for (const name of personScoped) {
+      expect(text(name), name).toContain("marketplace.current_user_id()")
     }
 
-    expect(ALERT_STATEMENTS.alert_unsubscribe_notification.text).not.toContain("current_user_id()")
-    expect(ALERT_STATEMENTS.alert_unsubscribe_notification.text).toContain("set enabled = false")
-    expect(ALERT_STATEMENTS.alert_viewer_user.text).not.toContain("display_name")
+    for (const name of ["alert_list_job_searches", "alert_update_job_search", "alert_delete_job_search"] as const) {
+      expect(text(name), name).toContain("kind = 'jobs'")
+    }
+
+    expect(text("alert_viewer_user")).not.toMatch(/display_name|avatar_path|bio/)
+  })
+
+  it("answers a write with one row only for a member, so a non-member is refused instead of told it saved", () => {
+    // Each write's own row (or the INSERT's SELECT) is gated by the membership check, never only by the table policy.
+    for (const name of ["alert_save_job", "alert_unsave_job", "alert_delete_job_search"] as const) {
+      expect(text(name), name).toMatch(/select jsonb_build_object\('changed', exists \(select 1 from \w+\)\) as row\s+where marketplace\.has_org_role\(\$1::text::uuid/)
+    }
+
+    expect(text("alert_insert_job_search")).toMatch(/select \$1::text::uuid, 'jobs'[^]*where marketplace\.has_org_role\(\$1::text::uuid/)
+    expect(text("alert_set_notification_preference")).toMatch(/select marketplace\.current_user_id\(\), \$1::text::uuid[^]*where marketplace\.has_org_role\(\$1::text::uuid/)
+  })
+
+  it("keeps the signed-out unsubscribe out of the catalogue, so no adapter transaction can run it before #294", () => {
+    expect(ALERT_QUERY_NAMES).not.toContain("alert_unsubscribe_notification")
+    expect(Object.keys(MARKETPLACE_QUERIES).filter((name) => /unsubscribe/i.test(name))).toEqual([])
+    expect(() => marketplaceQueryStatement("alert_unsubscribe_notification" as never, [STORE_USER, ORG, "job_alert", "email"])).toThrow(TypeError)
+    expect(marketplaceV2FeatureMethods("alerts").filter((method) => /unsubscribe/i.test(method))).toEqual([])
+
+    expect(ALERT_UNSUBSCRIBE_STATEMENT).not.toContain("current_user_id()")
+    expect(ALERT_UNSUBSCRIBE_STATEMENT).toContain("set enabled = false")
+    expect(ALERT_UNSUBSCRIBE_STATEMENT).not.toMatch(/email/i)
+    expect(alertUnsubscribeStatement({ category: "job_alert", channel: "email", organizationId: ORG, userId: STORE_USER }))
+      .toEqual({ text: ALERT_UNSUBSCRIBE_STATEMENT, values: [STORE_USER, ORG, "job_alert", "email"] })
   })
 })
 
@@ -230,6 +311,14 @@ describe("saved job and search rows", () => {
       updated_at: "2026-11-03T15:00:00+00:00"
     })).toThrow(MarketplaceStoreError)
   })
+
+  it("reads a write's row as whether it changed anything, no row as not a member, and fails closed on drift", () => {
+    expect(changedFromRow({ changed: true })).toBe(true)
+    expect(changedFromRow({ changed: false })).toBe(false)
+    expect(changedFromRow(undefined)).toBeNull()
+    expect(() => changedFromRow({ changed: "yes" })).toThrow(MarketplaceStoreError)
+    expect(() => changedFromRow({ changed: true, user_id: STORE_USER })).toThrow(MarketplaceStoreError)
+  })
 })
 
 describe("alert methods are scoped to the signed-in person and the active business", () => {
@@ -250,12 +339,16 @@ describe("alert methods are scoped to the signed-in person and the active busine
     const port = useAdapter()
 
     await port.saveJob(viewer, JOB)
+    queries.alert_save_job = [{ changed: false }]
     await port.saveJob(viewer, JOB)
+    await port.unsaveJob(viewer, JOB)
+    queries.alert_unsave_job = [{ changed: false }]
     await port.unsaveJob(viewer, JOB)
 
     expect(recorded.map((entry) => [entry.name, entry.args, entry.readOnly])).toEqual([
       ["alert_save_job", [ORG, JOB], false],
       ["alert_save_job", [ORG, JOB], false],
+      ["alert_unsave_job", [ORG, JOB], false],
       ["alert_unsave_job", [ORG, JOB], false]
     ])
     expect(JSON.stringify(recorded)).not.toContain(CLERK)
@@ -274,7 +367,7 @@ describe("alert methods are scoped to the signed-in person and the active busine
     failure = { error: postgresError("permission denied for table saved_jobs", "42501"), name: "alert_save_job" }
     const denied = port.saveJob(viewer, JOB)
     await expect(denied).rejects.toBeInstanceOf(MarketplaceRefusalError)
-    await expect(denied).rejects.toMatchObject({ message: "This is not available to your account." })
+    await expect(denied).rejects.toMatchObject({ message: NOT_AVAILABLE })
     await expect(denied).rejects.not.toThrow("saved_jobs")
   })
 
@@ -313,10 +406,10 @@ describe("alert methods are scoped to the signed-in person and the active busine
     })).resolves.toEqual({ searchId: SEARCH })
     await port.deleteJobSearch(viewer, SEARCH)
 
-    expect(recorded[0]).toMatchObject({ name: "alert_list_job_searches", readOnly: true })
+    expect(recorded[0]).toMatchObject({ args: [ORG], name: "alert_list_job_searches", readOnly: true })
     expect(recorded[1]).toMatchObject({ args: [ORG, "Fir", expect.stringContaining("log_truck"), "true"], name: "alert_insert_job_search", readOnly: false })
-    expect(recorded[2]).toMatchObject({ args: [SEARCH, ORG, "Fir", expect.any(String), "false"], name: "alert_update_job_search" })
-    expect(recorded[3]).toMatchObject({ args: [SEARCH, ORG], name: "alert_delete_job_search" })
+    expect(recorded[2]).toMatchObject({ args: [ORG, SEARCH, "Fir", expect.any(String), "false"], name: "alert_update_job_search", readOnly: false })
+    expect(recorded[3]).toMatchObject({ args: [ORG, SEARCH], name: "alert_delete_job_search", readOnly: false })
     expect(JSON.stringify(recorded[1]?.args)).not.toContain("trucks")
     expect(JSON.stringify(recorded)).not.toContain(CLERK)
   })
@@ -344,6 +437,7 @@ describe("alert methods are scoped to the signed-in person and the active busine
     expect(listed).toHaveLength(6)
     expect(listed.find((row) => row.category === "job_alert" && row.channel === "email")).toMatchObject({ enabled: true })
     expect(listed.filter((row) => row.updatedAt === null)).toHaveLength(5)
+    expect(recorded[0]).toMatchObject({ args: [ORG], name: "alert_list_notification_preferences", readOnly: true })
 
     await port.setNotificationPreference(viewer, { category: "inquiry_reply", channel: "in_app", enabled: true })
     await expect(port.setNotificationPreference(viewer, { category: "job_alert", channel: "email", email: EMAIL, enabled: false })).rejects.toBeInstanceOf(MarketplaceRefusalError)
@@ -354,6 +448,40 @@ describe("alert methods are scoped to the signed-in person and the active busine
       readOnly: false
     })
     expect(recorded.some((entry) => JSON.stringify(entry.args).includes(EMAIL))).toBe(false)
+  })
+
+  it("refuses every write for a person who is not an active member of the active business, and never claims it saved", async () => {
+    queries = {}
+    const port = useAdapter()
+    const writes: Array<[string, () => Promise<unknown>]> = [
+      ["saveJob", () => port.saveJob(other, JOB)],
+      ["unsaveJob", () => port.unsaveJob(other, JOB)],
+      ["saveJobSearch", () => port.saveJobSearch(other, { alertsEnabled: true, criteria: {}, name: "Fir" })],
+      ["deleteJobSearch", () => port.deleteJobSearch(other, SEARCH)],
+      ["setNotificationPreference", () => port.setNotificationPreference(other, { category: "job_alert", channel: "email", enabled: true })]
+    ]
+
+    for (const [method, write] of writes) {
+      const outcome = await write().then(() => null, (error: unknown) => error)
+
+      expect(outcome, method).toBeInstanceOf(MarketplaceRefusalError)
+      expect(outcome, method).toMatchObject({ code: "42501", message: NOT_AVAILABLE })
+    }
+
+    expect(recorded.map((entry) => entry.name)).toEqual([
+      "alert_save_job",
+      "alert_unsave_job",
+      "alert_insert_job_search",
+      "alert_delete_job_search",
+      "alert_set_notification_preference"
+    ])
+    expect(recorded.every((entry) => JSON.stringify(entry.args).includes(OTHER_ORG) && !JSON.stringify(entry.args).includes(ORG))).toBe(true)
+  })
+
+  it("fails closed when a write's row drifted from the SQL", async () => {
+    queries.alert_save_job = [{ changed: true, job_id: JOB }]
+
+    await expect(useAdapter().saveJob(viewer, JOB)).rejects.toBeInstanceOf(MarketplaceStoreError)
   })
 })
 
@@ -368,8 +496,16 @@ describe("unsubscribe", () => {
     expect(token).not.toContain("@")
     expect(payload).toMatchObject({ c: "job_alert", h: "email", o: ORG, u: STORE_USER })
     expect(payload).not.toHaveProperty("email")
-    expect(recorded).toEqual([{ args: [], kind: "query", name: "alert_viewer_user", readOnly: true }])
+    expect(recorded).toEqual([{ args: [ORG], kind: "query", name: "alert_viewer_user", readOnly: true }])
     expect(JSON.stringify(recorded)).not.toContain(CLERK)
+  })
+
+  it("refuses to mint for a person who is not a member of the active business", async () => {
+    const refused = createAlertUnsubscribeToken(context, other, { category: "job_alert", channel: "email", enabled: false }, SECRET, NOW)
+
+    await expect(refused).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    await expect(refused).rejects.toMatchObject({ code: "42501", message: NOT_AVAILABLE })
+    expect(recorded).toEqual([{ args: [OTHER_ORG], kind: "query", name: "alert_viewer_user", readOnly: true }])
   })
 
   it("refuses an email on the input, and a person row that carries one, before minting", async () => {
@@ -406,25 +542,39 @@ describe("unsubscribe", () => {
     expect(tampered).toEqual({ outcome: "invalid" })
     expect(expired).toEqual({ outcome: "expired" })
     expect(ran).toHaveLength(1)
+    expect(ran[0]?.text).toBe(ALERT_UNSUBSCRIBE_STATEMENT)
     expect(ran[0]?.text).not.toContain("current_user_id()")
     expect(ran[0]?.text).not.toMatch(/email/i)
     expect(ran[0]?.values).toEqual([STORE_USER, ORG, "targeted_invitation", "email"])
     expect(recorded).toEqual([])
   })
+
+  it("answers a store failure with the fixed sentence only", async () => {
+    queries.alert_viewer_user = [{ id: STORE_USER }]
+    const { token } = await createAlertUnsubscribeToken(context, viewer, { category: "job_alert", channel: "email", enabled: true }, SECRET, NOW)
+    const failed = unsubscribeAlert(token, SECRET, NOW, async () => {
+      throw postgresError(`permission denied for table notification_preferences (${EMAIL})`, "42501")
+    })
+
+    await expect(failed).rejects.toThrow()
+    await expect(failed).rejects.not.toThrow(EMAIL)
+    await expect(failed).rejects.not.toThrow("notification_preferences")
+  })
 })
 
-describe("the port stays refused until the catalogues name these statements", () => {
-  it("is not supported yet, and a port call reaches no store", async () => {
-    expect(alertsCatalogueReady()).toBe(false)
-    expect(normalizedAlerts.supported).toBe(false)
+describe("the alerts group is on (#316)", () => {
+  it("is supported, and the live adapter runs its methods through the catalogues", async () => {
+    expect(normalizedAlerts.supported).toBe(true)
 
     const port = createNormalizedMarketplaceV2({ db: fakeDb(), now: () => NOW, principal: principal as never })
+    calls.list_saved_jobs = [openJob()]
     recorded = []
-    principal.mockClear()
 
-    await expect(port.listSavedJobs(viewer)).rejects.toBeInstanceOf(MarketplaceFeatureUnavailableError)
-    await expect(port.saveJob(viewer, JOB)).rejects.toThrow("Saving a job is not available yet")
-    expect(recorded).toEqual([])
-    expect(principal).not.toHaveBeenCalled()
+    expect(port.supports.alerts).toBe(true)
+    await expect(port.listSavedJobs(viewer)).resolves.toMatchObject([{ jobId: JOB }])
+    await port.saveJob(viewer, JOB)
+
+    expect(recorded.map((entry) => [entry.kind, entry.name])).toEqual([["call", "list_saved_jobs"], ["query", "alert_save_job"]])
+    expect(MARKETPLACE_V2_FEATURES).toContain("alerts")
   })
 })
