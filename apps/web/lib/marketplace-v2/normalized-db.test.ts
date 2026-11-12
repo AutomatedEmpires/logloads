@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}))
 
 import {
   createPostgresIdentitySync,
+  createPostgresMarketplaceDb,
   credentialProblems,
   identitySyncCredentialProblems,
   FILE_LISTING_REPORT,
@@ -25,6 +26,7 @@ import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, Marketpl
  * - `anonymous`: granted to `anon`; public discovery, public-safe fields only.
  * - `person`: granted to `authenticated`; the function checks the caller's own membership, role, seat or verified email.
  * - `staff`: granted to `authenticated`; the function checks `is_platform_admin` and writes the audit log.
+ * - `signedOut`: granted to `anon` and to no one else; the function's own token check is the whole access rule.
  */
 const REVIEWED_FUNCTIONS = {
   anonymous: ["get_marketplace_job", "list_marketplace_jobs"],
@@ -67,7 +69,8 @@ const REVIEWED_FUNCTIONS = {
     "admin_read_landing_private",
     "admin_release_job_moderation_hold",
     "admin_set_org_verification"
-  ]
+  ],
+  signedOut: ["unsubscribe_with_token"]
 } as const
 
 /**
@@ -87,6 +90,9 @@ const NEVER_CATALOGUED = [
   "enqueue_notification",
   "enqueue_team_invitation_email",
   "expire_stale_invitation_reservations",
+  "hmac_sha256",
+  "issue_unsubscribe_token",
+  "job_confirmation_current",
   "open_subscription_cycle",
   "record_email_provider_event",
   "replay_deferred_billing_event",
@@ -232,16 +238,27 @@ describe("marketplaceCallStatement", () => {
 
   it("catalogues exactly the reviewed functions: an unreviewed name fails here (#269)", () => {
     const names = Object.keys(MARKETPLACE_FUNCTIONS).sort()
-    const reviewed = [...REVIEWED_FUNCTIONS.anonymous, ...REVIEWED_FUNCTIONS.person, ...REVIEWED_FUNCTIONS.staff]
+    const reviewed = [...REVIEWED_FUNCTIONS.anonymous, ...REVIEWED_FUNCTIONS.person, ...REVIEWED_FUNCTIONS.staff, ...REVIEWED_FUNCTIONS.signedOut]
 
     expect(new Set(reviewed).size).toBe(reviewed.length)
     expect(names).toEqual([...reviewed].sort())
   })
 
-  it("opens only public discovery to an anonymous session", () => {
+  it("opens only public discovery and the signed-out unsubscribe link to an anonymous session", () => {
     const anonymous = Object.entries(MARKETPLACE_FUNCTIONS).filter(([, spec]) => spec.anonymous).map(([name]) => name).sort()
 
-    expect(anonymous).toEqual([...REVIEWED_FUNCTIONS.anonymous].sort())
+    expect(anonymous).toEqual([...REVIEWED_FUNCTIONS.anonymous, ...REVIEWED_FUNCTIONS.signedOut].sort())
+  })
+
+  it("withholds only the signed-out unsubscribe link from a signed-in session; it takes the token and returns nothing (#294)", () => {
+    const signedOutOnly = Object.entries(MARKETPLACE_FUNCTIONS)
+      .filter(([, spec]) => "anonymousOnly" in spec && spec.anonymousOnly)
+      .map(([name]) => name)
+
+    expect(signedOutOnly).toEqual([...REVIEWED_FUNCTIONS.signedOut])
+    expect(MARKETPLACE_FUNCTIONS.unsubscribe_with_token).toEqual({ anonymous: true, anonymousOnly: true, args: { p_token: "text" }, returns: "void" })
+    expect(marketplaceCallStatement("unsubscribe_with_token", { p_token: "abc.def" }))
+      .toEqual({ text: "select 1 as done from marketplace.unsubscribe_with_token(p_token => $1::text) as r", values: ["abc.def"] })
   })
 
   it("keeps staff functions apart: every admin_ function is reviewed as staff-only, takes a reason and is never anonymous", () => {
@@ -490,6 +507,66 @@ describe("createPostgresIdentitySync (#213)", () => {
     const { sql } = fakeSql({}, null)
 
     await expect(createPostgresIdentitySync({ sql }).link(identity)).rejects.toBeInstanceOf(MarketplaceStoreError)
+  })
+})
+
+describe("createPostgresMarketplaceDb: the signed-out unsubscribe link (#294)", () => {
+  function fakeSql() {
+    const modes: string[] = []
+    const statements: Array<{ text: string; values: unknown[] }> = []
+    const facts: CredentialFacts = {
+      bypass_rls: false,
+      can_become_anon: true,
+      can_become_authenticated: true,
+      create_role: false,
+      inherits: false,
+      other_memberships: [],
+      owns_marketplace: false,
+      owns_marketplace_objects: false,
+      privileged_memberships: [],
+      replication: false,
+      service_role_member: false,
+      superuser: false
+    }
+    const unsafe = async (text: string, values: unknown[] = []) => {
+      statements.push({ text, values })
+
+      return text.includes("from pg_roles r") ? [{ row: facts }] : []
+    }
+    const sql = {
+      begin: async (mode: string, work: (tx: unknown) => Promise<unknown>) => {
+        modes.push(mode)
+
+        return work({ unsafe })
+      },
+      unsafe
+    }
+
+    return { modes, sql: sql as never, statements }
+  }
+
+  it("runs as anon in a read-write transaction only when asked; public discovery stays read-only", async () => {
+    const { modes, sql, statements } = fakeSql()
+    const db = createPostgresMarketplaceDb({ sql })
+
+    await db.asAnon((calls) => calls.call("unsubscribe_with_token", { p_token: "abc.def" }), { readOnly: false })
+    await db.asAnon((calls) => calls.call("list_marketplace_jobs", {}))
+
+    expect(modes).toEqual(["read write", "read only"])
+    expect(statements[1]?.values).toEqual(["anon", JSON.stringify({ role: "anon" })])
+    expect(statements[2]).toEqual({ text: "select 1 as done from marketplace.unsubscribe_with_token(p_token => $1::text) as r", values: ["abc.def"] })
+  })
+
+  it("never runs the link as a signed-in person, and never runs a person's function signed out", async () => {
+    const { sql, statements } = fakeSql()
+    const db = createPostgresMarketplaceDb({ sql })
+
+    await expect(db.asUser(PRINCIPAL, (calls) => calls.call("unsubscribe_with_token", { p_token: "abc.def" }), { readOnly: false }))
+      .rejects.toBeInstanceOf(MarketplaceStoreError)
+    await expect(db.asAnon((calls) => calls.call("mark_notifications_read", { p_notification_ids: [] }), { readOnly: false }))
+      .rejects.toBeInstanceOf(MarketplaceStoreError)
+    // Both are caller mistakes, refused before any statement names the function.
+    expect(statements.some((statement) => /unsubscribe_with_token|mark_notifications_read/.test(statement.text))).toBe(false)
   })
 })
 
