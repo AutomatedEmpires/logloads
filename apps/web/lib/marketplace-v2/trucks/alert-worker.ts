@@ -13,8 +13,9 @@ import { planTruckAlerts, type TruckAlertCandidate, type TruckAlertSearch } from
  * (`enqueue_truck_alerts`, requested in #251's catalogue entry). In the app and by email only; never SMS.
  *
  * Idempotent: a run repeated, or retried after a failure, queues nothing twice, because every notice's dedupe key is
- * the same (`truck_alert:{search}:{report}:{channel}`) and the outbox keeps it unique. One search failing does not
- * stop the others; it is counted, and the next run tries it again.
+ * the same (`truck_alert:{search}:{report}:{channel}`) and the outbox keeps it unique. Keys already queued are left out
+ * before the 50-report cap, so a search with more matches than one batch gets the rest on the next run. One search
+ * failing does not stop the others; it is counted, and the next run tries it again.
  *
  * Not wired: the service-role functions it needs are not in stage 01–29 (see #251).
  */
@@ -30,6 +31,11 @@ export interface TruckAlertWorkerStore {
   alertingTruckSearches(): Promise<TruckAlertWorkerSearch[]>
   /** Open reports of listed, active businesses reported at or after `since`. */
   truckAlertCandidates(since: string): Promise<TruckAlertCandidate[]>
+  /**
+   * The dedupe keys already in the outbox for one search (recent ones are enough: older reports are stale). Left out
+   * before the batch cap, so a search with more matches than one batch moves on to the next ones.
+   */
+  queuedTruckAlertKeys(savedSearchId: string): Promise<string[]>
   /** Queue the alerts for one search's matching reports (1–50). Returns how many notices were written. */
   enqueueTruckAlerts(savedSearchId: string, reportIds: readonly string[]): Promise<{ queued: number }>
 }
@@ -55,11 +61,12 @@ export async function runTruckAlertMatching(store: TruckAlertWorkerStore, now: D
   const result: TruckAlertRun = { failed: 0, handedOver: 0, queued: 0, searches: searches.length }
 
   for (const search of searches) {
-    const plan = planTruckAlerts(search, candidates, search.consents, now)
-
-    if (plan.reportIds.length === 0) continue
-
     try {
+      const sent = new Set(await store.queuedTruckAlertKeys(search.id))
+      const plan = planTruckAlerts(search, candidates, search.consents, now, sent)
+
+      if (plan.reportIds.length === 0) continue
+
       const { queued } = await store.enqueueTruckAlerts(search.id, plan.reportIds)
 
       result.handedOver += 1

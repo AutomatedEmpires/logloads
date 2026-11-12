@@ -21,7 +21,7 @@ import {
   type MarketplaceTruckAlertPayload
 } from "@logloads/contracts"
 
-import { truckReportIsCurrent } from "./directory"
+import { isTruckEquipmentCode, truckReportIsCurrent } from "./directory"
 
 export interface TruckSearchWrite {
   alertsEnabled: boolean
@@ -66,7 +66,7 @@ export interface TruckAlertCandidate {
   identityReviewed: boolean
   /** The truck type the report is for. */
   equipmentCode: string
-  /** Every code the business lists (trucks, trailers, extras), to match a trailer or an extra. */
+  /** Every code the business lists (trucks, trailers, extras). Only a trailer or an extra is matched against it. */
   listedEquipment: string[]
   availableCount: number
   availableFrom: string
@@ -95,9 +95,10 @@ export function truckAlertMatches(search: TruckAlertSearch, candidate: TruckAler
   const { criteria } = search
 
   if (criteria.equipment.length > 0) {
-    const listed = new Set([candidate.equipmentCode, ...candidate.listedEquipment])
+    // A truck type matches only the type this report says is available; a trailer or an extra, what the business lists.
+    const fits = (code: string) => (isTruckEquipmentCode(code) ? code === candidate.equipmentCode : candidate.listedEquipment.includes(code))
 
-    if (!criteria.equipment.some((code) => listed.has(code))) return false
+    if (!criteria.equipment.some(fits)) return false
   }
 
   if (criteria.identityReviewedOnly && !candidate.identityReviewed) return false

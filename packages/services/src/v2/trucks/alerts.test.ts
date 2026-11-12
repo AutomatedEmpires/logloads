@@ -92,10 +92,18 @@ describe("alert matching", () => {
     expect(truckAlertMatches(search(), candidate({ availableFrom: "2026-11-01", availableUntil: "2026-11-09" }), NOW)).toBe(false)
   })
 
-  it("matches equipment by the truck type reported or any equipment the business lists", () => {
+  it("matches a truck type only by the type the report says is available, and a trailer or extra by what is listed", () => {
     expect(truckAlertMatches(search({ criteria: criteria({ equipment: ["log_truck"] }) }), candidate(), NOW)).toBe(true)
     expect(truckAlertMatches(search({ criteria: criteria({ equipment: ["pole_trailer"] }) }), candidate(), NOW)).toBe(true)
     expect(truckAlertMatches(search({ criteria: criteria({ equipment: ["chip_truck", "self_loader"] }) }), candidate(), NOW)).toBe(false)
+
+    // The business lists log and chip trucks, and reports only chip trucks available: a log-truck search is not told.
+    const chip = candidate({ equipmentCode: "chip_truck", listedEquipment: ["log_truck", "chip_truck", "chip_van"] })
+
+    expect(truckAlertMatches(search({ criteria: criteria({ equipment: ["log_truck"] }) }), chip, NOW)).toBe(false)
+    expect(truckAlertMatches(search({ criteria: criteria({ equipment: ["chip_truck"] }) }), chip, NOW)).toBe(true)
+    expect(truckAlertMatches(search({ criteria: criteria({ equipment: ["chip_van"] }) }), chip, NOW)).toBe(true)
+    expect(truckAlertMatches(search({ criteria: criteria({ equipment: ["pole_trailer"] }) }), chip, NOW)).toBe(false)
   })
 
   it("matches distance on the public grid and the review filter only when asked", () => {
@@ -174,6 +182,17 @@ describe("planning alerts", () => {
 
     expect(plan.reportIds).toHaveLength(TRUCK_ALERT_BATCH_LIMIT)
     expect(new Set(plan.reportIds).size).toBe(TRUCK_ALERT_BATCH_LIMIT)
+  })
+
+  it("leaves queued reports out before the cap, so a report past the first batch is handed over next", () => {
+    const many = Array.from({ length: TRUCK_ALERT_BATCH_LIMIT + 1 }, (_, index) =>
+      candidate({ reportId: `66666666-eeee-4eee-8eee-${String(index).padStart(12, "0")}`, reportedAt: hoursAgo(10 - index / 100) }))
+    const first = planTruckAlerts(search(), many, ON, NOW)
+    const queued = new Set(first.notices.map((notice) => notice.dedupeKey))
+    const second = planTruckAlerts(search(), many, ON, NOW, queued)
+
+    expect(first.reportIds).toHaveLength(TRUCK_ALERT_BATCH_LIMIT)
+    expect(second.reportIds).toEqual([many[TRUCK_ALERT_BATCH_LIMIT]?.reportId])
   })
 
   it("orders the oldest report first, so a capped hand-over leaves the newest for the next run", () => {

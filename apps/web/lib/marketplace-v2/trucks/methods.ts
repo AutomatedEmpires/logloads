@@ -6,8 +6,9 @@
  *
  * Find Trucks (legal review §9.3 item 4): one read-write transaction checks the seat (`truck.search`, from
  * `get_viewer_marketplace_access`), the active business's identity review (`truck_viewer_identity`) and its plan
- * (`get_org_entitlement_state`, limits from `LANDING_PLANS`), reads the listed businesses (`truck_directory`), applies
- * the directory rules (packages/services/src/v2/trucks), and then counts the page against the seat's daily limits
+ * (`get_org_entitlement_state`, limits from `LANDING_PLANS`), reads one filtered, sorted page of listed businesses
+ * (`truck_directory`), applies the directory rules to it again (packages/services/src/v2/trucks), and then counts the
+ * page against the seat's daily limits
  * (`record_truck_directory_page`), which answers how many of its cards may be shown. A refusal anywhere leaves nothing
  * counted, because the transaction rolls back.
  *
@@ -18,6 +19,7 @@
 
 import {
   MARKETPLACE_MEMBER_ROLES,
+  TRUCK_DIRECTORY_PAGE_SIZE,
   TRUCK_DIRECTORY_REFUSALS,
   marketplaceFeatureCapabilities,
   marketplaceSavedTruckSearchInputSchema,
@@ -38,7 +40,7 @@ import { viewerAccessRow } from "../normalized-mapping"
 import type { MarketplaceQueryValue } from "../normalized-queries"
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceTrucksPort, type MarketplaceV2Viewer } from "../port"
 import { changedFromRow, directoryGrantFromRow, idFromRow, savedTruckSearchFromRow, truckEntryFromRow, viewerIdentityFromRow } from "./mapping"
-import { TRUCK_DIRECTORY_QUERY_LIMIT, truckStatement, type TruckStatementName } from "./statements"
+import { truckStatement, type TruckStatementName } from "./statements"
 
 const NOT_FOUND_SEARCH = "That saved search was not found."
 /** The store's own wording for a refused person (`translateStoreError`, 42501). It does not say why. */
@@ -130,7 +132,18 @@ export function truckMethods(context: NormalizedFeatureContext): MarketplaceTruc
       return run(context, viewer, false, async (calls) => {
         await directoryAccess(calls, viewer)
 
-        const rows = await statement(calls, "truck_directory", [viewer.organizationId, query.equipment, TRUCK_DIRECTORY_QUERY_LIMIT])
+        const rows = await statement(calls, "truck_directory", [
+          viewer.organizationId,
+          query.equipment,
+          query.query,
+          query.availableOnly,
+          query.identityReviewedOnly,
+          query.near?.lat ?? null,
+          query.near?.lng ?? null,
+          query.radiusMiles,
+          query.sort,
+          TRUCK_DIRECTORY_PAGE_SIZE
+        ])
         const cards = truckDirectoryPage(rows.map(truckEntryFromRow), query, context.now())
         // Every page counts, an empty one too, so narrow searches cannot probe the directory without limit.
         const [grantRow] = await calls.call("record_truck_directory_page" as never, { p_org_id: viewer.organizationId, p_views: cards.length } as never)

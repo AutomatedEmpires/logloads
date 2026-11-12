@@ -36,6 +36,11 @@ const DAY_MS = 86_400_000
 
 const TRUCK_CODES: ReadonlySet<string> = new Set(MARKETPLACE_EQUIPMENT_TYPES.filter((type) => type.category === "truck").map((type) => type.code))
 
+/** A truck type. Availability is reported per truck type, so a truck code is matched against reports, not inventory. */
+export function isTruckEquipmentCode(code: string): boolean {
+  return TRUCK_CODES.has(code)
+}
+
 /** One open self-report, as the directory reads it. The store shows only open reports that have not ended. */
 export interface TruckDirectoryReport {
   id: string

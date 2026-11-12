@@ -23,7 +23,7 @@ import {
   trucksCatalogueReady
 } from "./index"
 import { savedTruckSearchFromRow, truckEntryFromRow } from "./mapping"
-import { TRUCK_DIRECTORY_QUERY_LIMIT, TRUCK_FUNCTION_NAMES, TRUCK_STATEMENTS, TRUCK_STATEMENT_NAMES, truckStatement, type TruckStatementName } from "./statements"
+import { TRUCK_FUNCTION_NAMES, TRUCK_STATEMENTS, TRUCK_STATEMENT_NAMES, truckStatement, type TruckStatementName } from "./statements"
 import type { NormalizedFeatureContext } from "../normalized-adapter"
 import { MARKETPLACE_FUNCTIONS, type MarketplaceCalls } from "../normalized-db"
 import { MARKETPLACE_QUERIES } from "../normalized-queries"
@@ -232,10 +232,28 @@ describe("the SQL (privacy and the legal rules)", () => {
     const text = TRUCK_STATEMENTS.truck_directory.text
     const order = text.slice(text.lastIndexOf("order by"))
 
-    expect(text).toContain("round(extensions.st_y(h.service_center::extensions.geometry)::numeric, 1) as service_lat")
-    expect(text).toContain("round(extensions.st_x(h.service_center::extensions.geometry)::numeric, 1) as service_lng")
+    expect(text).toContain("round(extensions.st_y(l.service_center::extensions.geometry)::numeric, 1) as service_lat")
+    expect(text).toContain("round(extensions.st_x(l.service_center::extensions.geometry)::numeric, 1) as service_lng")
     expect(order).not.toMatch(/verif|review/)
-    expect(text).toContain(`least(greatest($3::text::integer, 1), ${TRUCK_DIRECTORY_QUERY_LIMIT})`)
+    expect(text).toContain("extensions.st_makepoint(round($7::text::numeric, 1)::double precision,")
+    expect(text).toContain("round($6::text::numeric, 1)::double precision), 4326)::extensions.geography")
+  })
+
+  it("applies every filter and the named sort before the page limit, so no business is cut before it could be found", () => {
+    const text = TRUCK_STATEMENTS.truck_directory.text
+    const limit = text.lastIndexOf("limit ")
+    const order = text.slice(text.lastIndexOf("order by"), limit)
+
+    expect(text).toContain("position(lower($3::text) in lower(o.display_name)) > 0")
+    expect(text).toContain("position(lower($3::text) in lower(coalesce(h.base_area_label, ''))) > 0")
+    expect(text).toContain("c.reported_at > now() - interval '7 days'")
+    expect(text).toContain("not coalesce($5::text::boolean, false) or o.verification_status = 'verified'")
+    expect(text).toContain("extensions.st_dwithin(h.service_center, origin.point, $8::text::integer * 1609.344 + 8000)")
+    expect(order).toContain("case when $9::text = 'distance' then l.miles end asc nulls last")
+    expect(order).toContain("when l.has_current then 0 when l.latest_open is not null then 1 else 2")
+    expect(order).toContain("lower(l.display_name), l.org_id")
+    expect(text.slice(limit)).toContain(`least(greatest($10::text::integer, 1), ${TRUCK_DIRECTORY_PAGE_SIZE})`)
+    expect(text).not.toMatch(/\blike\b|ilike/i)
   })
 
   it("keeps saved searches to the person's own truck searches, and writes only with availability alerts", () => {
@@ -252,9 +270,11 @@ describe("the SQL (privacy and the legal rules)", () => {
   })
 
   it("binds values by type and count", () => {
-    expect(truckStatement("truck_directory", [LANDING, null, 200]).values).toEqual([LANDING, null, "200"])
+    expect(truckStatement("truck_directory", [LANDING, null, "Sweet", true, false, 44.4, -122.7, 60, "distance", 25]).values)
+      .toEqual([LANDING, null, "Sweet", "true", "false", "44.4", "-122.7", "60", "distance", "25"])
     expect(() => truckStatement("truck_directory", [LANDING, null])).toThrow(TypeError)
-    expect(() => truckStatement("truck_directory", ["not-a-uuid", null, 200])).toThrow(TypeError)
+    expect(() => truckStatement("truck_directory", ["not-a-uuid", null, null, false, false, null, null, null, "name", 25])).toThrow(TypeError)
+    expect(() => truckStatement("truck_directory", [LANDING, null, null, false, false, Number.NaN, null, null, "name", 25])).toThrow(TypeError)
     expect(() => truckStatement("truck_insert_search", [LANDING, "x", "{}", "true"])).toThrow(TypeError)
   })
 })
@@ -313,7 +333,8 @@ describe("searchTrucks", () => {
     expect(cards[0]?.approximatePoint).toEqual({ lat: 44.4, lng: -122.7 })
     expect(JSON.stringify(cards)).not.toMatch(/phone|email|@|44\.396|122\.735/)
     expect(recorded.every((entry) => entry.readOnly === false)).toBe(true)
-    expect(recorded.find((entry) => entry.name === "truck_directory")?.args).toEqual([LANDING, null, String(TRUCK_DIRECTORY_QUERY_LIMIT)])
+    expect(recorded.find((entry) => entry.name === "truck_directory")?.args)
+      .toEqual([LANDING, null, null, "false", "false", null, null, null, "last_confirmed", String(TRUCK_DIRECTORY_PAGE_SIZE)])
   })
 
   it("refuses a landing whose identity was not reviewed, before reading the directory", async () => {
@@ -426,9 +447,18 @@ describe("searchTrucks", () => {
     expect((await truckMethods(context).searchTrucks(viewer, { identityReviewedOnly: true })).map((card) => card.businessName)).toEqual(["Cedar Haul"])
   })
 
-  it("passes the equipment filter to the store and refuses bad filters before any read", async () => {
-    await truckMethods(context).searchTrucks(viewer, { equipment: "pole_trailer" })
-    expect(recorded.find((entry) => entry.name === "truck_directory")?.args).toEqual([LANDING, "pole_trailer", String(TRUCK_DIRECTORY_QUERY_LIMIT)])
+  it("passes every filter and the sort to the store, the place on the grid, and refuses bad filters before any read", async () => {
+    await truckMethods(context).searchTrucks(viewer, {
+      availableOnly: true,
+      equipment: "pole_trailer",
+      identityReviewedOnly: true,
+      near: { lat: 44.39612, lng: -122.73551 },
+      query: " Sweet ",
+      radiusMiles: 60,
+      sort: "distance"
+    })
+    expect(recorded.find((entry) => entry.name === "truck_directory")?.args)
+      .toEqual([LANDING, "pole_trailer", "Sweet", "true", "true", "44.4", "-122.7", "60", "distance", String(TRUCK_DIRECTORY_PAGE_SIZE)])
 
     recorded = []
     await expect(truckMethods(context).searchTrucks(viewer, { sort: "best_match" } as never)).rejects.toMatchObject({ code: "22023" })
@@ -546,6 +576,7 @@ describe("availability alert matching (the worker)", () => {
     const since: string[] = []
     const store: TruckAlertWorkerStore = {
       alertingTruckSearches: async () => searches,
+      queuedTruckAlertKeys: async (searchId) => [...outbox].filter((key) => key.startsWith(`truck_alert:${searchId}:`)),
       truckAlertCandidates: async (from) => { since.push(from); return candidates },
       async enqueueTruckAlerts(searchId, reportIds) {
         handedOver.push({ reportIds, searchId })
@@ -571,12 +602,26 @@ describe("availability alert matching (the worker)", () => {
     const fake = fakeWorkerStore([workerSearch()], [candidate()])
 
     await expect(runTruckAlertMatching(fake.store, NOW)).resolves.toEqual({ failed: 0, handedOver: 1, queued: 2, searches: 1 })
-    await expect(runTruckAlertMatching(fake.store, NOW)).resolves.toEqual({ failed: 0, handedOver: 1, queued: 0, searches: 1 })
+    await expect(runTruckAlertMatching(fake.store, NOW)).resolves.toEqual({ failed: 0, handedOver: 0, queued: 0, searches: 1 })
+
+    // A retry that does not see the outbox (its read failed over) still queues nothing: the store's key is unique.
+    await expect(fake.store.enqueueTruckAlerts(SEARCH, [REPORT])).resolves.toEqual({ queued: 0 })
     expect([...fake.outbox].sort()).toEqual([
       truckAlertDedupeKey(SEARCH, REPORT, "email"),
       truckAlertDedupeKey(SEARCH, REPORT, "in_app")
     ])
     expect(fake.since[0]).toBe(hoursAgo(24 * 7))
+  })
+
+  it("hands a report past the first batch over on the next run, instead of the same batch again", async () => {
+    const many = Array.from({ length: 51 }, (_, index) =>
+      candidate({ reportId: `77777777-ffff-4fff-8fff-${String(index).padStart(12, "0")}`, reportedAt: hoursAgo(10 - index / 100) }))
+    const fake = fakeWorkerStore([workerSearch()], many)
+
+    await expect(runTruckAlertMatching(fake.store, NOW)).resolves.toMatchObject({ handedOver: 1, queued: 100 })
+    await expect(runTruckAlertMatching(fake.store, NOW)).resolves.toMatchObject({ handedOver: 1, queued: 2 })
+    expect(fake.handedOver[1]?.reportIds).toEqual([many[50]?.reportId])
+    await expect(runTruckAlertMatching(fake.store, NOW)).resolves.toMatchObject({ handedOver: 0, queued: 0 })
   })
 
   it("never hands over a hidden business or the landing's own, and never uses SMS", async () => {
