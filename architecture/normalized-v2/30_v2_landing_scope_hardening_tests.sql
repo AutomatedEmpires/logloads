@@ -343,8 +343,8 @@ begin
   -- Ledger
   -- -------------------------------------------------------------------------
   perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations)
-                       in ('06,11,12,16,18,23,26,29', '06,11,12,16,18,23,26,29,31'),
-    'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29 in order (and 31 after them, when stage 32 runs this suite again)');
+                       in ('06,11,12,16,18,23,26,29', '06,11,12,16,18,23,26,29,31', '06,11,12,16,18,23,26,29,31,33'),
+    'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29 in order (and 31 and 33 after them, when stages 32 and 34 run this suite again)');
 
   raise notice 'ALL LANDING-SCOPE HARDENING (29-P2, 29-P3) TESTS PASSED.';
 end

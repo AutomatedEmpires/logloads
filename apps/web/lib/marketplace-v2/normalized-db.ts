@@ -44,8 +44,23 @@ export interface MarketplacePrincipal {
  * - `interval`: a whole number of seconds, minutes, hours or days as text (`"7 days"`, `"1 hour"`). No months or years
  *   (their length varies), no signs, no fractions and no compound values.
  * - `uuid[]`: an array of canonical UUID strings; an empty array is an empty `uuid[]`.
+ * - `timestamptz`: an ISO 8601 instant with an offset or `Z`, as text, exactly as a row returned it. A keyset cursor
+ *   passes a row's own timestamp back, so its microseconds must survive; a JavaScript `Date` would drop them.
  */
-type ArgumentType = "uuid" | "text" | "bpchar" | "integer" | "bigint" | "numeric" | "boolean" | "date" | "interval" | "jsonb" | "text[]" | "uuid[]"
+type ArgumentType =
+  | "uuid"
+  | "text"
+  | "bpchar"
+  | "integer"
+  | "bigint"
+  | "numeric"
+  | "boolean"
+  | "date"
+  | "interval"
+  | "jsonb"
+  | "text[]"
+  | "uuid[]"
+  | "timestamptz"
 
 interface FunctionSpec {
   args: Readonly<Record<string, ArgumentType>>
@@ -62,7 +77,7 @@ interface FunctionSpec {
 
 /**
  * The closed list of database functions the adapter may call. Names, argument names and argument types match the SQL
- * exactly (architecture/normalized-v2, stages 01-31).
+ * exactly (architecture/normalized-v2, stages 01-33).
  *
  * Every function here is SECURITY DEFINER with a pinned `search_path`, is granted EXECUTE to `authenticated` (and to
  * `anon` only where `anonymous` is true) and never to `service_role`; `normalized-adapter.contract.test.ts` proves
@@ -93,7 +108,61 @@ export const MARKETPLACE_FUNCTIONS = {
   get_viewer_marketplace_access: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
   list_authoring_landings: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
   list_hauler_equipment_options: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
-  list_marketplace_interests: { anonymous: false, args: { p_job_id: "uuid", p_org_id: "uuid", p_side: "text" }, returns: "rows" },
+  // Since 33 (#280) it also pages: `p_limit` (1 to 200) with the keyset cursor `p_after_at` and `p_after_id` (the last
+  // row's `updated_at` on the hauler side, `created_at` on the landing side, and its id), `p_job_ids`, one inquiry
+  // (`p_interest_id`), one tab (`p_queue`: active/replied/closed for a hauler, new/responded/closed for a landing), and
+  // `p_with_replies: false` to leave the messages out. Same access rule as before: `interest.reply` on the hauling
+  // business or `inquiry.respond` on the landing business, and the landing scope (26-B).
+  list_marketplace_interests: {
+    anonymous: false,
+    args: {
+      p_after_at: "timestamptz",
+      p_after_id: "uuid",
+      p_interest_id: "uuid",
+      p_job_id: "uuid",
+      p_job_ids: "uuid[]",
+      p_limit: "integer",
+      p_org_id: "uuid",
+      p_queue: "text",
+      p_side: "text",
+      p_with_replies: "boolean"
+    },
+    returns: "rows"
+  },
+  // Authenticated (33, #280). The list's access rule and landing scope. Returns the three tab counts of one side.
+  count_marketplace_interests: { anonymous: false, args: { p_org_id: "uuid", p_side: "text" }, returns: "rows" },
+  // Authenticated (33, #280). One inquiry, to a member of its hauling business who may act on inquiries or to its
+  // landing desk within the landing scope; no row for anyone else or for an unknown id (never an error that tells
+  // them apart). The row is the list's row.
+  get_marketplace_interest: { anonymous: false, args: { p_interest_id: "uuid" }, returns: "rows" },
+  // Anonymous (33, #280). Find Work as pages: the visibility rule of `list_marketplace_jobs` (`can_read_job_posting`,
+  // the day-14 rule), public-safe fields only, plus `total_count` and `page_cursor`. Filters: text, one equipment
+  // code, pay basis, poster, a typed place as `p_lat`/`p_lng` (snapped to the 0.10 degree grid in SQL) with
+  // `p_radius_miles`, `p_product` or `p_product_excluded` (every stated product outside that list: "Other"),
+  // `p_starts_by`, and `p_equipment_setups` (an array of arrays of equipment codes). `p_sort` is newest, nearest or
+  // pay, the contract's order with the job id last. `p_after` is the `page_cursor` of the previous page's last row;
+  // a cursor of another sort is refused (22023). `sponsored` is always false on pages.
+  list_marketplace_jobs_page: {
+    anonymous: true,
+    args: {
+      p_accepting_only: "boolean",
+      p_after: "jsonb",
+      p_equipment: "text",
+      p_equipment_setups: "jsonb",
+      p_lat: "numeric",
+      p_limit: "integer",
+      p_lng: "numeric",
+      p_org_id: "uuid",
+      p_pay_unit: "text",
+      p_product: "text",
+      p_product_excluded: "text[]",
+      p_query: "text",
+      p_radius_miles: "integer",
+      p_sort: "text",
+      p_starts_by: "date"
+    },
+    returns: "rows"
+  },
   list_marketplace_jobs: {
     anonymous: true,
     args: { p_accepting_only: "boolean", p_equipment: "text", p_limit: "integer", p_org_id: "uuid", p_pay_unit: "text", p_query: "text" },
@@ -194,6 +263,10 @@ export const MARKETPLACE_FUNCTIONS = {
   reactivate_job_posting: { anonymous: false, args: { p_attest_available: "boolean", p_job_id: "uuid" }, returns: "value" },
 
   // --- team (#249) ---
+  // Authenticated (33). `has_org_role(membership's org, owner)`; another business's membership and an unknown id both
+  // read "Membership not found". Ends the member's access at once, clears their landing limits, never removes the last
+  // active owner (23514), changes nothing for a member already removed. Audited.
+  remove_team_member: { anonymous: false, args: { p_membership_id: "uuid" }, returns: "void" },
   // Authenticated. `has_org_role(org, owner)`: owners only. Returns invited email addresses, to the owner alone.
   list_team_invitations: { anonymous: false, args: { p_org_id: "uuid" }, returns: "rows" },
   // Authenticated. `has_org_role(org, owner)`. Never invites an owner; landings must belong to the business; the seat
@@ -229,9 +302,8 @@ export const MARKETPLACE_FUNCTIONS = {
   decline_team_invitation: { anonymous: false, args: { p_invitation_id: "uuid" }, returns: "void" },
 
   // --- invites (#250) ---
-  // Authenticated. `has_org_role(job's org, owner/manager/staff, seat)`. Returns a count only, never who is eligible.
-  // FINDING (#269): no `job_scope_allows` check, so a member limited to some landings can count for a job at another
-  // landing of the same business. Leave `p_dedupe_window` unset so the plan's window applies.
+  // Authenticated. `has_org_role(job's org, owner/manager/staff, seat)` and, since 29, `job_scope_allows` (the #269
+  // finding). Returns a count only, never who is eligible. Leave `p_dedupe_window` unset so the plan's window applies.
   count_eligible_invitation_recipients: {
     anonymous: false,
     args: { p_dedupe_window: "interval", p_job_id: "uuid", p_radius_miles: "integer" },
@@ -246,10 +318,16 @@ export const MARKETPLACE_FUNCTIONS = {
     args: { p_dedupe_window: "interval", p_job_id: "uuid", p_note: "text", p_recipient_org_id: "uuid" },
     returns: "value"
   },
-  // Authenticated. `has_org_role(recipient org, owner/manager/staff/driver)`; another business's invitation is refused.
-  // FINDING (#269): no check that the invitation was delivered, and no audit row; the adapter must answer only
-  // invitations it listed as delivered.
+  // Authenticated. `has_org_role(recipient org, owner/manager/staff/driver)`. Since 33 (the #269 findings, #250): only
+  // a delivered invitation; one that is not delivered, another business's and an unknown id all read "Invitation not
+  // found" (P0002). An answer is recorded once under the row lock: the same answer again and a later `viewed` change
+  // nothing, a different answer is refused (23514). Each recorded response is audited.
   respond_to_invitation: { anonymous: false, args: { p_invitation_id: "uuid", p_response: "text" }, returns: "void" },
+  // Authenticated (33, #250). `has_org_role(job's org, owner/manager/staff, seat)` and `job_scope_allows`, as the
+  // count. The businesses `eligible_invitation_recipients` allows, in name order with no ranking, at most 200. Public
+  // profile fields only (name, home base, active equipment by type, last availability report, verification): never a
+  // person, a phone, an email, a point or a landing's private details.
+  list_invitation_recipients: { anonymous: false, args: { p_job_id: "uuid", p_radius_miles: "integer" }, returns: "rows" },
 
   // --- alerts (#252) ---
   // Authenticated. Member of the business (any role); only the caller's own saved jobs in it. A job that is held or
@@ -271,15 +349,14 @@ export const MARKETPLACE_FUNCTIONS = {
 
   // --- boosts (#254) ---
   // Authenticated. `has_org_role(job's org, owner/manager/staff, seat)`. Returns counts only (the radius, opted-in
-  // public haulers, active availability reports). FINDING (#269): no `job_scope_allows` check, as for
-  // `count_eligible_invitation_recipients`.
+  // public haulers, active availability reports). Since 29 it also needs `job_scope_allows` (the #269 finding).
   estimate_boost_audience: { anonymous: false, args: { p_job_id: "uuid", p_product_code: "text" }, returns: "rows" },
 
   // --- admin (#255): LogLoads staff only. Granted to `authenticated`; each checks `is_platform_admin(roles)` against
   // `platform_admins` (not revoked; superadmin passes any role), never an organization role, needs a stated reason and
   // writes it to the audit log. A person who is not staff gets 42501.
-  // Roles: moderator or support. FINDING (#269): no check that the business exists; an unknown id changes nothing
-  // but still writes an audit row.
+  // Roles: moderator or support. Since 33 an unknown business is refused ("Organization not found", P0002) and not
+  // audited (the #269 finding).
   admin_set_org_verification: { anonymous: false, args: { p_org_id: "uuid", p_reason: "text", p_status: "text" }, returns: "void" },
   // Role: moderator. Pauses, closes or expires the job and places the hold in one change.
   admin_moderate_job_posting: { anonymous: false, args: { p_job_id: "uuid", p_reason: "text", p_status: "text" }, returns: "void" },
@@ -296,15 +373,28 @@ export const MARKETPLACE_FUNCTIONS = {
   admin_grant_founding_hauler_badge: { anonymous: false, args: { p_org_id: "uuid", p_reason: "text" }, returns: "value" },
   // Role: support. Reason of at least 10 characters; the audit row is written before the read. Returns the WHOLE
   // `landing_private_details` row (exact point, gate instructions, site contact): map only what the view shows.
-  // FINDING (#269): an unknown landing id still writes an audit row.
+  // Since 33 an unknown landing is refused ("Landing not found", P0002) and not audited (the #269 finding).
   admin_read_landing_private: { anonymous: false, args: { p_landing_id: "uuid", p_reason: "text" }, returns: "rows" },
   // Role: support. The audit row is written before the read. Returns the inquiry's messages, both sides.
-  admin_read_interest_thread: { anonymous: false, args: { p_interest_id: "uuid", p_reason: "text" }, returns: "rows" }
+  admin_read_interest_thread: { anonymous: false, args: { p_interest_id: "uuid", p_reason: "text" }, returns: "rows" },
+  // Role: moderator (33, #255). `p_status` is reviewing, actioned or dismissed; actioned and dismissed need a note of
+  // 5 to 1000 characters in `p_reason`, which becomes the report's resolution note. A resolved report keeps its
+  // outcome (23514); an unknown report is "Report not found" (P0002). Audited.
+  admin_resolve_report: { anonymous: false, args: { p_reason: "text", p_report_id: "uuid", p_status: "text" }, returns: "void" }
 } as const satisfies Record<string, FunctionSpec>
 
 export type MarketplaceFunctionName = keyof typeof MARKETPLACE_FUNCTIONS
 
-export type MarketplaceArgumentValue = string | number | boolean | null | undefined | readonly string[] | readonly object[]
+export type MarketplaceArgumentValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | readonly string[]
+  | readonly object[]
+  /** A `jsonb` object, such as a page cursor handed back as it was received. */
+  | Readonly<Record<string, unknown>>
 
 export type MarketplaceCallArguments<F extends MarketplaceFunctionName> = {
   [K in keyof (typeof MARKETPLACE_FUNCTIONS)[F]["args"]]?: MarketplaceArgumentValue
@@ -634,6 +724,9 @@ export function principalClaims(principal: MarketplacePrincipal, now = Date.now(
 
 const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/** An ISO 8601 instant with up to six fractional digits and an offset or Z, as `to_jsonb` prints a timestamptz. */
+const TIMESTAMPTZ_TEXT = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?)$/
+
 /** A whole number of seconds, minutes, hours or days: the only interval text the adapter sends. */
 const INTERVAL_TEXT = /^(?:0|[1-9]\d{0,5}) (?:second|minute|hour|day)s?$/
 
@@ -670,6 +763,9 @@ function serialize(value: MarketplaceArgumentValue, type: ArgumentType, name: st
     case "uuid[]":
       if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && UUID_TEXT.test(item))) break
       return JSON.stringify(value)
+    case "timestamptz":
+      if (typeof value !== "string" || !TIMESTAMPTZ_TEXT.test(value)) break
+      return value
   }
 
   throw new TypeError(`Argument ${name} must be a ${type}`)

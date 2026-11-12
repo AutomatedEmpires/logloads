@@ -29,18 +29,21 @@ import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, Marketpl
  * - `signedOut`: granted to `anon` and to no one else; the function's own token check is the whole access rule.
  */
 const REVIEWED_FUNCTIONS = {
-  anonymous: ["get_marketplace_job", "list_marketplace_jobs"],
+  anonymous: ["get_marketplace_job", "list_marketplace_jobs", "list_marketplace_jobs_page"],
   person: [
     "accept_team_invitation",
     "count_eligible_invitation_recipients",
+    "count_marketplace_interests",
     "create_organization",
     "decline_team_invitation",
     "estimate_boost_audience",
+    "get_marketplace_interest",
     "get_org_entitlement_state",
     "get_viewer_marketplace_access",
     "invite_team_member",
     "list_authoring_landings",
     "list_hauler_equipment_options",
+    "list_invitation_recipients",
     "list_marketplace_interests",
     "list_my_team_invitations",
     "list_saved_jobs",
@@ -50,6 +53,7 @@ const REVIEWED_FUNCTIONS = {
     "publish_job_posting",
     "reactivate_job_posting",
     "reconfirm_job_posting",
+    "remove_team_member",
     "resend_team_invitation",
     "reserve_targeted_invitation",
     "respond_to_interest",
@@ -68,6 +72,7 @@ const REVIEWED_FUNCTIONS = {
     "admin_read_interest_thread",
     "admin_read_landing_private",
     "admin_release_job_moderation_hold",
+    "admin_resolve_report",
     "admin_set_org_verification"
   ],
   signedOut: ["unsubscribe_with_token"]
@@ -91,6 +96,7 @@ const NEVER_CATALOGUED = [
   "enqueue_team_invitation_email",
   "expire_stale_invitation_reservations",
   "hmac_sha256",
+  "interest_queue",
   "issue_unsubscribe_token",
   "job_confirmation_current",
   "open_subscription_cycle",
@@ -236,6 +242,34 @@ describe("marketplaceCallStatement", () => {
       .toBe("select 1 as done from marketplace.set_job_posting_status(p_job_id => $1::text::uuid, p_status => $2::text) as r")
   })
 
+  it("pages inquiries and jobs: a row's own timestamp and cursor go back as text and jsonb (#294, #280)", () => {
+    const page = marketplaceCallStatement("list_marketplace_interests", {
+      p_after_at: "2026-11-11T18:04:05.123456+00:00",
+      p_after_id: UUID_A,
+      p_limit: 50,
+      p_org_id: UUID_B,
+      p_side: "landing",
+      p_with_replies: false
+    })
+
+    expect(page.text).toBe(
+      "select to_jsonb(r) as row from marketplace.list_marketplace_interests(p_after_at => $1::text::timestamptz, p_after_id => $2::text::uuid, p_limit => $3::text::integer, p_org_id => $4::text::uuid, p_side => $5::text, p_with_replies => $6::text::boolean) as r"
+    )
+    expect(page.values).toEqual(["2026-11-11T18:04:05.123456+00:00", UUID_A, "50", UUID_B, "landing", "false"])
+
+    for (const refused of ["yesterday", "2026-11-11", "2026-11-11T18:04:05", "2026-11-11T18:04:05Z; drop table x", 1731348245]) {
+      expect(() => marketplaceCallStatement("list_marketplace_interests", { p_after_at: refused as never })).toThrow(TypeError)
+    }
+
+    const cursor = { i: UUID_A, k: ["0", "0", "0", "0", "-1794420245.123456"], s: "newest", t: "Fir haul" }
+    const jobs = marketplaceCallStatement("list_marketplace_jobs_page", { p_after: cursor, p_equipment_setups: [["log_truck"]], p_lat: 44.12, p_sort: "newest" })
+
+    expect(jobs.text).toBe(
+      "select to_jsonb(r) as row from marketplace.list_marketplace_jobs_page(p_after => $1::text::jsonb, p_equipment_setups => $2::text::jsonb, p_lat => $3::text::numeric, p_sort => $4::text) as r"
+    )
+    expect(jobs.values).toEqual([JSON.stringify(cursor), '[["log_truck"]]', "44.12", "newest"])
+  })
+
   it("catalogues exactly the reviewed functions: an unreviewed name fails here (#269)", () => {
     const names = Object.keys(MARKETPLACE_FUNCTIONS).sort()
     const reviewed = [...REVIEWED_FUNCTIONS.anonymous, ...REVIEWED_FUNCTIONS.person, ...REVIEWED_FUNCTIONS.staff, ...REVIEWED_FUNCTIONS.signedOut]
@@ -284,7 +318,7 @@ describe("marketplaceCallStatement", () => {
   })
 
   it("declares only known argument types under SQL parameter names", () => {
-    const types = ["uuid", "text", "bpchar", "integer", "bigint", "numeric", "boolean", "date", "interval", "jsonb", "text[]", "uuid[]"]
+    const types = ["uuid", "text", "bpchar", "integer", "bigint", "numeric", "boolean", "date", "interval", "jsonb", "text[]", "uuid[]", "timestamptz"]
 
     for (const [name, spec] of Object.entries(MARKETPLACE_FUNCTIONS)) {
       expect(name).toMatch(/^[a-z][a-z_]*$/)

@@ -201,7 +201,7 @@ describe.skipIf(!DISPOSABLE)("normalized adapter contract (disposable PostgreSQL
     expect((await one<{ v: string }>("select current_setting('server_version_num') as v")).v).toMatch(/^17\d{4}$/)
 
     const migrations = await one<{ versions: string }>("select string_agg(version, ',' order by applied_at, version) as versions from marketplace.schema_migrations")
-    expect(migrations.versions).toBe("06,11,12,16,18,23,26,29,31")
+    expect(migrations.versions).toBe("06,11,12,16,18,23,26,29,31,33")
 
     const password = randomBytes(18).toString("hex")
     const unsafePassword = randomBytes(18).toString("hex")
