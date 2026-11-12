@@ -17,7 +17,7 @@ import {
   parseJobPostingTab,
   type JobPostingTabId
 } from "@/lib/marketplace-v2/job-postings"
-import { ownJobFilters } from "@/lib/marketplace-v2/landing-overview"
+import { readOwnJobs, reconfirmableJob } from "@/lib/marketplace-v2/landing-overview"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
@@ -83,14 +83,15 @@ export default async function LandingJobsPage({ searchParams }: { searchParams: 
   }
 
   const { access, viewer } = resolved
-  // Scoped to this business in the store, before its row limit (#209); the row filter stays as a second check.
-  const jobs = (await pilotMarketplaceV2.listJobs(ownJobFilters(viewer.organizationId))).filter((job) => job.posterOrganizationId === viewer.organizationId)
+  // The desk's own read keeps a day-14 job, which the public read leaves out (#374); only this business's rows.
+  const jobs = await readOwnJobs(pilotMarketplaceV2, viewer)
+  const now = new Date().toISOString()
   const tab = parseJobPostingTab(query.tab)
   const counts = jobPostingTabCounts(jobs)
   const shown = tab === "draft" ? [] : jobs.filter((job) => jobPostingTab(job.status) === tab)
-  const confirmable = tab === "published" ? shown.filter((job) => job.acceptingInterest) : []
+  // A day-14 job is not accepting interest, and is the one that most needs confirming.
+  const confirmable = tab === "published" ? shown.filter((job) => reconfirmableJob(job, now)) : []
   const copy = TAB_COPY[tab]
-  const now = new Date().toISOString()
   // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
   const failure = v2ErrorNotice(query)
 

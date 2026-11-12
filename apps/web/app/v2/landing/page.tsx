@@ -14,7 +14,7 @@ import {
   newInquiryItems,
   OVERVIEW_PATH,
   overviewChecklist,
-  ownJobFilters,
+  readOwnJobs,
   unconfirmedJobItems
 } from "@/lib/marketplace-v2/landing-overview"
 import { landingRowView } from "@/lib/marketplace-v2/landing-workspace"
@@ -77,8 +77,8 @@ export default async function LandingOverviewPage({ searchParams }: { searchPara
   const organizationId = viewer.organizationId
   const [interests, jobs, landings, allowance] = await Promise.all([
     load(can("inquiry.respond"), "landing_overview.inquiries", () => pilotMarketplaceV2.listLandingInterests(viewer)),
-    // Scoped to this business in the store, before its row limit (#209); the row filter stays as a second check.
-    load(true, "landing_overview.jobs", async () => (await pilotMarketplaceV2.listJobs(ownJobFilters(organizationId))).filter((job) => job.posterOrganizationId === organizationId)),
+    // The desk's own read keeps a day-14 job, which the public read leaves out (#374); only this business's rows.
+    load(true, "landing_overview.jobs", () => readOwnJobs(pilotMarketplaceV2, viewer)),
     load(can("job.publish"), "landing_overview.landings", () => pilotMarketplaceV2.listOwnLandings(viewer)),
     load(can("job.publish"), "landing_overview.allowance", () => pilotMarketplaceV2.landingAllowance(viewer))
   ])

@@ -4,6 +4,7 @@ import {
   HAULER_OTHER_TRAILER_MAX_LENGTH,
   HAULER_UNITS_MAX,
   LANDING_BILLING_INACTIVE_REFUSAL,
+  MARKETPLACE_JOB_UNCONFIRMED_LABEL,
   PUBLISH_ATTESTATION_REQUIRED
 } from "@logloads/contracts"
 import { FLEET_EDIT_REFUSED, FLEET_NOT_HAULING, FLEET_NOT_PLACED, FLEET_NOTHING_TO_WITHDRAW } from "@logloads/services"
@@ -81,6 +82,7 @@ const KNOWN: ReadonlyMap<string, V2ErrorCode> = new Map<string, V2ErrorCode>(
     // Interest and inquiries
     ["Job not found", "job_not_found"],
     ["This job is no longer accepting interest", "job_closed"],
+    [MARKETPLACE_JOB_UNCONFIRMED_LABEL, "job_unconfirmed"],
     ["You cannot express interest in your own organization's job", "own_job"],
     ["A landing organization cannot express interest in its own job", "own_job"],
     ["Switch to a hauling business to express interest", "hauling_business_required"],
