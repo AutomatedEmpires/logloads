@@ -1,3 +1,7 @@
+import {
+  frozenPlatformFeeBps,
+  PERCENTAGE_FEE_RETIRED_COLLECTION_STATE
+} from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
@@ -638,16 +642,20 @@ describe("logloads services", () => {
     })
 
     expect(result.assignment.status).toBe("accepted")
+    // The host's agreement predates the retirement, so the movement is filed
+    // under it, but no rate is frozen and nothing on it can accrue a fee.
     expect(result.assignment.termsSnapshot).toMatchObject({
       hostFee: {
-        collectionState: "accrues_monthly_in_arrears",
+        billingModel: "percentage_v1",
+        collectionState: PERCENTAGE_FEE_RETIRED_COLLECTION_STATE,
+        currency: null,
         feeCents: null,
-        providerCollectionState: "feature_gated",
-        rateBps: 500,
-        proposedRateBps: 500
+        proposedRateBps: null,
+        rateBps: null
       },
       paymentMode: "off_platform"
     })
+    expect(frozenPlatformFeeBps(result.assignment.termsSnapshot)).toBeNull()
     expect(result.trip.assignmentId).toBe(assignment.id)
     // The trip points at the snapshot minted for THIS assignment, not at the
     // host's mutable load-level source pack.

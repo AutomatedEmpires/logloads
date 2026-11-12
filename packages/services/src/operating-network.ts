@@ -17,6 +17,7 @@ import {
   moneySchema,
   notificationSchema,
   organizationRoleCan,
+  PERCENTAGE_FEE_RETIRED_COLLECTION_STATE,
   PRE_TRIP_INSPECTION_CHECKLIST,
   readFrozenDriverPay,
   transitionAssignmentStatus,
@@ -1480,13 +1481,16 @@ function finalizeCapacityAssignment(
         billingCommitment.billingModel === "legacy_percentage" ||
         billingCommitment.billingModel === "percentage_v1"
           ? {
+              // The percentage fee is retired. A historical agreement still
+              // files this movement under its model, but no rate is frozen and
+              // the collection state is not an accruing one, so nothing on
+              // this movement can ever accrue a fee.
               billingModel: billingCommitment.billingModel,
-              collectionState: "accrues_monthly_in_arrears",
-              currency: billingCommitment.platformFeeCurrency,
+              collectionState: PERCENTAGE_FEE_RETIRED_COLLECTION_STATE,
+              currency: null,
               feeCents: null,
-              providerCollectionState: "feature_gated",
-              rateBps: billingCommitment.platformFeeBps,
-              proposedRateBps: billingCommitment.platformFeeBps
+              proposedRateBps: null,
+              rateBps: null
             }
           : {
               collectionState: "not_applicable_subscription_v1",
@@ -2449,6 +2453,11 @@ export function recordPreTripInspection(
   return { event, inspection }
 }
 
+/**
+ * Asks the fee ledger about a physically completed percentage movement. The
+ * fee is retired, so this never records a new fee; a movement that already has
+ * a recorded fee reads it back, and every other movement is answered `retired`.
+ */
 function accrueFeeAfterPhysicalCompletion(
   state: LogLoadsDatabaseState,
   assignment: Assignment,
@@ -2881,7 +2890,7 @@ export function settleHaulCompletion(
       )
     } catch (error) {
       // Completion is the two-party operating record and must survive a broken
-      // billing ledger. Reconciliation retries the deterministic movement fee.
+      // billing ledger. The fee is retired, so nothing is retried later.
       platformFeeFailure = (
         error instanceof Error
           ? error.message
