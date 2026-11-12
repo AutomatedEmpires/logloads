@@ -129,6 +129,29 @@ describe("pilot adapter: feature capabilities (#244)", () => {
   })
 })
 
+describe("pilot adapter: the day-14 reconfirmation rule (#308, #321)", () => {
+  // The rule hides a job until its poster reconfirms it. The pilot store records no "still available" confirmation and
+  // cannot take one, so the rule would hide every pilot job for good; it belongs to the normalized store (see the
+  // adapter's header). These pin both facts, so changing either one is a deliberate decision.
+  it("has nothing to apply it to: no pilot job carries a confirmation, and the pilot cannot reconfirm one", async () => {
+    const board = await operatingStateMarketplaceV2.listJobs({ acceptingOnly: false })
+
+    expect(board.length).toBeGreaterThan(0)
+    expect(board.filter((job) => job.lastConfirmedAt !== null)).toEqual([])
+    await expect(operatingStateMarketplaceV2.reconfirmJob(viewer, board[0]!.id, { action: "reconfirm", confirmedAt: new Date().toISOString() }))
+      .rejects.toBeInstanceOf(MarketplaceOperationUnavailableError)
+    expect(hoisted.mutateState).not.toHaveBeenCalled()
+  })
+
+  it("so its board and new interest follow each job's status alone, and no job reads as expired or paused for want of one", async () => {
+    const accepting = await operatingStateMarketplaceV2.listJobs({ acceptingOnly: true })
+
+    expect(accepting.length).toBeGreaterThan(0)
+    expect(accepting.filter((job) => job.status !== "active" || !job.acceptingInterest)).toEqual([])
+    expect(await operatingStateMarketplaceV2.getJob(accepting[0]!.id)).toMatchObject({ acceptingInterest: true, lastConfirmedAt: null, status: "active" })
+  })
+})
+
 describe("pilot adapter: one read of the document per page (#280)", () => {
   it("pages the public board in listJobs order, each page from one read, with an exact count", async () => {
     const filters = { acceptingOnly: false }

@@ -42,7 +42,10 @@ const commonEnvironment = {
 
 const server = serverMode === "start"
   ? {
-      command: `node node_modules/next/dist/bin/next start -H 127.0.0.1 -p ${port}`,
+      // Behind tools/e2e-server.mjs, as in playwright.config.mjs: a cancelled first-time /_next/image request
+      // otherwise hangs that image for the rest of the run under `next start` (#323). The server's output goes to
+      // server.log in outputDir (the command runs in apps/web).
+      command: `node ../../tools/e2e-server.mjs --port ${port} --log tests/test-results/design-system/server.log -- node node_modules/next/dist/bin/next start -H 127.0.0.1 -p {port}`,
       env: commonEnvironment
     }
   : {
@@ -66,6 +69,10 @@ export default defineConfig({
   snapshotPathTemplate: "{testDir}/{testFileName}-snapshots/{arg}-{platform}{ext}",
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
+  // In CI a broken run stops after 5 tests have failed on their retry too, and the run is capped at 12 minutes; a
+  // clean run takes about 4 (#323).
+  maxFailures: process.env.CI ? 5 : 0,
+  globalTimeout: process.env.CI ? 12 * 60_000 : 0,
   // One server and, in CI, one shared state row, so the suite stays serial like the pilot suite. Its only writes are
   // to North Pine Logging's inbox (see design-system.spec.ts): New River Hauling's inquiry (sent with a double tap and
   // then a replayed retry, which stay one inquiry, UX-08 #131) and replies, North Pine's
