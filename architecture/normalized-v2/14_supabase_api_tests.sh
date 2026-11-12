@@ -11,7 +11,9 @@
 # Proves: JWT signature/expiry are enforced by PostgREST; the token's role is limited to anon /
 # authenticated / service_role; the database further requires a trusted issuer, audience and subject;
 # real service_role (BYPASSRLS) still reaches no marketplace table and no user RPC; tenant isolation and
-# privilege-escalation attempts fail; the V2 RPCs work end to end over HTTP.
+# privilege-escalation attempts fail; the V2 RPCs work end to end over HTTP; and the day-14 rule (35-R) holds for direct
+# table reads over PostgREST: an active job confirmed 20 days ago is hidden from anon, a rival and a hauler, readable
+# by its own desk, and back for everyone once reconfirmed.
 # =============================================================================
 set -euo pipefail
 
@@ -101,15 +103,23 @@ begin
   perform marketplace.set_job_posting_status(
     marketplace.publish_job_posting(p_landing_id => l_land, p_title => 'API Paused Run', p_equipment_codes => array['log_truck'],
       p_trucks_requested => 2, p_pay_unit => 'per_load', p_pay_amount_cents => 48000, p_attest_available => true), 'paused');
+  perform marketplace.publish_job_posting(p_landing_id => l_land, p_title => 'API Stale Run', p_equipment_codes => array['log_truck'],
+    p_trucks_requested => 2, p_pay_unit => 'per_ton', p_pay_amount_cents => 8800, p_attest_available => true);
   reset role;
 end
 \$\$;" >/dev/null
+# 35-R: the stale job's last confirmation is 20 days old (the job guard reads it from the attestation ledger).
+q "update marketplace.job_publication_attestations set reconfirmed_at = now() - interval '20 days'
+   where job_id = (select id from marketplace.job_postings where title = 'API Stale Run');
+   update marketplace.job_postings set title = title where title = 'API Stale Run';" >/dev/null
 LAND_ORG="$(q "select id from marketplace.organizations where slug = 'api-timber';")"
 RIVAL_ORG="$(q "select id from marketplace.organizations where slug = 'api-rival';")"
 HAUL_ORG="$(q "select id from marketplace.organizations where slug = 'api-hauling';")"
 LANDING="$(q "select id from marketplace.landings where org_id = '${LAND_ORG}'::uuid;")"
 JOB="$(q "select id from marketplace.job_postings where title = 'API Sawlog Run';")"
 PAUSED="$(q "select id from marketplace.job_postings where title = 'API Paused Run';")"
+STALE="$(q "select id from marketplace.job_postings where title = 'API Stale Run' and status = 'active' and last_confirmed_at < now() - interval '19 days';")"
+[[ -n "$STALE" ]] || fail "fixture: the stale job was not aged to 20 days"
 USERS_BEFORE="$(q "select count(*) from marketplace.app_users;")"
 
 # PostgREST picks up the new schema (Supabase's DDL watch also notifies; poll until the RPC is visible).
@@ -135,6 +145,26 @@ api - GET "job_postings?select=id,title,status"
 expect_ok "anon can read granted job columns"
 [[ "$(jq -r 'map(.status) | unique | join(",")' <<<"$BODY")" == "active" ]] || fail "RLS limits anon to active jobs"
 pass "RLS limits anon table reads to publicly visible jobs"
+rows() { [[ "$HTTP" == "200" ]] || fail "$1 (expected 200, got $HTTP)"; jq 'length' <<<"$BODY"; }
+api - GET "job_postings?select=id&id=eq.$STALE"
+[[ "$(rows "anon reads job_postings")" == "0" ]] || fail "anon read an active job confirmed 20 days ago (35-R)"
+api - GET "job_posting_equipment?select=job_id&job_id=eq.$STALE"
+[[ "$(rows "anon reads job_posting_equipment")" == "0" ]] || fail "anon read the equipment of a job past day 14 (35-R)"
+api - GET "job_postings?select=id&id=eq.$JOB"
+[[ "$(rows "anon reads the current job")" == "1" ]] || fail "anon must still read the current job"
+pass "anon reads neither an active job confirmed 20 days ago nor its equipment, and still reads the current job (35-R)"
+api "$T_RIVAL" GET "job_postings?select=id&id=eq.$STALE"
+[[ "$(rows "a rival reads job_postings")" == "0" ]] || fail "a rival landing read another business's job past day 14 (35-R)"
+api "$T_HAUL" GET "job_postings?select=id&id=eq.$STALE"
+[[ "$(rows "a hauler reads job_postings")" == "0" ]] || fail "a hauler read a job past day 14 (35-R)"
+api "$T_LAND" GET "job_postings?select=id,status&id=eq.$STALE"
+[[ "$(rows "the desk reads job_postings")" == "1" && "$(jq -r '.[0].status' <<<"$BODY")" == "active" ]] || fail "the landing desk must still read its own active job past day 14 (35-R)"
+pass "a rival landing and a hauler do not read it either; its own landing desk does, as active (35-R)"
+api "$T_LAND" POST rpc/reconfirm_job_posting "{\"p_job_id\":\"$STALE\"}"
+expect_ok "the owner reconfirms the stale job over HTTP"
+api - GET "job_postings?select=id&id=eq.$STALE"
+[[ "$(rows "anon reads job_postings after the reconfirmation")" == "1" ]] || fail "reconfirming did not restore the job to anon's direct reads (35-R)"
+pass "reconfirming restores it to anon's direct reads at once (35-R)"
 api - GET "landing_private_details?select=*"
 expect_err "anon cannot read private landing details" "42501"
 api - POST rpc/publish_job_posting "{\"p_landing_id\":\"$LANDING\",\"p_title\":\"Anon post\",\"p_equipment_codes\":[\"log_truck\"],\"p_trucks_requested\":1,\"p_pay_unit\":\"per_ton\",\"p_pay_amount_cents\":900,\"p_attest_available\":true}"

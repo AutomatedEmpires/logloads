@@ -1055,11 +1055,47 @@ export interface ResolveAssignmentBillingCommitmentInput {
 }
 
 /**
+ * The commitment for work a host approves without any agreement.
+ *
+ * The percentage fee is retired (#319) and subscriptions are the pricing, so
+ * approval must not be the one place that still demands a fee model (lead
+ * decision on #235, 2026-11-11). The work is filed under the retired
+ * `percentage_v1` model with no rate, no currency, no plan and no
+ * subscription. The assignment then freezes the same non-accruing host fee
+ * #319 freezes for work committed under a historical agreement, so nothing on
+ * it can ever accrue, and no card, subscription or new pricing model is
+ * involved.
+ */
+function noFeeAssignmentCommitment(
+  capacitySource: CapacitySource,
+  at: string
+): AssignmentBillingCommitment {
+  return {
+    baseMonthlyPriceSnapshotCents: null,
+    billingModel: "percentage_v1",
+    capacitySource,
+    committedAt: at,
+    includedAllowanceSnapshot: null,
+    includesDispatchProCapabilitiesSnapshot: false,
+    overageRateSnapshotCents: null,
+    planCode: null,
+    planSnapshot: null,
+    platformFeeBps: null,
+    platformFeeCurrency: null,
+    subscriptionId: null
+  }
+}
+
+/**
  * Freezes the commercial model at the accepted-work commitment point.
  *
- * Legacy applies only through an explicit effective legacy account.
- * Unenrolled and configured-dark accounts fail closed: building or
- * provider-binding a subscription must never silently revive the old 5% model.
+ * A host with no agreement (no effective billing account, or the explicit
+ * `unenrolled` account signup writes) commits no-fee work. Every agreement
+ * keeps its historical behavior: legacy applies only through an explicit
+ * effective legacy account before the cutover, a current percentage agreement
+ * freezes its model, and configured-dark or historical subscriptions fail
+ * closed. Building or provider-binding a subscription must never silently
+ * revive the old 5% model.
  */
 export function resolveAssignmentBillingCommitment(
   state: LogLoadsDatabaseState,
@@ -1188,10 +1224,24 @@ export function resolveAssignmentBillingCommitment(
     accounts.length <= 1,
     `Organization ${input.hostOrganizationId} has conflicting billing accounts`
   )
-  const account = assertFound(
-    accounts[0],
-    `Organization ${input.hostOrganizationId} is not enrolled in a billing model`
-  )
+  const account = accounts[0]
+
+  if (!account) {
+    return noFeeAssignmentCommitment(capacitySource, at)
+  }
+
+  if (account.activationState === "unenrolled") {
+    // Unenrolled is a deliberate "no terms" state. A record that names a
+    // model, subscription or percentage terms is corrupted, not unenrolled.
+    assertCondition(
+      account.billingModel === null &&
+        account.subscriptionId === null &&
+        !account.percentageTermsSnapshot,
+      `Organization ${input.hostOrganizationId} has an invalid unenrolled billing account`
+    )
+
+    return noFeeAssignmentCommitment(capacitySource, at)
+  }
 
   if (account.activationState === "percentage_active") {
     const percentageTerms = assertFound(
@@ -1229,14 +1279,14 @@ export function resolveAssignmentBillingCommitment(
   }
 
   if (account.activationState === "legacy") {
-    assertDomainCondition(
-      Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
-      "Legacy percentage terms cover only work committed before the August 1, 2026 cutover. The completed-load percentage fee is retired and cannot be accepted for new work."
-    )
     assertCondition(
       account.billingModel === "legacy_percentage",
       `Organization ${input.hostOrganizationId} has an invalid legacy billing account`
     )
+    if (Date.parse(at) >= Date.parse(PERCENTAGE_V1_CUTOVER_AT)) {
+      // The legacy fee is retired: no current fee-bearing agreement applies.
+      return noFeeAssignmentCommitment(capacitySource, at)
+    }
     const frozenDriverPay = assertFound(
       readFrozenDriverPay(assignment.termsSnapshot) ?? undefined,
       "Legacy percentage billing requires frozen driver pay and currency at acceptance"
@@ -1263,18 +1313,13 @@ export function resolveAssignmentBillingCommitment(
     }
   }
 
-  assertCondition(
-    account.activationState !== "unenrolled" &&
-      account.activationState !== "configured_dark",
-    `Organization ${input.hostOrganizationId}'s billing agreement is not active`
-  )
+  if (account.activationState === "configured_dark") {
+    // Configured but never activated: no current fee-bearing agreement applies.
+    return noFeeAssignmentCommitment(capacitySource, at)
+  }
   assertCondition(
     account.activationState === "active" || account.activationState === "suspended",
     `Organization ${input.hostOrganizationId}'s subscription billing is not configured`
-  )
-  assertDomainCondition(
-    Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
-    "Historical subscriptions no longer authorize new work. The completed-load percentage fee is retired and cannot be accepted instead."
   )
   const subscriptionId = assertFound(
     account.subscriptionId ?? undefined,
@@ -1290,6 +1335,10 @@ export function resolveAssignmentBillingCommitment(
     subscription.billingModel === account.billingModel,
     `Subscription ${subscription.id} does not match its billing account model`
   )
+  if (Date.parse(at) >= Date.parse(PERCENTAGE_V1_CUTOVER_AT)) {
+    // A historical subscription no longer applies once the fee model retired.
+    return noFeeAssignmentCommitment(capacitySource, at)
+  }
   assertCondition(
     Boolean(subscription.operationalActivatedAt),
     `Subscription ${subscription.id} has not reached explicit operational activation`

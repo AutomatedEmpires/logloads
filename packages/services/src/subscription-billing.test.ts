@@ -2,14 +2,25 @@ import {
   billingAdjustmentSchema,
   billingPeriodSummaryId,
   billingPeriodSummarySchema,
+  frozenPlatformFeeBps,
   LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
   networkOverageInvoiceId,
   networkOverageInvoiceSchema,
   networkUsageEventId,
   networkUsageEventSchema,
+  organizationBillingAccountId,
+  organizationBillingAccountSchema,
+  PERCENTAGE_FEE_RETIRED_CODE,
+  PERCENTAGE_FEE_RETIRED_COLLECTION_STATE,
+  PERCENTAGE_V1_CUTOVER_AT,
+  PLATFORM_FEE_BPS,
   subscriptionPlanQuoteFingerprint
 } from "@logloads/contracts"
-import { seedDatabaseState, type LogLoadsDatabaseState } from "@logloads/db"
+import {
+  createInMemoryDatabase,
+  seedDatabaseState,
+  type LogLoadsDatabaseState
+} from "@logloads/db"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -44,7 +55,9 @@ import {
   usageNotificationThresholdsFor
 } from "./subscription-billing"
 import { provisionLoadCapacity } from "./loads"
-import { createLogLoadsServices } from "./index"
+import { createLogLoadsServices, type LogLoadsServices } from "./index"
+import { accruePlatformFee, reconcileMissingPlatformFees } from "./platform-fees"
+import { recordPassingPreTripInspection } from "./test-helpers"
 import { DomainRefusalError } from "./utils"
 
 const ADMIN = "11111111-1111-4111-8111-111111111111"
@@ -574,7 +587,7 @@ describe("subscription activation and commercial scope", () => {
 
     const newAssignmentId = "69696969-6969-4969-8969-696969696961"
     addBlankAssignment(state, newAssignmentId)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -585,7 +598,13 @@ describe("subscription activation and commercial scope", () => {
         },
         AUTHORIZED_AT
       )
-    ).toThrow(/billing agreement is not active/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
+
 
     activateOrganizationSubscription(
       state,
@@ -609,7 +628,7 @@ describe("subscription activation and commercial scope", () => {
       },
       "2026-08-03T16:01:00.000Z"
     )
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -620,7 +639,13 @@ describe("subscription activation and commercial scope", () => {
         },
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
+
   })
 
   it("rejects non-USD legacy acceptance without blocking subscription work", () => {
@@ -666,13 +691,13 @@ describe("subscription activation and commercial scope", () => {
 
     paidAndOperating(state)
 
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         input,
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({ billingModel: "percentage_v1", platformFeeBps: null })
   })
 
   it("keeps a missing legacy frozen-pay snapshot as an invariant failure", () => {
@@ -1002,7 +1027,7 @@ describe("subscription activation and commercial scope", () => {
     const assignmentId = "79797979-7979-4979-8979-797979797971"
 
     addBlankAssignment(state, assignmentId)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -1013,7 +1038,12 @@ describe("subscription activation and commercial scope", () => {
         },
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
   })
 
   it("persists the exact accepted non-renewal boundary and makes exact retries idempotent", () => {
@@ -1453,7 +1483,7 @@ describe("subscription activation and commercial scope", () => {
 
     const assignmentId = "95959595-9595-4595-8595-959595959501"
     addBlankAssignment(state, assignmentId)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -1464,7 +1494,12 @@ describe("subscription activation and commercial scope", () => {
         },
         acceptedAt
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
   })
 })
 
@@ -1543,7 +1578,7 @@ describe("dunning and Pilot conversion boundaries", () => {
 
     const assignmentId = "71717171-7171-4171-8171-717171717171"
     addBlankAssignment(state, assignmentId)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -1554,7 +1589,12 @@ describe("dunning and Pilot conversion boundaries", () => {
         },
         "2027-08-03T16:00:01.000Z"
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
   })
 
   it("rejects a late automatic renewal boundary and does not roll pending or non-renewing terms", () => {
@@ -1918,7 +1958,7 @@ describe("dunning and Pilot conversion boundaries", () => {
       ).toISOString()
       addBlankAssignment(fixture.state, networkAssignmentId)
       addBlankAssignment(fixture.state, privateAssignmentId)
-      expect(() =>
+      expect(
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -1929,8 +1969,13 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           withinGrace
         )
-      ).toThrow(/Historical subscriptions no longer authorize new work/)
-      expect(() =>
+      ).toMatchObject({
+        billingModel: "percentage_v1",
+        planCode: null,
+        platformFeeBps: null,
+        subscriptionId: null
+      })
+      expect(
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -1941,7 +1986,12 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           withinGrace
         )
-      ).toThrow(/Historical subscriptions no longer authorize new work/)
+      ).toMatchObject({
+        billingModel: "percentage_v1",
+        planCode: null,
+        platformFeeBps: null,
+        subscriptionId: null
+      })
 
       planSubscriptionBillingRun(fixture.state, fixture.graceEndsAt)
       const blockedNetworkId =
@@ -1954,7 +2004,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           : "93939393-9393-4393-8393-939393939308"
       addBlankAssignment(fixture.state, blockedNetworkId)
       addBlankAssignment(fixture.state, blockedPrivateId)
-      expect(() =>
+      expect(
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -1965,8 +2015,13 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           fixture.graceEndsAt
         )
-      ).toThrow(/Historical subscriptions no longer authorize new work/)
-      expect(() =>
+      ).toMatchObject({
+        billingModel: "percentage_v1",
+        planCode: null,
+        platformFeeBps: null,
+        subscriptionId: null
+      })
+      expect(
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -1977,7 +2032,12 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           fixture.graceEndsAt
         )
-      ).toThrow(/Historical subscriptions no longer authorize new work/)
+      ).toMatchObject({
+        billingModel: "percentage_v1",
+        planCode: null,
+        platformFeeBps: null,
+        subscriptionId: null
+      })
     }
   })
 
@@ -4181,5 +4241,649 @@ describe("provider ledgers, invoice composition, and billing email", () => {
         "2026-09-03T16:06:00.000Z"
       )
     ).toThrow(/exhausted its delivery attempts/)
+  })
+})
+
+/**
+ * Approval in the legacy cockpit after the percentage fee was retired (#359;
+ * lead decision on #235, comment 6813211537, 2026-11-11).
+ *
+ * A host with no agreement can publish, so it must also be able to approve a
+ * hauler's request. Approval records a no-fee commitment: the host fee #319
+ * freezes for work committed under a historical agreement, with no rate. No
+ * pricing model, card or subscription is added or required, nothing can ever
+ * accrue on it, and every historical agreement keeps its old behavior.
+ */
+describe("legacy cockpit approval without a percentage agreement", () => {
+  const NO_FEE_HOST_FEE = {
+    billingModel: "percentage_v1",
+    collectionState: PERCENTAGE_FEE_RETIRED_COLLECTION_STATE,
+    currency: null,
+    feeCents: null,
+    proposedRateBps: null,
+    rateBps: null
+  }
+  const NO_FEE_COMMITTED_AT = "2026-11-11T16:00:00.000Z"
+  const HAUL_DATE = "2026-06-25"
+  const HAULER_DRIVER_PROFILE = "44444444-4444-4444-8444-444444444441"
+  const HAULER_TRUCK = "77777777-7777-4777-8777-777777777771"
+  const HAULER_TRAILER = "88888888-8888-4888-8888-888888888881"
+
+  type HostAgreement = "no billing account" | "an unenrolled billing account"
+
+  /** Every commercial record an approval or completion could create or change. */
+  function commercialRecords(state: LogLoadsDatabaseState) {
+    return structuredClone({
+      accounts: state.organizationBillingAccounts,
+      adjustments: state.billingAdjustments,
+      baseInvoices: state.subscriptionBaseInvoices,
+      cards: state.hostBillingProfiles,
+      fees: state.platformFeeEvents,
+      invoices: state.hostInvoices,
+      overageInvoices: state.networkOverageInvoices,
+      periodSummaries: state.billingPeriodSummaries,
+      subscriptions: state.organizationSubscriptions,
+      usage: state.networkUsageEvents
+    })
+  }
+
+  /** Strips the host's agreement and its card, as a host that never enrolled. */
+  function withoutHostAgreement(
+    state: LogLoadsDatabaseState,
+    agreement: HostAgreement
+  ): void {
+    state.organizationBillingAccounts = state.organizationBillingAccounts.filter(
+      (account) => account.organizationId !== HOST
+    )
+    state.hostBillingProfiles = state.hostBillingProfiles.filter(
+      (profile) => profile.organizationId !== HOST
+    )
+
+    if (agreement === "an unenrolled billing account") {
+      // Exactly what host signup writes: an operating identity, no terms.
+      state.organizationBillingAccounts.push(
+        organizationBillingAccountSchema.parse({
+          activationState: "unenrolled",
+          billingModel: null,
+          createdAt: "2026-06-01T00:00:00.000Z",
+          effectiveAt: "2026-06-01T00:00:00.000Z",
+          id: organizationBillingAccountId(HOST),
+          organizationId: HOST,
+          subscriptionId: null,
+          updatedAt: "2026-06-01T00:00:00.000Z"
+        })
+      )
+    }
+  }
+
+  function hostServices(agreement: HostAgreement | "seeded agreement") {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+
+    if (agreement !== "seeded agreement") {
+      withoutHostAgreement(services.state, agreement)
+    }
+
+    return services
+  }
+
+  /** Publishes a load and has the private-partner hauler request it. */
+  function requestHaul(services: LogLoadsServices) {
+    const load = services.createLoadPostingWithPolicy({
+      accessRequirements: [],
+      actorUserId: OWNER,
+      campaignEndDate: null,
+      campaignStartDate: null,
+      companyId: HOST,
+      dailyTruckCountNeeded: 1,
+      dispatcherContact: {
+        email: "dispatch@summit.example",
+        name: "Cole Cedar",
+        phone: "555-3001"
+      },
+      dispatcherProfileId: "55555555-5555-4555-8555-555555555553",
+      driverPayCents: 52_500,
+      dropoffMillId: "99999999-9999-4999-8999-999999999991",
+      equipmentRequirements: ["pole-trailer"],
+      estimatedTonsPerLoad: 27,
+      loadDate: HAUL_DATE,
+      loadType: "saw_logs",
+      loaderContact: null,
+      loaderProfileId: null,
+      organizationId: HOST,
+      pickupLandingId: HOST_LANDING,
+      rateId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+      recurringSchedule: null,
+      roadCondition: "good",
+      routeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+      scheduleType: "one_off",
+      status: "open",
+      title: "No-fee approval fixture",
+      weatherNotes: null
+    })
+    const slot = services.state.truckSlots.find(
+      (candidate) => candidate.loadPostingId === load.id
+    )
+
+    if (!slot) throw new Error("fixture load has no slot")
+
+    services.upsertAvailabilityWindow({
+      driverProfileId: HAULER_DRIVER_PROFILE,
+      endAt: `${HAUL_DATE}T23:59:00.000Z`,
+      notes: "No-fee approval fixture window.",
+      preferredRouteIds: [],
+      recurringSchedule: null,
+      startAt: `${HAUL_DATE}T00:00:00.000Z`,
+      status: "available",
+      truckProfileId: HAULER_TRUCK
+    })
+
+    return services.requestCapacityWithPolicy({
+      actorUserId: DRIVER,
+      driverProfileId: HAULER_DRIVER_PROFILE,
+      loadPostingId: load.id,
+      organizationId: PRIVATE_PARTNER,
+      trailerProfileId: HAULER_TRAILER,
+      truckProfileId: HAULER_TRUCK,
+      truckSlotId: slot.id
+    }, { at: `${HAUL_DATE}T12:00:00.000Z` })
+  }
+
+  function approve(services: LogLoadsServices, assignmentId: string) {
+    return services.approveCapacityRequest({
+      actorUserId: OWNER,
+      assignmentId,
+      organizationId: HOST
+    })
+  }
+
+  /** Drives an approved haul to a host-confirmed delivery. */
+  function completeHaul(services: LogLoadsServices, tripId: string) {
+    recordPassingPreTripInspection(services.state, {
+      actorUserId: DRIVER,
+      organizationId: PRIVATE_PARTNER,
+      tripId
+    })
+    for (const nextStatus of [
+      "en_route_to_landing",
+      "checked_in",
+      "loading",
+      "loaded",
+      "en_route_to_destination",
+      "at_destination"
+    ] as const) {
+      services.progressTripStatus({
+        actorUserId: DRIVER,
+        nextStatus,
+        organizationId: PRIVATE_PARTNER,
+        source: "driver",
+        tripId
+      })
+    }
+    services.submitHaulCompletion({
+      actorUserId: DRIVER,
+      deliveredQuantity: { unit: "tons", value: 26.4 },
+      organizationId: PRIVATE_PARTNER,
+      tripId
+    })
+
+    return services.settleHaulCompletion({
+      actorUserId: OWNER,
+      decision: "confirm",
+      organizationId: HOST,
+      tripId
+    })
+  }
+
+  function noFeeCommitment(capacitySource: "logloads_network" | "private_fleet") {
+    return {
+      baseMonthlyPriceSnapshotCents: null,
+      billingModel: "percentage_v1",
+      capacitySource,
+      committedAt: NO_FEE_COMMITTED_AT,
+      includedAllowanceSnapshot: null,
+      includesDispatchProCapabilitiesSnapshot: false,
+      overageRateSnapshotCents: null,
+      planCode: null,
+      planSnapshot: null,
+      platformFeeBps: null,
+      platformFeeCurrency: null,
+      subscriptionId: null
+    }
+  }
+
+  it.each([
+    "no billing account",
+    "an unenrolled billing account"
+  ] as const)(
+    "approves a request when the host has %s and freezes a host fee with no rate",
+    (agreement) => {
+      const services = hostServices(agreement)
+      const requested = requestHaul(services)
+      const before = commercialRecords(services.state)
+
+      const { assignment, trip } = approve(services, requested.id)
+
+      expect(assignment).toMatchObject({
+        billingModel: "percentage_v1",
+        billingPlanCodeAtCommitment: null,
+        billingSubscriptionIdAtCommitment: null,
+        capacitySource: "private_fleet",
+        id: requested.id,
+        status: "accepted"
+      })
+      expect(assignment.billingCommittedAt).toBe(assignment.assignedAt)
+      expect(trip.assignmentId).toBe(assignment.id)
+      // The shape #319 freezes for a historical agreement: no rate, no
+      // currency, and a collection state no ledger path treats as fee-bearing.
+      expect(assignment.termsSnapshot.hostFee).toEqual(NO_FEE_HOST_FEE)
+      expect(frozenPlatformFeeBps(assignment.termsSnapshot)).toBeNull()
+      expect(assignment.termsSnapshot.subscriptionBilling).toEqual({
+        baseMonthlyPriceCents: null,
+        billingModel: "percentage_v1",
+        capacitySource: "private_fleet",
+        includedAllowance: null,
+        includesDispatchProCapabilities: false,
+        overageRateCents: null,
+        planCode: null,
+        planVersion: null,
+        subscriptionId: null
+      })
+      // No agreement, card, subscription, fee or usage was needed or created.
+      expect(commercialRecords(services.state)).toEqual(before)
+    }
+  )
+
+  it.each([
+    "no billing account",
+    "an unenrolled billing account"
+  ] as const)(
+    "resolves the same no-fee commitment for Network and private capacity when the host has %s",
+    (agreement) => {
+      const state = freshState()
+      withoutHostAgreement(state, agreement)
+      const networkAssignmentId = "35935935-9359-4359-8359-359359359301"
+      const privateAssignmentId = "35935935-9359-4359-8359-359359359302"
+      addBlankAssignment(state, networkAssignmentId)
+      addBlankAssignment(state, privateAssignmentId)
+      const before = structuredClone(state)
+
+      expect(
+        resolveAssignmentBillingCommitment(
+          state,
+          {
+            acceptanceSource: "host_approval",
+            assignmentId: networkAssignmentId,
+            haulerOrganizationId: UNRELATED_HAULER,
+            hostOrganizationId: HOST
+          },
+          NO_FEE_COMMITTED_AT
+        )
+      ).toEqual(noFeeCommitment("logloads_network"))
+      expect(
+        resolveAssignmentBillingCommitment(
+          state,
+          {
+            acceptanceSource: "direct_offer",
+            assignmentId: privateAssignmentId,
+            haulerOrganizationId: PRIVATE_PARTNER,
+            hostOrganizationId: HOST
+          },
+          NO_FEE_COMMITTED_AT
+        )
+      ).toEqual(noFeeCommitment("private_fleet"))
+      // Resolving is pure: nothing is enrolled or recorded on the way.
+      expect(state).toEqual(before)
+    }
+  )
+
+  it("refuses an unenrolled account that names a model instead of treating it as no agreement", () => {
+    const state = freshState()
+    withoutHostAgreement(state, "an unenrolled billing account")
+    const account = state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!account) throw new Error("Unenrolled fixture account missing")
+    // Corrupted provider data the schema would reject on load.
+    account.billingModel = "subscription_v1"
+    const assignmentId = "35935935-9359-4359-8359-359359359303"
+    addBlankAssignment(state, assignmentId)
+    const before = structuredClone(state)
+
+    expect(() =>
+      resolveAssignmentBillingCommitment(
+        state,
+        {
+          acceptanceSource: "host_approval",
+          assignmentId,
+          haulerOrganizationId: UNRELATED_HAULER,
+          hostOrganizationId: HOST
+        },
+        NO_FEE_COMMITTED_AT
+      )
+    ).toThrow(/invalid unenrolled billing account/)
+    expect(state).toEqual(before)
+  })
+
+  it("accrues nothing when the no-fee work is completed", () => {
+    const services = hostServices("no billing account")
+    const requested = requestHaul(services)
+    const { trip } = approve(services, requested.id)
+    const before = commercialRecords(services.state)
+
+    const settled = completeHaul(services, trip.id)
+
+    expect(settled.trip.completionStatus).toBe("confirmed")
+    expect(settled.platformFeeOutcome).toBe("retired")
+    expect(settled.platformFee).toMatchObject({
+      assignmentId: requested.id,
+      code: PERCENTAGE_FEE_RETIRED_CODE,
+      outcome: "retired"
+    })
+    expect(settled.usage).toMatchObject({ outcome: "not_applicable" })
+    expect(commercialRecords(services.state)).toEqual(before)
+    expect(
+      services.state.auditEvents.find(
+        (event) =>
+          event.entityId === trip.id &&
+          event.action === "haul_completion_confirmed"
+      )?.metadata
+    ).toMatchObject({
+      platformFeeCents: null,
+      platformFeeEventId: null,
+      platformFeeOutcome: "retired"
+    })
+    expect(
+      services.state.auditEvents.filter(
+        (event) =>
+          event.entityId === requested.id &&
+          event.action.startsWith("platform_fee")
+      )
+    ).toEqual([])
+
+    // Asking the ledger again, or running reconciliation, still writes nothing.
+    expect(
+      accruePlatformFee(services.state, { assignmentId: requested.id }).outcome
+    ).toBe("retired")
+    reconcileMissingPlatformFees(services.state)
+    expect(commercialRecords(services.state)).toEqual(before)
+    expect(
+      services.state.assignments.find(
+        (candidate) => candidate.id === requested.id
+      )?.termsSnapshot.hostFee
+    ).toEqual(NO_FEE_HOST_FEE)
+  })
+
+  it("keeps a current percentage agreement's approval exactly as #319 left it", () => {
+    const services = hostServices("seeded agreement")
+    const account = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    expect(account?.activationState).toBe("percentage_active")
+    const requested = requestHaul(services)
+
+    expect(
+      resolveAssignmentBillingCommitment(
+        services.state,
+        {
+          acceptanceSource: "host_approval",
+          assignmentId: requested.id,
+          haulerOrganizationId: PRIVATE_PARTNER,
+          hostOrganizationId: HOST
+        },
+        NO_FEE_COMMITTED_AT
+      )
+    ).toEqual({
+      ...noFeeCommitment("private_fleet"),
+      includesDispatchProCapabilitiesSnapshot: true,
+      platformFeeBps: PLATFORM_FEE_BPS,
+      platformFeeCurrency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+    })
+
+    const { assignment } = approve(services, requested.id)
+
+    expect(assignment.billingModel).toBe("percentage_v1")
+    expect(assignment.termsSnapshot.hostFee).toEqual(NO_FEE_HOST_FEE)
+    expect(
+      (assignment.termsSnapshot.subscriptionBilling as Record<string, unknown>)
+        .includesDispatchProCapabilities
+    ).toBe(true)
+  })
+
+  it("gives legacy, inactive and historical agreements the no-fee commitment", () => {
+    const legacyState = freshState()
+    const legacyAccount = legacyState.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!legacyAccount) throw new Error("Seed billing account missing")
+    legacyAccount.activationState = "legacy"
+    legacyAccount.billingModel = "legacy_percentage"
+    legacyAccount.effectiveAt = "2026-07-30T00:00:00.000Z"
+    legacyAccount.percentageTermsSnapshot = null
+    const legacyAssignmentId = "35935935-9359-4359-8359-359359359311"
+    addBlankAssignment(legacyState, legacyAssignmentId)
+    const legacyAssignment = legacyState.assignments.find(
+      (candidate) => candidate.id === legacyAssignmentId
+    )
+    if (!legacyAssignment) throw new Error("Blank assignment missing")
+    legacyAssignment.termsSnapshot = {
+      ...legacyAssignment.termsSnapshot,
+      currency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY,
+      driverPayCents: 52_500
+    }
+    const legacyInput = {
+      acceptanceSource: "host_approval" as const,
+      assignmentId: legacyAssignmentId,
+      haulerOrganizationId: UNRELATED_HAULER,
+      hostOrganizationId: HOST
+    }
+    const legacyBefore = structuredClone(legacyState)
+
+    // Before the cutover a legacy account still freezes the legacy model.
+    expect(
+      resolveAssignmentBillingCommitment(
+        legacyState,
+        legacyInput,
+        "2026-07-31T16:00:00.000Z"
+      )
+    ).toMatchObject({
+      billingModel: "legacy_percentage",
+      platformFeeBps: PLATFORM_FEE_BPS,
+      platformFeeCurrency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
+    })
+    // After it, no fee-bearing agreement applies: no-fee, resolved purely.
+    expect(
+      resolveAssignmentBillingCommitment(
+        legacyState,
+        legacyInput,
+        PERCENTAGE_V1_CUTOVER_AT
+      )
+    ).toEqual({
+      ...noFeeCommitment("logloads_network"),
+      committedAt: PERCENTAGE_V1_CUTOVER_AT
+    })
+    expect(legacyState).toEqual(legacyBefore)
+
+    // A configured subscription that never went live commits no-fee work.
+    const darkState = freshState()
+    configured(darkState)
+    const darkAssignmentId = "35935935-9359-4359-8359-359359359312"
+    addBlankAssignment(darkState, darkAssignmentId)
+    const darkBefore = structuredClone(darkState)
+    expect(
+      resolveAssignmentBillingCommitment(
+        darkState,
+        {
+          acceptanceSource: "host_approval",
+          assignmentId: darkAssignmentId,
+          haulerOrganizationId: UNRELATED_HAULER,
+          hostOrganizationId: HOST
+        },
+        AUTHORIZED_AT
+      )
+    ).toEqual({ ...noFeeCommitment("logloads_network"), committedAt: AUTHORIZED_AT })
+    expect(darkState).toEqual(darkBefore)
+
+    // A historical subscription commits no-fee work, never its old terms.
+    const subscriptionState = freshState()
+    paidAndOperating(subscriptionState)
+    const subscriptionAssignmentId = "35935935-9359-4359-8359-359359359313"
+    addBlankAssignment(subscriptionState, subscriptionAssignmentId)
+    const subscriptionBefore = structuredClone(subscriptionState)
+    expect(
+      resolveAssignmentBillingCommitment(
+        subscriptionState,
+        {
+          acceptanceSource: "host_approval",
+          assignmentId: subscriptionAssignmentId,
+          haulerOrganizationId: UNRELATED_HAULER,
+          hostOrganizationId: HOST
+        },
+        NO_FEE_COMMITTED_AT
+      )
+    ).toEqual(noFeeCommitment("logloads_network"))
+    expect(subscriptionState).toEqual(subscriptionBefore)
+  })
+
+  it("still refuses corrupted legacy and subscription records", () => {
+    const legacyState = freshState()
+    const account = legacyState.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!account) throw new Error("Seed billing account missing")
+    account.activationState = "legacy"
+    account.billingModel = "percentage_v1"
+    account.effectiveAt = "2026-07-30T00:00:00.000Z"
+    const assignmentId = "35935935-9359-4359-8359-359359359321"
+    addBlankAssignment(legacyState, assignmentId)
+    const input = {
+      acceptanceSource: "host_approval" as const,
+      assignmentId,
+      haulerOrganizationId: UNRELATED_HAULER,
+      hostOrganizationId: HOST
+    }
+    const before = structuredClone(legacyState)
+    expect(() =>
+      resolveAssignmentBillingCommitment(
+        legacyState,
+        input,
+        PERCENTAGE_V1_CUTOVER_AT
+      )
+    ).toThrow(/invalid legacy billing account/)
+    expect(legacyState).toEqual(before)
+
+    const subscriptionState = freshState()
+    paidAndOperating(subscriptionState)
+    const subscriptionAccount = subscriptionState.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!subscriptionAccount) throw new Error("Seed billing account missing")
+    subscriptionAccount.subscriptionId = null
+    addBlankAssignment(subscriptionState, assignmentId)
+    const subscriptionBefore = structuredClone(subscriptionState)
+    expect(() =>
+      resolveAssignmentBillingCommitment(
+        subscriptionState,
+        input,
+        NO_FEE_COMMITTED_AT
+      )
+    ).toThrow(/no active subscription agreement/)
+    expect(subscriptionState).toEqual(subscriptionBefore)
+  })
+
+  it("approves, accrues nothing and stays idempotent for a legacy host after the cutover", () => {
+    const services = hostServices("seeded agreement")
+    const account = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!account) throw new Error("Seed billing account missing")
+    account.activationState = "legacy"
+    account.billingModel = "legacy_percentage"
+    account.effectiveAt = "2026-07-30T00:00:00.000Z"
+    account.percentageTermsSnapshot = null
+    const requested = requestHaul(services)
+    const before = commercialRecords(services.state)
+
+    const { assignment, trip } = approve(services, requested.id)
+
+    expect(assignment).toMatchObject({
+      billingModel: "percentage_v1",
+      billingPlanCodeAtCommitment: null,
+      billingSubscriptionIdAtCommitment: null,
+      status: "accepted"
+    })
+    expect(assignment.termsSnapshot.hostFee).toEqual(NO_FEE_HOST_FEE)
+    expect(commercialRecords(services.state)).toEqual(before)
+
+    const settled = completeHaul(services, trip.id)
+    expect(settled.platformFeeOutcome).toBe("retired")
+    expect(commercialRecords(services.state)).toEqual(before)
+
+    const afterCompletion = structuredClone(services.state)
+    expect(() => approve(services, requested.id)).toThrow(
+      /Only a requested or offered assignment can be approved/
+    )
+    expect(services.state).toEqual(afterCompletion)
+  })
+
+  it("stays idempotent when the approval is repeated", () => {
+    const services = hostServices("an unenrolled billing account")
+    const requested = requestHaul(services)
+    const input = {
+      acceptanceSource: "host_approval" as const,
+      assignmentId: requested.id,
+      haulerOrganizationId: PRIVATE_PARTNER,
+      hostOrganizationId: HOST
+    }
+    const beforeResolve = structuredClone(services.state)
+
+    // A compare-and-swap replay re-runs the resolution: same answer, no writes.
+    const first = resolveAssignmentBillingCommitment(
+      services.state,
+      input,
+      NO_FEE_COMMITTED_AT
+    )
+    expect(
+      resolveAssignmentBillingCommitment(services.state, input, NO_FEE_COMMITTED_AT)
+    ).toEqual(first)
+    expect(services.state).toEqual(beforeResolve)
+
+    const { assignment, trip } = approve(services, requested.id)
+    const afterApproval = structuredClone(services.state)
+
+    // A second approval commits nothing twice: no second trip, commitment,
+    // fee or audit row, and the first commitment is untouched.
+    expect(() => approve(services, requested.id)).toThrow(
+      /Only a requested or offered assignment can be approved/
+    )
+    expect(services.state).toEqual(afterApproval)
+    expect(
+      services.state.tripsV2.filter(
+        (candidate) => candidate.assignmentId === assignment.id
+      ).map((candidate) => candidate.id)
+    ).toEqual([trip.id])
+
+    // The frozen commitment is read back, not re-resolved, even after the
+    // host's account changes.
+    const account = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!account) throw new Error("Unenrolled fixture account missing")
+    account.activationState = "legacy"
+    account.billingModel = "legacy_percentage"
+    expect(
+      resolveAssignmentBillingCommitment(services.state, input)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      capacitySource: assignment.capacitySource,
+      committedAt: assignment.billingCommittedAt,
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
+    expect(
+      services.state.assignments.find(
+        (candidate) => candidate.id === assignment.id
+      )
+    ).toEqual(assignment)
   })
 })
