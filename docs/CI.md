@@ -93,6 +93,16 @@ is already failing.
 **Timings before the fix:** a passing `extended-validation` took 15–18 minutes, with E2E smoke at 4.4–5.0 minutes.
 A hung one took 63–67 minutes, 53–54 of them in E2E smoke.
 
+**Timings after the fix**, PR #360 run
+[43146502671](https://github.com/AutomatedEmpires/logloads/actions/runs/43146502671) at `f718740`:
+- the whole run took 15 minutes and `extended-validation` 12;
+- E2E smoke took 4.3 minutes (122 passed, 22 skipped);
+- DS-05 took 3.9 minutes (125 passed, 1 flaky);
+- the browser came from the cache, so the install took 16 s.
+
+A broken run now ends after 5 failed tests or at 15 minutes, whichever comes first, with its traces and the server
+log uploaded.
+
 ## 3. Normalized V2 database CI
 
 **Workflow:** `.github/workflows/normalized-v2-ci.yml`, on `work/logloads-repair` since PR #123 merged on
