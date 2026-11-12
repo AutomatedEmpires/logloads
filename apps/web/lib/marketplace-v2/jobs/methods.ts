@@ -5,7 +5,9 @@ import {
   marketplaceJobStopStatusSchema,
   marketplaceOwnJobFiltersSchema,
   validateMarketplaceJobDraft,
+  type MarketplaceJobDetailView,
   type MarketplaceJobDraft,
+  type MarketplaceJobStopStatus,
   type MarketplaceOwnJobDetailView,
   type MarketplaceOwnJobView
 } from "@logloads/contracts"
@@ -23,6 +25,7 @@ import {
   planJobTermsEdit
 } from "@logloads/services"
 
+import { jobReconfirmedProperties, jobStoppedProperties, recordProductEvent } from "../../analytics/server"
 import type { NormalizedFeatureContext } from "../normalized-adapter"
 import { isUuid } from "../normalized-mapping"
 import { MarketplaceRefusalError, type MarketplaceJobsPort, type MarketplaceV2Viewer } from "../port"
@@ -83,6 +86,36 @@ function savableDraft(draft: MarketplaceJobDraft): MarketplaceJobDraft {
   return validation.draft
 }
 
+/**
+ * Where the jobs group reports a lifecycle change once its transaction has committed (#330, event plan §6): `before`
+ * is the listing as it was just before the change, read on the locked row. A change that writes nothing, a refusal
+ * and a failed write report nothing.
+ */
+export interface JobLifecycleEvents {
+  stopped(viewer: MarketplaceV2Viewer, before: MarketplaceJobDetailView, status: MarketplaceJobStopStatus, now: Date): Promise<void>
+  resumed(viewer: MarketplaceV2Viewer, before: MarketplaceJobDetailView, now: Date): Promise<void>
+}
+
+/**
+ * The product events `job_stopped` and `job_reconfirmed` (`resumed: true`), sent after the response. These methods
+ * act for the signed-in poster on the job desk, so `via` is `in_app`; the one-tap links of P0-6 (#292) report their
+ * own route.
+ */
+export const JOB_LIFECYCLE_PRODUCT_EVENTS: JobLifecycleEvents = {
+  resumed: (viewer, before, now) =>
+    recordProductEvent(
+      "job_reconfirmed",
+      () => jobReconfirmedProperties({ job: before, now: now.toISOString(), organizationId: viewer.organizationId, resumed: true, via: "in_app" }),
+      { actor: viewer }
+    ),
+  stopped: (viewer, before, status, now) =>
+    recordProductEvent(
+      "job_stopped",
+      () => jobStoppedProperties({ job: before, now: now.toISOString(), organizationId: viewer.organizationId, status, via: "in_app" }),
+      { actor: viewer }
+    )
+}
+
 function ownJobView(job: StoredOwnJob, inquiries: MarketplaceOwnJobView["inquiries"]): MarketplaceOwnJobView {
   return {
     boost: job.boost,
@@ -94,7 +127,11 @@ function ownJobView(job: StoredOwnJob, inquiries: MarketplaceOwnJobView["inquiri
   }
 }
 
-export function normalizedJobsMethods(context: NormalizedFeatureContext, storeFor: NormalizedJobsStoreFor): MarketplaceJobsPort {
+export function normalizedJobsMethods(
+  context: NormalizedFeatureContext,
+  storeFor: NormalizedJobsStoreFor,
+  events: JobLifecycleEvents = JOB_LIFECYCLE_PRODUCT_EVENTS
+): MarketplaceJobsPort {
   async function requireJobDesk(store: NormalizedJobsStore, viewer: MarketplaceV2Viewer) {
     if (!(await store.capabilities(viewer.organizationId)).includes("job.publish")) {
       throw new MarketplaceRefusalError(CANNOT_MANAGE_JOBS, "42501")
@@ -206,17 +243,26 @@ export function normalizedJobsMethods(context: NormalizedFeatureContext, storeFo
         throw new MarketplaceRefusalError(JOB_STATUS_CHOICE, "22023")
       }
 
-      await context.asViewer(viewer, async (calls) => {
+      const stopped = await context.asViewer(viewer, async (calls) => {
         const store = storeFor(calls)
         await requireJobDesk(store, viewer)
         const current = await requireOwnJob(store, viewer, target)
-        const plan = await refusingAs(() => planJobStatusChange(ownJobLifecycleState(current), parsed.data, context.now()))
+        const now = context.now()
+        const plan = await refusingAs(() => planJobStatusChange(ownJobLifecycleState(current), parsed.data, now))
 
-        if (plan.changed) {
-          // Stopping a boosted job also stops its sponsorship: the store sponsors only an active job (§4.6, §9.16).
-          await store.setStatus(target, plan.to)
+        if (!plan.changed) {
+          return null
         }
+
+        // Stopping a boosted job also stops its sponsorship: the store sponsors only an active job (§4.6, §9.16).
+        await store.setStatus(target, plan.to)
+        return { before: current.job, now, status: plan.to }
       }, write)
+
+      // Committed: the change is reported once, with the listing as it was.
+      if (stopped) {
+        await events.stopped(viewer, stopped.before, stopped.status, stopped.now)
+      }
     },
 
     async resumeJob(viewer, jobId, attestation) {
@@ -226,14 +272,18 @@ export function normalizedJobsMethods(context: NormalizedFeatureContext, storeFo
 
       const target = jobIdOf(jobId)
 
-      await context.asViewer(viewer, async (calls) => {
+      const resumed = await context.asViewer(viewer, async (calls) => {
         const store = storeFor(calls)
         await requireJobDesk(store, viewer)
         const current = await requireOwnJob(store, viewer, target)
-        await refusingAs(() => planJobResume(ownJobLifecycleState(current), context.now()))
+        const now = context.now()
+        await refusingAs(() => planJobResume(ownJobLifecycleState(current), now))
         // The store writes the attestation and the status together; its clock becomes the job's last confirmation.
         await store.reactivate(target)
+        return { before: current.job, now }
       }, write)
+
+      await events.resumed(viewer, resumed.before, resumed.now)
     },
 
     async duplicateJob(viewer, jobId) {

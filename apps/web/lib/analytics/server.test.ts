@@ -15,6 +15,21 @@ vi.mock("next/headers", () => ({
   })
 }))
 
+/** `after()` from next/server: holds each task until the test "sends the response", as Next does. */
+const response = vi.hoisted(() => ({ inRequest: true, tasks: [] as Array<() => unknown> }))
+
+vi.mock("next/server", () => ({
+  after: vi.fn((task: () => unknown) => {
+    if (!response.inRequest) throw new Error("`after` was called outside a request scope")
+    response.tasks.push(task)
+  })
+}))
+
+async function sendResponse(): Promise<void> {
+  const tasks = response.tasks.splice(0)
+  for (const task of tasks) await task()
+}
+
 const NOW = "2026-11-10T18:00:00.000Z"
 const USER = "0b4f6c1d-2e3a-4b5c-9d6e-7f8091a2b3c4"
 const LANDING_ORG = "1c5a7d2e-3f4b-4c6d-8e7f-8091a2b3c4d5"
@@ -82,6 +97,8 @@ const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(a
 beforeEach(() => {
   request.headers = new Headers()
   request.throws = false
+  response.inRequest = true
+  response.tasks = []
   fetchMock.mockClear()
   vi.stubGlobal("fetch", fetchMock)
 })
@@ -335,6 +352,77 @@ describe("server product events", RELOADING, () => {
 
     expect(server.availabilityReconfirmedProperties({ confirmed: 999, organizationId: HAULER_ORG, signedIn: true, via: "in_app" }).truck_types).toBe(200)
     expect(server.availabilityReconfirmedProperties({ confirmed: -3, organizationId: HAULER_ORG, signedIn: true, via: "in_app" }).truck_types).toBe(0)
+  })
+})
+
+describe("recordProductEvent: after the write commits, once the response has gone", RELOADING, () => {
+  const availability = () => ({ org: `o_${"c".repeat(32)}`, signed_in: true, truck_types: 2, via: "in_app" as const })
+
+  it("sends exactly one event, and only after the response", async () => {
+    const server = await load()
+
+    await expect(server.recordProductEvent("availability_reconfirmed", availability, { actor: { userId: USER } })).resolves.toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(response.tasks).toHaveLength(1)
+
+    await sendResponse()
+    expect(sentBody().event).toBe("availability_reconfirmed")
+  })
+
+  it("decides Do Not Track and Global Privacy Control from the request the write came in on", async () => {
+    const server = await load()
+
+    request.headers = new Headers({ DNT: "1" })
+    await server.recordProductEvent("availability_reconfirmed", availability, { actor: { userId: USER } })
+    request.headers = new Headers({ "Sec-GPC": "1" })
+    await server.recordProductEvent("availability_reconfirmed", availability, { actor: { userId: USER } })
+    request.headers = new Headers()
+    await sendResponse()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    await server.recordProductEvent("availability_reconfirmed", availability, { actor: { userId: USER } })
+    request.headers = new Headers({ DNT: "1" })
+    await sendResponse()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("schedules nothing when the builder records nothing, or cannot read what the call site holds", async () => {
+    const server = await load()
+
+    await expect(server.recordProductEvent("interest_replied", () => null, { actor: { userId: USER } })).resolves.toBeUndefined()
+    await expect(
+      server.recordProductEvent("job_published", () => {
+        throw new TypeError("Cannot read properties of undefined (reading 'length')")
+      }, { actor: { userId: USER } })
+    ).resolves.toBeUndefined()
+
+    expect(response.tasks).toHaveLength(0)
+    await sendResponse()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("tells a call site whether an event would be sent at all: a key, and no Do Not Track or Global Privacy Control", async () => {
+    const server = await load()
+
+    await expect(server.productEventsWanted()).resolves.toBe(true)
+    request.headers = new Headers({ DNT: "1" })
+    await expect(server.productEventsWanted()).resolves.toBe(false)
+    request.headers = new Headers({ "Sec-GPC": "1" })
+    await expect(server.productEventsWanted()).resolves.toBe(false)
+    request.throws = true
+    await expect(server.productEventsWanted()).resolves.toBe(true)
+
+    await expect((await load(null)).productEventsWanted()).resolves.toBe(false)
+  })
+
+  it("sends in the background outside a request (a scheduled job), with no privacy signal to read", async () => {
+    const server = await load()
+    response.inRequest = false
+    request.throws = true
+
+    await server.recordProductEvent("availability_reconfirmed", availability, { actor: { organizationId: HAULER_ORG } })
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(sentBody().distinct_id).toBe(server.pseudonymousId("organization", HAULER_ORG))
   })
 })
 
