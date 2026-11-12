@@ -419,6 +419,18 @@ begin
     '23514', '^Waiting for the poster to confirm$', '31-R: ... and on a V2 job whose last confirmation is 20 days old');
   perform pg_temp.fails(format('select * from marketplace.submit_expression_of_interest(%L::uuid, %L::uuid, 1)', o_haul2, j_paused),
     '23514', 'no longer accepting interest', '31-R: a paused job keeps its own reason, however old its confirmation');
+  -- The direct path: 02 lets a signed-in person INSERT an inquiry, under the interests_hauler_insert policy.
+  perform pg_temp.fails(format('insert into marketplace.expressions_of_interest (job_id, job_org_id, hauler_org_id, trucks_offered) values (%L, %L, %L, 1)', j_15, o_land, o_haul2),
+    '42501', 'row-level security', '31-R: a direct INSERT of an inquiry on a job confirmed 15 days ago is refused too (interests_hauler_insert)');
+  perform pg_temp.fails(format('insert into marketplace.expressions_of_interest (job_id, job_org_id, hauler_org_id, trucks_offered) values (%L, %L, %L, 1)', j_never, o_land, o_haul2),
+    '42501', 'row-level security', '31-R: ... and on a legacy job that was never confirmed');
+  perform pg_temp.fails(format('insert into marketplace.expressions_of_interest (job_id, job_org_id, hauler_org_id, trucks_offered) values (%L, %L, %L, 1)', j_14, o_land, o_haul2),
+    '42501', 'row-level security', '31-R: ... and at exactly 14 days');
+  insert into marketplace.expressions_of_interest (job_id, job_org_id, hauler_org_id, trucks_offered) values (j_fresh, o_land, o_haul2, 1);
+  perform pg_temp.as_jwt('harness');
+  perform pg_temp.ok((select count(*) = 1 from marketplace.expressions_of_interest where job_id = j_fresh and hauler_org_id = o_haul2 and status = 'submitted' and submitted_by = u_haul2),
+    '31-R: ... while a direct INSERT on a freshly confirmed job is still accepted');
+  perform pg_temp.as_jwt('authenticated', 's31_haul2');
   select created into v_created from marketplace.submit_expression_of_interest(o_haul2, j_13, 1);
   perform pg_temp.ok(v_created, '31-R: new interest on a job confirmed 13 days ago is accepted');
   select created into v_created from marketplace.submit_expression_of_interest(o_haul2, j_14m, 1);
@@ -744,10 +756,18 @@ begin
                                      where table_schema = 'marketplace' and table_name like 'notification_unsubscribe_%'
                                        and grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role')),
     'privileges: the key and used-token tables have row-level security, no policy and no grant to any API role');
-  perform pg_temp.ok(not has_table_privilege('authenticated', 'marketplace.expressions_of_interest', 'INSERT')
-                     and not has_column_privilege('authenticated', 'marketplace.expressions_of_interest', 'private_details_shared_at', 'UPDATE')
-                     and not has_column_privilege('authenticated', 'marketplace.expressions_of_interest', 'status', 'UPDATE'),
-    'privileges: a signed-in person cannot insert an inquiry or write its status or sharing columns directly, so the functions are the only path');
+  perform pg_temp.ok(not has_column_privilege('authenticated', 'marketplace.expressions_of_interest', 'private_details_shared_at', 'UPDATE')
+                     and not has_column_privilege('authenticated', 'marketplace.expressions_of_interest', 'private_details_shared_by', 'UPDATE')
+                     and not has_column_privilege('authenticated', 'marketplace.expressions_of_interest', 'status', 'UPDATE')
+                     and not has_column_privilege('authenticated', 'marketplace.expressions_of_interest', 'status', 'INSERT')
+                     and not has_column_privilege('authenticated', 'marketplace.expressions_of_interest', 'private_details_shared_at', 'INSERT'),
+    'privileges: a signed-in person cannot write an inquiry''s status or sharing columns directly, on insert or update, so respond_to_interest is the only path to sharing');
+  perform pg_temp.ok((select with_check like '%job_takes_new_interest(job_id)%' and with_check like '%job_is_publicly_visible(job_id)%'
+                      from pg_policies where schemaname = 'marketplace' and tablename = 'expressions_of_interest' and policyname = 'interests_hauler_insert')
+                     and has_function_privilege('authenticated', 'marketplace.job_takes_new_interest(uuid)', 'EXECUTE')
+                     and not has_function_privilege('anon', 'marketplace.job_takes_new_interest(uuid)', 'EXECUTE')
+                     and not has_function_privilege('service_role', 'marketplace.job_takes_new_interest(uuid)', 'EXECUTE'),
+    'privileges: a direct INSERT of an inquiry passes through interests_hauler_insert, which asks job_takes_new_interest (authenticated only)');
 
   -- -------------------------------------------------------------------------
   -- Ledger

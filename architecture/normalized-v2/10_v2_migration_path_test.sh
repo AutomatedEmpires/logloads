@@ -22,8 +22,8 @@
 #       unique constraint every membership already satisfies);
 #   29  changes no stored row either (it redefines four functions: the landing-scope guard, respond_to_interest and the
 #       two audience counts);
-#   31  changes no stored row either (it redefines eight functions, adds four functions and two tables that start
-#       empty, and replaces two policies), so an inquiry shared before a reply stays as stored and is simply no longer
+#   31  changes no stored row either (it redefines eight functions, adds five functions and two tables that start
+#       empty, and replaces three policies), so an inquiry shared before a reply stays as stored and is simply no longer
 #       readable by the hauling business.
 # =============================================================================
 set -euo pipefail

@@ -183,9 +183,10 @@ begin
   -- Functions: baseline 44; + 06 63; + 11/12 74 (5 in 11, 6 in 12); + 16 82 (the rest redefine existing ones);
   -- + 18 86 (three visibility helpers and one trigger function; the rest redefine existing ones);
   -- + 26 109 (20 functions and 3 trigger functions; it also redefines ten existing ones); 29 only redefines;
-  -- + 31 113 (job_confirmation_current, hmac_sha256, issue_unsubscribe_token, unsubscribe_with_token; it redefines eight).
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage31() then 113 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
-    format('expected %s functions in marketplace, found %s', case when pg_temp.stage31() then 113 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- + 31 114 (job_confirmation_current, job_takes_new_interest, hmac_sha256, issue_unsubscribe_token,
+  -- unsubscribe_with_token; it redefines eight).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec

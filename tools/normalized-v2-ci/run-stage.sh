@@ -488,7 +488,7 @@ SUITES
     ;;
   31)
     # What 31 changes, by function source, function grant, table and policy: it redefines exactly eight functions, adds
-    # exactly four functions and two tables, replaces two policies, and changes no grant of an existing function.
+    # exactly five functions and two tables, replaces three policies, and changes no grant of an existing function.
     FN_SRC_SQL="select p.oid::regprocedure::text || '|' || md5(p.prosrc) from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
     FN_ACL_SQL="select p.oid::regprocedure::text || '|' || coalesce(array_to_string(p.proacl, ','), '') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
     TABLES_SQL="select c.relname from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p') order by 1;"
@@ -503,9 +503,9 @@ SUITES
     # Function names only: the argument list is printed with or without the extensions schema, by search_path.
     REMOVED="$(LC_ALL=C comm -23 <(cut -d'|' -f1 "$LOG_DIR/stage31-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage31-src-after.txt") | sed 's/(.*//' | paste -sd, -)"
     ADDED="$(LC_ALL=C comm -13 <(cut -d'|' -f1 "$LOG_DIR/stage31-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage31-src-after.txt") | sed 's/(.*//' | paste -sd, -)"
-    EXPECTED_ADDED="marketplace.hmac_sha256,marketplace.issue_unsubscribe_token,marketplace.job_confirmation_current,marketplace.unsubscribe_with_token"
+    EXPECTED_ADDED="marketplace.hmac_sha256,marketplace.issue_unsubscribe_token,marketplace.job_confirmation_current,marketplace.job_takes_new_interest,marketplace.unsubscribe_with_token"
     [[ -z "$REMOVED" && "$ADDED" == "$EXPECTED_ADDED" ]] || { echo "POST-STAGE CHECK FAILED: 31 dropped [$REMOVED] and added [$ADDED]; expected none dropped and [$EXPECTED_ADDED] added" | tee -a "$LOG" >&2; exit 1; }
-    echo "  check ok: 31 drops no function and adds exactly job_confirmation_current (31-R) and hmac_sha256, issue_unsubscribe_token, unsubscribe_with_token (31-U)" | tee -a "$LOG"
+    echo "  check ok: 31 drops no function and adds exactly job_confirmation_current and job_takes_new_interest (31-R) and hmac_sha256, issue_unsubscribe_token, unsubscribe_with_token (31-U)" | tee -a "$LOG"
     CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage31-src-before.txt" "$LOG_DIR/stage31-src-after.txt" | awk -F'|' '$2 != $3 {print $1}' | sed 's/(.*//' | paste -sd, -)"
     EXPECTED_CHANGED="marketplace.can_view_landing_private,marketplace.list_marketplace_jobs,marketplace.reactivate_job_posting,marketplace.reconfirm_job_posting,marketplace.respond_to_interest,marketplace.search_job_postings,marketplace.set_job_posting_status,marketplace.submit_expression_of_interest"
     [[ "$CHANGED" == "$EXPECTED_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 31 changed [$CHANGED], expected [$EXPECTED_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
@@ -518,10 +518,11 @@ SUITES
     echo "  check ok: 31 adds exactly the tables notification_unsubscribe_keys and notification_unsubscribe_uses" | tee -a "$LOG"
     POLICY_DIFF="$(LC_ALL=C comm -3 <(cut -d'|' -f1 "$LOG_DIR/stage31-policies-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage31-policies-after.txt") | tr -d '\t' | paste -sd, -)"
     POLICY_CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage31-policies-before.txt" "$LOG_DIR/stage31-policies-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
-    [[ -z "$POLICY_DIFF" && "$POLICY_CHANGED" == "promotion_redemptions.promotion_redemptions_read,promotions.promotions_read" ]] || { echo "POST-STAGE CHECK FAILED: 31 added or dropped policies [$POLICY_DIFF] and changed [$POLICY_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
-    echo "  check ok: 31 adds and drops no policy and changes exactly promotion_redemptions_read and promotions_read (31-F)" | tee -a "$LOG"
+    [[ -z "$POLICY_DIFF" && "$POLICY_CHANGED" == "expressions_of_interest.interests_hauler_insert,promotion_redemptions.promotion_redemptions_read,promotions.promotions_read" ]] || { echo "POST-STAGE CHECK FAILED: 31 added or dropped policies [$POLICY_DIFF] and changed [$POLICY_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 31 adds and drops no policy and changes exactly interests_hauler_insert (31-R) and promotion_redemptions_read and promotions_read (31-F)" | tee -a "$LOG"
     check "31-P1: can_view_landing_private asks for a replied inquiry, and respond_to_interest refuses sharing before a reply" "select (select prosrc like '%e.status = ''replied''%' and prosrc not like '%not in (''withdrawn'', ''declined'')%' from pg_proc where oid = 'marketplace.can_view_landing_private(uuid)'::regprocedure) and (select prosrc like '%Reply to this inquiry before sharing%' from pg_proc where oid = 'marketplace.respond_to_interest(uuid, text, boolean, uuid, text)'::regprocedure);"
     check "31-R: both lists and new interest use the one day-14 rule" "select bool_and(p.prosrc like '%marketplace.job_confirmation_current(%') and count(*) = 3 from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.proname in ('list_marketplace_jobs', 'search_job_postings', 'submit_expression_of_interest');"
+    check "31-R: a direct INSERT of an inquiry is held to the same rule (interests_hauler_insert asks job_takes_new_interest, authenticated only)" "select (select with_check like '%job_takes_new_interest(job_id)%' from pg_policies where schemaname = 'marketplace' and tablename = 'expressions_of_interest' and policyname = 'interests_hauler_insert') and has_function_privilege('authenticated', 'marketplace.job_takes_new_interest(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.job_takes_new_interest(uuid)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.job_takes_new_interest(uuid)', 'EXECUTE');"
     check "31-O: the three lifecycle functions answer another business's job as not found" "select bool_and(p.prosrc like '%if not found or not marketplace.has_org_role(v_job.org_id, array[''owner'', ''manager'', ''staff'', ''driver'']) then%') and count(*) = 3 from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.proname in ('reconfirm_job_posting', 'set_job_posting_status', 'reactivate_job_posting');"
     check "31-U: unsubscribe_with_token is executable by anon only, issue_unsubscribe_token by service_role only, the helpers by no API role" "select has_function_privilege('anon', 'marketplace.unsubscribe_with_token(text)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.unsubscribe_with_token(text)', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.unsubscribe_with_token(text)', 'EXECUTE') and has_function_privilege('service_role', 'marketplace.issue_unsubscribe_token(uuid, uuid, text, text, interval)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.issue_unsubscribe_token(uuid, uuid, text, text, interval)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.issue_unsubscribe_token(uuid, uuid, text, text, interval)', 'EXECUTE') and (select bool_and(not has_function_privilege(r, f, 'EXECUTE')) from unnest(array['marketplace.hmac_sha256(bytea, bytea)', 'marketplace.job_confirmation_current(timestamptz)']::regprocedure[]) f, unnest(array['anon', 'authenticated', 'service_role']) r);"
     check "31-U: unsubscribe_with_token is the only volatile marketplace function anon can execute" "select count(*) = 1 and bool_and(p.proname = 'unsubscribe_with_token') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.provolatile = 'v' and has_function_privilege('anon', p.oid, 'EXECUTE');"
@@ -533,7 +534,7 @@ SUITES
     check "suite rolled back (no test organizations, signing keys or used tokens left)" "select (select count(*) from marketplace.organizations where slug like 's31-%') + (select count(*) from marketplace.notification_unsubscribe_keys) + (select count(*) from marketplace.notification_unsubscribe_uses) = 0;"
     PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
     echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
-    [[ "$PASSES" -ge 92 ]] || { echo "STAGE 32: only $PASSES PASS notices; expected at least 92" >&2; exit 1; }
+    [[ "$PASSES" -ge 97 ]] || { echo "STAGE 32: only $PASSES PASS notices; expected at least 97" >&2; exit 1; }
     # Regression: the earlier suites run again on the 31 schema, 30 (29's suite, whose sharing steps 31-P1 changes)
     # included. 24 pins the ledger at 23 and is not re-run; its rules run again through 17, 19 and 21.
     while IFS='|' read -r SUITE NOTICE; do

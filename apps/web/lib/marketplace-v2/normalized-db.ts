@@ -75,7 +75,8 @@ interface FunctionSpec {
  * Never catalogued: anything granted to `service_role` only (the email worker's `claim_email_notifications`,
  * `complete_email_notification`, `record_email_provider_event`, `enqueue_job_alerts` and `issue_unsubscribe_token`,
  * which mints the unsubscribe links; billing events; identity sync), and helpers with no EXECUTE grant
- * (`eligible_invitation_recipients`, `hmac_sha256`, `job_confirmation_current`). This connection cannot become
+ * (`eligible_invitation_recipients`, `hmac_sha256`, `job_confirmation_current`). `job_takes_new_interest` serves a
+ * row-level security policy and is not called from here. This connection cannot become
  * `service_role` (HF-22).
  */
 export const MARKETPLACE_FUNCTIONS = {

@@ -6,8 +6,8 @@
 -- Run order: 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 -> 29 -> 31 (19..22, 24, 25, 27, 28, 30 and 32
 -- are test suites and harnesses, not migrations). Apply exactly once, in one transaction:
 -- psql -v ON_ERROR_STOP=1 --single-transaction -f 31_...sql
--- 31 changes no stored row. It redefines eight functions (CREATE OR REPLACE keeps each ACL), adds four functions and
--- two empty tables, and replaces two row-level security policies. Stage 31 in CI checks this exact set; 10 proves on
+-- 31 changes no stored row. It redefines eight functions (CREATE OR REPLACE keeps each ACL), adds five functions and
+-- two empty tables, and replaces three row-level security policies. Stage 31 in CI checks this exact set; 10 proves on
 -- existing data that no row changes.
 --
 -- 31-P1  (P1, cloud security sweep of 2026-11-11.) A landing's private details (site contact name and phone, exact
@@ -24,6 +24,8 @@
 --        job is not expired or paused and its status stays 'active'. It is still returned by id, with
 --        accepting_interest false, and to its own landing desk. Reconfirming restores it at once. The boundary is the
 --        one packages/services/src/v2/jobs/lifecycle.ts uses: hidden from exactly 14 x 24 hours after the confirmation.
+--        A direct INSERT of an inquiry (02's column grant, 06's interests_hauler_insert policy) is held to the same
+--        rule through job_takes_new_interest.
 -- 31-U   (#252.) A signed-out unsubscribe link. unsubscribe_with_token takes a signed, expiring, single-use token and
 --        turns off that one recipient's one channel preference. It is the only marketplace function anon can call that
 --        writes. It returns nothing and raises nothing for a token that is malformed, forged, expired, already used
@@ -284,6 +286,33 @@ $$;
 
 comment on function marketplace.job_confirmation_current(timestamptz) is
   '31-R (#308): true when a job was confirmed less than 14 x 24 hours ago. False from exactly 14 days, and for a job that was never confirmed. An active job that is not current is off every list and takes no new interest until its poster reconfirms it; it is neither expired nor paused.';
+
+-- The same rule on the direct path. 02 grants authenticated a column INSERT on expressions_of_interest, and 06's
+-- interests_hauler_insert policy asked only for a publicly visible job, so a direct INSERT (PostgREST) would skip the
+-- refusal submit_expression_of_interest makes below. The policy is 06's, verbatim, plus its last line. A withdrawn
+-- inquiry cannot be sent again directly: status is not among the columns a person can update.
+create function marketplace.job_takes_new_interest(p_job uuid)
+returns boolean language sql stable security definer
+set search_path = pg_catalog, extensions, pg_temp
+as $$
+  select marketplace.job_is_publicly_visible(p_job)
+     and exists (select 1 from marketplace.job_postings j
+                 where j.id = p_job and marketplace.job_confirmation_current(j.last_confirmed_at))
+$$;
+
+comment on function marketplace.job_takes_new_interest(uuid) is
+  '31-R (#308): true for a publicly visible job that was confirmed in the last 14 days. Used by the interests_hauler_insert policy, so a direct INSERT of an inquiry follows the rule submit_expression_of_interest enforces.';
+
+drop policy interests_hauler_insert on marketplace.expressions_of_interest;
+create policy interests_hauler_insert on marketplace.expressions_of_interest for insert to authenticated
+  with check (hauler_org_id in (select marketplace.my_org_ids(array['owner', 'manager', 'staff', 'driver']))
+              and submitted_by = (select marketplace.current_user_id())
+              and status = 'submitted'
+              and exists (select 1 from marketplace.hauler_profiles h
+                          join marketplace.organizations o on o.id = h.org_id and o.status = 'active'
+                          where h.org_id = expressions_of_interest.hauler_org_id)
+              and marketplace.job_is_publicly_visible(job_id)
+              and marketplace.job_takes_new_interest(job_id)); -- 31-R
 
 -- 06's list_marketplace_jobs.
 create or replace function marketplace.list_marketplace_jobs(
@@ -1252,11 +1281,14 @@ comment on function marketplace.unsubscribe_with_token(text) is
 -- -----------------------------------------------------------------------------
 revoke all on function
   marketplace.job_confirmation_current(timestamptz),
+  marketplace.job_takes_new_interest(uuid),
   marketplace.hmac_sha256(bytea, bytea),
   marketplace.issue_unsubscribe_token(uuid, uuid, text, text, interval),
   marketplace.unsubscribe_with_token(text)
   from public, anon, authenticated, service_role;
 
+-- interests_hauler_insert runs it as the person inserting.
+grant execute on function marketplace.job_takes_new_interest(uuid) to authenticated;
 -- The signed-out link. It is the only function 31 gives anon, and the only one anon holds that writes.
 grant execute on function marketplace.unsubscribe_with_token(text) to anon;
 -- The email worker runs with the service role.
