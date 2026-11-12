@@ -1482,9 +1482,11 @@ function finalizeCapacityAssignment(
         billingCommitment.billingModel === "percentage_v1"
           ? {
               // The percentage fee is retired. A historical agreement still
-              // files this movement under its model, but no rate is frozen and
-              // the collection state is not an accruing one, so nothing on
-              // this movement can ever accrue a fee.
+              // files this movement under its model, and a host with no
+              // agreement commits it under percentage_v1 as no-fee work
+              // (#359). Either way no rate is frozen and the collection state
+              // is not an accruing one, so nothing on this movement can ever
+              // accrue a fee.
               billingModel: billingCommitment.billingModel,
               collectionState: PERCENTAGE_FEE_RETIRED_COLLECTION_STATE,
               currency: null,
