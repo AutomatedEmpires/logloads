@@ -7,6 +7,7 @@ import { Button, EmptyState, Tabs } from "@logloads/ui/primitives"
 
 import { FormCheckbox } from "@/components/v2/FormCheckbox"
 import { reconfirmJobAction } from "@/lib/marketplace-v2/actions"
+import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import {
   JOB_POSTING_TABS,
@@ -90,7 +91,8 @@ export default async function LandingJobsPage({ searchParams }: { searchParams: 
   const confirmable = tab === "published" ? shown.filter((job) => job.acceptingInterest) : []
   const copy = TAB_COPY[tab]
   const now = new Date().toISOString()
-  const error = one(query.error)
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
 
   return (
     <div data-ds-page="job-postings">
@@ -120,7 +122,7 @@ export default async function LandingJobsPage({ searchParams }: { searchParams: 
           layout="single"
           main={
             <>
-              {error ? <p className={styles.notice} data-tone="critical" role="alert">{error}</p> : null}
+              {failure ? <p className={styles.notice} data-tone="critical" role="alert">{failure.message}</p> : null}
               {one(query.unavailable) === "reconfirm" ? (
                 <p className={styles.notice} role="status">
                   Confirming availability is not saved yet: it needs the normalized marketplace store. Nothing was changed, and the

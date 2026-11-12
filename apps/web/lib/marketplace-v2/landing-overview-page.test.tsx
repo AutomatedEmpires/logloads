@@ -227,3 +227,26 @@ describe("the landing overview (#133)", () => {
     expect(mocks.listLandingInterests).not.toHaveBeenCalled()
   })
 })
+
+describe("the overview's errors (#279)", () => {
+  it("shows fixed copy for ?error=, never its words (C2)", async () => {
+    const injected = await render({ error: "Your account is locked. Call 541-555-0100 to keep your listings." })
+
+    expect(injected).not.toContain("541-555-0100")
+    expect(injected).toMatch(/role="alert"[^>]*><p>Something went wrong on our side\. Try again in a moment\.<\/p>/)
+    expect(await render({ error: "reconfirm_attestation" })).toContain("Tick the availability confirmation to record that this job is still available.")
+  })
+
+  it("logs a read that failed under a request id, without its words (K2)", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    mocks.listJobs.mockRejectedValue(new Error("store unavailable for maya@northpine.example"))
+
+    expect(await render()).toContain("Your jobs could not be loaded")
+    expect(logged).toHaveBeenCalledExactlyOnceWith(
+      "logloads: marketplace v2 request failed",
+      expect.objectContaining({ code: "unexpected", operation: "landing_overview.jobs", requestId: expect.stringMatching(/^[0-9a-f]{12}$/) })
+    )
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("maya@northpine.example")
+    logged.mockRestore()
+  })
+})

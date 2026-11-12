@@ -154,3 +154,16 @@ export function idFromRow(row: unknown): string | null {
 
   return parse(idRowSchema, row).id
 }
+
+const changedRowSchema = z.object({ changed: z.boolean() }).strict()
+
+/**
+ * A write that answers one row for a member of the active business: whether it changed anything (saving a job again,
+ * or removing one already gone, is `false`). `null` when there is no row: the person is not a member, so nothing was
+ * written. An unexpected shape fails closed.
+ */
+export function changedFromRow(row: unknown): boolean | null {
+  if (row === undefined || row === null) return null
+
+  return parse(changedRowSchema, row).changed
+}

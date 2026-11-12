@@ -8,6 +8,7 @@ import { LandingAllowanceFigures, WhoSeesWhat } from "@/components/v2/landing/La
 import { LandingStatusForms } from "@/components/v2/landing/LandingStatusForms"
 import styles from "@/components/v2/landing/landing.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
+import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import {
   activeLandingsLine,
@@ -89,7 +90,8 @@ export default async function LandingsPage({ searchParams }: { searchParams: Sea
   const named = (id: string) => (landings.ok ? landings.value.find((landing) => landing.id === id)?.name : undefined) ?? "The landing"
   const subject = one(query.landing)
   const updated = one(query.updated)
-  const error = one(query.error)
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
 
   return (
     <div data-ds-page="landings">
@@ -115,10 +117,11 @@ export default async function LandingsPage({ searchParams }: { searchParams: Sea
               {one(query.saved) ? <PageNotice role="status" tone="positive"><p>{named(one(query.saved))} is saved.</p></PageNotice> : null}
               {updated && UPDATED[updated] ? <PageNotice role="status" tone="positive"><p>{named(subject)} {UPDATED[updated]}</p></PageNotice> : null}
               {one(query.unavailable) === "status" ? <PageNotice role="status"><p>{LANDING_STATUS_UNAVAILABLE}</p></PageNotice> : null}
-              {error ? (
+              {failure ? (
                 <PageNotice role="alert" tone="critical">
-                  <p>{error}</p>
-                  {one(query.cap) ? <p><a href="#landings">Pause another landing</a> or <a href={PLANS_HREF}>see plans</a>.</p> : null}
+                  <p>{failure.message}</p>
+                  {failure.code === "landing_cap" ? <p><a href="#landings">Pause another landing</a> or <a href={PLANS_HREF}>see plans</a>.</p> : null}
+                  {failure.code === "landing_billing_inactive" ? <p><a href={PLANS_HREF}>See plans</a>.</p> : null}
                 </PageNotice>
               ) : null}
               {summary && !summary.billingActive ? (

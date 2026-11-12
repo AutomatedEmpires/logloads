@@ -9,6 +9,8 @@ import styles from "@/components/v2/onboarding/Onboarding.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { AddEquipmentForm, AvailabilityForm, CapacityBoard, EquipmentRow } from "@/components/v2/trucks/TrucksForms"
 import truckStyles from "@/components/v2/trucks/Trucks.module.css"
+import { withV2Reference } from "@/lib/marketplace-v2/error-codes"
+import { reportV2Error } from "@/lib/marketplace-v2/error-log"
 import { fleetAnswerFromQuery, TRUCKS_PATH } from "@/lib/marketplace-v2/fleet-page"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { HAULER_SETUP_STEPS, PROFILE_PATH, SETUP_DONE_PATH } from "@/lib/marketplace-v2/hauler-profile-form"
@@ -61,7 +63,10 @@ export default async function HaulerTrucksPage({ searchParams }: { searchParams:
   try {
     fleet = await pilotMarketplaceV2.haulerFleet(resolved.viewer)
   } catch (error) {
-    return <Refusal body={withBusinessSwitchNote(error instanceof MarketplaceRefusalError ? error.message : "Your trucks could not be loaded. Try again in a moment.")} title="Trucks not available" />
+    // A store refusal keeps its words; anything else is logged, and the page names its reference (#279, K2).
+    const failure = reportV2Error(error, "fleet.read")
+    const body = error instanceof MarketplaceRefusalError ? error.message : withV2Reference("Your trucks could not be loaded. Try again in a moment.", failure.requestId)
+    return <Refusal body={withBusinessSwitchNote(body)} title="Trucks not available" />
   }
 
   const now = new Date()
