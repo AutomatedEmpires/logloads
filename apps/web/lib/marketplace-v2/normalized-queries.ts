@@ -20,6 +20,13 @@
  *                     tg_job_hold_duplicate_guard and tg_landing_scope_guard decide again
  *   job_posting_equipment  insert/delete for the desk's own jobs (job_equipment_write/_remove)
  *   targeted_invitations, job_boosts  read: the sending desk (invitations_read, job_boosts_read), counts and windows only
+ *   saved_jobs        the person's own saved jobs (#252, #316). read/insert: the person, as a member (saved_jobs_read/
+ *                     _insert); insert only (org_id, job_id), the person is the column default; tg_saved_job_guard
+ *                     refuses the business's own job and a job that is not open
+ *   saved_searches    the person's own job searches (saved_searches_own); insert without owner_user_id, update only
+ *                     name, criteria and alerts_enabled
+ *   notification_preferences  the person's own consents in the business (notification_preferences_self)
+ *   app_users         the person's own id only, to mint an unsubscribe link; never an address
  *
  * Every statement also names the active business explicitly (`$1`) and checks the person's membership of it, so a
  * person who belongs to several businesses only ever reads or changes the one they are acting for. Values are bound
@@ -400,6 +407,152 @@ with changed as (
   where not exists (select 1 from marketplace.job_posting_equipment e where e.job_id = c.id and e.equipment_code = w.code)
   returning equipment_code
 ) select jsonb_build_object('id', c.id, 'updated_at', c.updated_at) as row from changed c`
+  },
+
+  // ---- Alerts (#252, #316) ----------------------------------------------------------------------------------
+  //
+  // The person's own saved jobs, job searches and notification consents in the active business. Stage 26 has a
+  // function only for listing saved jobs (`list_saved_jobs`), so the rest run as the person under each table's
+  // row-level security (saved_jobs_read/_insert/_delete, saved_searches_own, notification_preferences_self), which
+  // admits any active member. Each statement also checks that membership of the active business ($1) itself: a write
+  // answers with exactly one row for a member and none for anyone else, so a non-member is refused instead of being
+  // told it saved. The person is always `current_user_id()` or the column default, never a value from the caller. None
+  // of these reads an address. The signed-out unsubscribe is not here: it has no session, and stage 26's policy is
+  // authenticated-only, so it waits for #294's function (alerts/statements.ts).
+
+  /** Saves a job for the person. Saving it again hits the primary key and changes nothing ($2 job). */
+  alert_save_job: {
+    args: ["uuid", "uuid"],
+    text: `
+with saved as (
+  insert into marketplace.saved_jobs (org_id, job_id)
+  select $1::text::uuid, $2::text::uuid
+  where marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
+  on conflict (user_id, org_id, job_id) do nothing
+  returning job_id
+)
+select jsonb_build_object('changed', exists (select 1 from saved)) as row
+where marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})`
+  },
+
+  /** Removes one of the person's saved jobs. Removing one that is already gone changes nothing ($2 job). */
+  alert_unsave_job: {
+    args: ["uuid", "uuid"],
+    text: `
+with removed as (
+  delete from marketplace.saved_jobs
+  where org_id = $1::text::uuid
+    and job_id = $2::text::uuid
+    and user_id = marketplace.current_user_id()
+    and marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
+  returning job_id
+)
+select jsonb_build_object('changed', exists (select 1 from removed)) as row
+where marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})`
+  },
+
+  /** The person's own job searches, newest edit first. */
+  alert_list_job_searches: {
+    args: ["uuid"],
+    text: `
+select to_jsonb(s) as row from (
+  select id, kind, name, criteria, alerts_enabled, last_alerted_at, updated_at
+  from marketplace.saved_searches
+  where org_id = $1::text::uuid
+    and owner_user_id = marketplace.current_user_id()
+    and kind = 'jobs'
+    and marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
+  order by updated_at desc, id
+) as s`
+  },
+
+  /** A new job search: $2 name, $3 criteria as JSON, $4 alerts on. Kind is always jobs; the owner is the column default. */
+  alert_insert_job_search: {
+    args: ["uuid", "text", "text", "boolean"],
+    text: `
+with added as (
+  insert into marketplace.saved_searches (org_id, kind, name, criteria, alerts_enabled)
+  select $1::text::uuid, 'jobs', $2::text, $3::text::jsonb, $4::text::boolean
+  where marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
+  returning id
+) select to_jsonb(added) as row from added`
+  },
+
+  /**
+   * Edits one of the person's own job searches ($2 search): $3 name, $4 criteria as JSON, $5 alerts on. Only the
+   * granted columns change. No row: not one of theirs in this business.
+   */
+  alert_update_job_search: {
+    args: ["uuid", "uuid", "text", "text", "boolean"],
+    text: `
+with changed as (
+  update marketplace.saved_searches
+  set name = $3::text, criteria = $4::text::jsonb, alerts_enabled = $5::text::boolean
+  where id = $2::text::uuid
+    and org_id = $1::text::uuid
+    and owner_user_id = marketplace.current_user_id()
+    and kind = 'jobs'
+    and marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
+  returning id
+) select to_jsonb(changed) as row from changed`
+  },
+
+  /** Deletes one of the person's own job searches ($2 search). Deleting one that is already gone changes nothing. */
+  alert_delete_job_search: {
+    args: ["uuid", "uuid"],
+    text: `
+with removed as (
+  delete from marketplace.saved_searches
+  where id = $2::text::uuid
+    and org_id = $1::text::uuid
+    and owner_user_id = marketplace.current_user_id()
+    and kind = 'jobs'
+    and marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
+  returning id
+)
+select jsonb_build_object('changed', exists (select 1 from removed)) as row
+where marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})`
+  },
+
+  /** The person's stored consents in the business: category, channel, on or off, and when. No address. */
+  alert_list_notification_preferences: {
+    args: ["uuid"],
+    text: `
+select to_jsonb(p) as row from (
+  select category, channel, enabled, updated_at
+  from marketplace.notification_preferences
+  where user_id = marketplace.current_user_id()
+    and org_id = $1::text::uuid
+    and marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
+) as p`
+  },
+
+  /** Turns one consent on or off: $2 category, $3 channel, $4 on. The person is `current_user_id()`, on insert and on conflict. */
+  alert_set_notification_preference: {
+    args: ["uuid", "text", "text", "boolean"],
+    text: `
+with saved as (
+  insert into marketplace.notification_preferences (user_id, org_id, category, channel, enabled)
+  select marketplace.current_user_id(), $1::text::uuid, $2::text, $3::text, $4::text::boolean
+  where marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
+  on conflict (user_id, org_id, category, channel)
+  do update set enabled = excluded.enabled, updated_at = now()
+  where notification_preferences.user_id = marketplace.current_user_id()
+    and notification_preferences.org_id = $1::text::uuid
+  returning category
+) select jsonb_build_object('changed', true) as row from saved`
+  },
+
+  /** The person's marketplace id, for minting an unsubscribe link in the active business. The address is not selected. */
+  alert_viewer_user: {
+    args: ["uuid"],
+    text: `
+select to_jsonb(u) as row from (
+  select a.id
+  from marketplace.app_users a
+  where a.id = marketplace.current_user_id()
+    and marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
+) as u`
   }
 } as const satisfies Record<string, QuerySpec>
 
