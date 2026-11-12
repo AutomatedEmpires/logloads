@@ -19,6 +19,7 @@ import styles from "@/components/v2/JobEditor.module.css"
 import { JobDraftSession } from "@/components/v2/JobDraftSession"
 import { PublishButton } from "@/components/v2/PublishButton"
 import { FlowTapCounter } from "@/lib/analytics/beacons"
+import { clientAnalyticsEnabled } from "@/lib/analytics/client"
 import { publishJobAction } from "@/lib/marketplace-v2/actions"
 import { draftQueryString, draftValuesFromQuery, hasDraftValues } from "@/lib/marketplace-v2/draft-params"
 import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
@@ -91,7 +92,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
 
   return (
     <JobEditorLayout aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} values={values} />} organizationName={access.organizationName}>
-      <FlowTapCounter flow="B" />
+      {clientAnalyticsEnabled() ? <FlowTapCounter flow="B" /> : null}
       {failure ? <EditorNotice tone="critical">{failure.message}</EditorNotice> : null}
       {one(query.unavailable) === "publish" ? (
         <EditorNotice>Publishing isn&apos;t saved yet: it needs the normalized marketplace store. Your draft is unchanged.</EditorNotice>

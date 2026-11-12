@@ -401,6 +401,20 @@ describe("recordProductEvent: after the write commits, once the response has gon
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it("tells a call site whether an event would be sent at all: a key, and no Do Not Track or Global Privacy Control", async () => {
+    const server = await load()
+
+    await expect(server.productEventsWanted()).resolves.toBe(true)
+    request.headers = new Headers({ DNT: "1" })
+    await expect(server.productEventsWanted()).resolves.toBe(false)
+    request.headers = new Headers({ "Sec-GPC": "1" })
+    await expect(server.productEventsWanted()).resolves.toBe(false)
+    request.throws = true
+    await expect(server.productEventsWanted()).resolves.toBe(true)
+
+    await expect((await load(null)).productEventsWanted()).resolves.toBe(false)
+  })
+
   it("sends in the background outside a request (a scheduled job), with no privacy signal to read", async () => {
     const server = await load()
     response.inRequest = false

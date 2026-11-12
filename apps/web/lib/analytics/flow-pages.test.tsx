@@ -1,6 +1,6 @@
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 /**
  * #330: the flow A and B timing beacons on their pages (docs/analytics/event-plan.md §6), rendered on the server with
@@ -182,6 +182,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   // The app compiles JSX with the classic runtime under Vitest, as in v2-pages.test.tsx.
   vi.stubGlobal("React", React)
+  vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_flow_pages")
   signedInFor(HAULER_ORG)
   mocks.getJob.mockResolvedValue(job())
   mocks.interestForJob.mockResolvedValue(null)
@@ -195,6 +196,23 @@ beforeEach(() => {
     viewer: { organizationId: LANDING_ORG, userId: USER_ID }
   })
   mocks.authoringLandings.mockResolvedValue([{ areaLabel: "Riverton, OR", id: LANDING_ID, name: "Landing 7", stateCode: "OR" }])
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
+describe("without a PostHog key", () => {
+  it("renders no beacon on any flow page, so no beacon code is fetched", async () => {
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "")
+    mocks.interestForJob.mockResolvedValue(null)
+
+    expect(await jobPage()).toEqual([])
+    signedInFor(LANDING_ORG)
+    expect(await jobPage({ published: "1" })).toEqual([])
+    expect(await editorPage(NewJobPage)).toEqual([])
+    expect(await editorPage(JobPreviewPage, COMPLETE_DRAFT)).toEqual([])
+  })
 })
 
 describe("flow A on the job page: a hauler sends interest", () => {

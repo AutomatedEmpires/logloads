@@ -23,6 +23,7 @@ import {
   interestSubmittedProperties,
   jobPublishedProperties,
   jobReconfirmedProperties,
+  productEventsWanted,
   recordProductEvent
 } from "../analytics/server"
 import { checkRateLimit } from "../rate-limit"
@@ -171,27 +172,60 @@ export async function withdrawInterestAction(formData: FormData): Promise<void> 
   inquiryRedirect("/v2/inquiries", formData, { updated: "withdrawn" })
 }
 
+/**
+ * Whether an answer is new, read from the inquiry as it is before the write (#330). Both stores treat a resubmitted
+ * reply (the same `replyId`, as after a lost redirect) and a second decline as no change, so neither may send another
+ * `interest_replied`. The read is made only when an event would be sent at all, and runs beside the rate-limit check.
+ * An inquiry this read cannot find or a failed read counts the answer as new: the write itself decides what is allowed.
+ */
+async function answerIsNew(
+  viewer: MarketplaceV2Viewer,
+  side: "hauler" | "landing",
+  interestId: string,
+  isNew: (interest: MarketplaceInterestView) => boolean
+): Promise<boolean> {
+  try {
+    if (!(await productEventsWanted())) {
+      return false
+    }
+
+    const inquiries = side === "hauler" ? await pilotMarketplaceV2.listHaulerInterests(viewer) : await pilotMarketplaceV2.listLandingInterests(viewer)
+    const id = interestId.trim().toLowerCase()
+    const interest = inquiries.find((candidate) => candidate.id.toLowerCase() === id)
+    return interest ? isNew(interest) : true
+  } catch {
+    return true
+  }
+}
+
+const hasReply = (interest: MarketplaceInterestView, replyId: string | undefined) => Boolean(replyId) && interest.replies.some((reply) => reply.id === replyId)
+
 export async function haulerReplyAction(formData: FormData): Promise<void> {
   const viewer = await requireViewer("/v2/inquiries")
   const interestId = field(formData, "interestId")
+  const replyId = field(formData, "replyId") || randomUUID()
+  let isNew = false
 
   try {
-    await checkRateLimit("marketplace-reply", viewer.userId, 60, 60 * 60_000)
-    await pilotMarketplaceV2.postHaulerReply(viewer, {
-      body: field(formData, "body"),
-      interestId,
-      replyId: field(formData, "replyId") || randomUUID()
-    })
+    const [, fresh] = await Promise.all([
+      checkRateLimit("marketplace-reply", viewer.userId, 60, 60 * 60_000),
+      answerIsNew(viewer, "hauler", interestId, (interest) => !hasReply(interest, replyId))
+    ])
+    isNew = fresh
+    await pilotMarketplaceV2.postHaulerReply(viewer, { body: field(formData, "body"), interestId, replyId })
   } catch (error) {
     inquiryRedirect("/v2/inquiries", formData, failed(error, "inquiry.hauler_reply"))
   }
 
   // The inquiry is the one the port just wrote to (it refuses any other); its id only reaches PostHog as a pseudonym.
-  await recordProductEvent(
-    "interest_replied",
-    () => interestRepliedProperties({ decision: "replied", interestId, organizationId: viewer.organizationId, side: "hauler" }),
-    { actor: viewer }
-  )
+  if (isNew) {
+    await recordProductEvent(
+      "interest_replied",
+      () => interestRepliedProperties({ decision: "replied", interestId, organizationId: viewer.organizationId, side: "hauler" }),
+      { actor: viewer }
+    )
+  }
+
   revalidatePath("/v2", "layout")
   inquiryRedirect("/v2/inquiries", formData, { updated: "reply" })
 }
@@ -200,25 +234,32 @@ export async function respondToInterestAction(formData: FormData): Promise<void>
   const viewer = await requireViewer("/v2/landing/inquiries")
   const decision = field(formData, "decision")
   const interestId = field(formData, "interestId")
+  const replyId = field(formData, "replyId") || undefined
+  // A reply or a decline is an answer (flow C); "viewed" is not, and records nothing.
+  const answers = decision === "replied" || decision === "declined"
+  let isNew = false
 
   try {
-    await checkRateLimit("marketplace-reply", viewer.userId, 120, 60 * 60_000)
-    await pilotMarketplaceV2.respondToInterest(viewer, {
-      body: field(formData, "body"),
-      decision,
-      interestId,
-      replyId: field(formData, "replyId") || undefined
-    })
+    const [, fresh] = await Promise.all([
+      checkRateLimit("marketplace-reply", viewer.userId, 120, 60 * 60_000),
+      answers
+        ? answerIsNew(viewer, "landing", interestId, (interest) => (decision === "declined" ? interest.status !== "declined" : !hasReply(interest, replyId)))
+        : false
+    ])
+    isNew = fresh
+    await pilotMarketplaceV2.respondToInterest(viewer, { body: field(formData, "body"), decision, interestId, replyId })
   } catch (error) {
     inquiryRedirect("/v2/landing/inquiries", formData, failed(error, "inquiry.respond"))
   }
 
-  // A reply or a decline is an answer (flow C); "viewed" is not, and records nothing.
-  await recordProductEvent(
-    "interest_replied",
-    () => interestRepliedProperties({ decision, interestId, organizationId: viewer.organizationId, side: "landing" }),
-    { actor: viewer }
-  )
+  if (isNew) {
+    await recordProductEvent(
+      "interest_replied",
+      () => interestRepliedProperties({ decision, interestId, organizationId: viewer.organizationId, side: "landing" }),
+      { actor: viewer }
+    )
+  }
+
   revalidatePath("/v2", "layout")
   inquiryRedirect("/v2/landing/inquiries", formData, { updated: decision })
 }

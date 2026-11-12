@@ -141,6 +141,19 @@ export async function captureProductEvent<N extends ServerProductEventName>(
 }
 
 /**
+ * Whether a server product event would be sent for the current request: PostHog is configured and the request sends
+ * neither Do Not Track nor Global Privacy Control. A call site uses it to skip work that only an event needs, such as
+ * a read that tells a new answer from a replayed one. Never throws.
+ */
+export async function productEventsWanted(): Promise<boolean> {
+  try {
+    return isAnalyticsEnabled() && !requestRefusesTracking(await currentRequestHeaders())
+  } catch {
+    return false
+  }
+}
+
+/**
  * What a call site uses (§6): records one server product event for a write that has just committed, without making
  * the response wait. The request's privacy headers are read now, while the request is in scope, and the event is sent
  * inside `after()` from `next/server` once the response has gone. Outside a request (a scheduled job, a script) there

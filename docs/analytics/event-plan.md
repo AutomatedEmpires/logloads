@@ -246,7 +246,7 @@ await recordProductEvent(
 |---|---|---|
 | `job_published` | `publishJobAction`, `apps/web/lib/marketplace-v2/actions.ts`. `checkPublishRequest` returns the matched landing, so only its state code is sent | IMPLEMENTED (#330) |
 | `interest_submitted` | `expressInterestAction`, same file, from the view `expressInterest` returns | IMPLEMENTED (#330) |
-| `interest_replied` | `respondToInterestAction` (`side: "landing"`) and `haulerReplyAction` (`side: "hauler"`), same file. "Viewed" sends nothing | IMPLEMENTED (#330) |
+| `interest_replied` | `respondToInterestAction` (`side: "landing"`) and `haulerReplyAction` (`side: "hauler"`), same file. "Viewed" sends nothing. A resubmitted reply (the same `replyId`) and a second decline change nothing in the store, so they send nothing either: the action reads the inquiry before the write, beside the rate-limit check, and only when an event would be sent (`productEventsWanted`) | IMPLEMENTED (#330) |
 | `job_reconfirmed` | `reconfirmJobAction`, same file. `checkReconfirmRequest` returns the listing as it was, and `now` is the attestation's time | IMPLEMENTED (#330) |
 | `availability_reconfirmed` | `confirmHaulerAvailabilityAction`, `apps/web/lib/marketplace-v2/fleet-actions.ts`. A confirmation of no truck types sends nothing | IMPLEMENTED (#330) |
 | `job_stopped`, `job_reconfirmed` with `resumed: true` | The jobs group's `setJobStatus` and `resumeJob`, `apps/web/lib/marketplace-v2/jobs/methods.ts`, through `JobLifecycleEvents`: once the transaction commits, with the locked row as it was. A status the job already has, a refusal and a failed write send nothing | IMPLEMENTED (#330) |
@@ -254,6 +254,10 @@ await recordProductEvent(
 | Flow B start, taps and outcome | `<FlowClockStart flow="B" />` when the job editor opens (`apps/web/app/v2/landing/jobs/new/page.tsx`), `<FlowTapCounter flow="B" />` on the review step (`.../jobs/preview/page.tsx`), and `<FlowClockStop flow="B" step="published" />` on the poster's `published=1` answer on the job page | IMPLEMENTED (#330) |
 | `share_link_opened` and flow A start | The share page under apps/web/app/v2/share: `<ShareLinkOpenedBeacon channel={…} jobId={job.id} signedIn={…} />` | TARGET: waits for #287 |
 | `via: "one_tap_link"` and flows D and E from a link | The signed one-tap links (#292). Pass `via: "one_tap_link"` and `signedIn: false` where no one is signed in; the jobs group takes its own `JobLifecycleEvents` for that route. `/v2/act` is a sensitive route (§2, rule 8), so a flow timed from a link cannot end there in the browser | TARGET: waits for #292 |
+
+The pages render the beacons only when `NEXT_PUBLIC_POSTHOG_KEY` is set, so without a key no beacon code is fetched. The
+pageview tracker loads its capture code with a dynamic import, so the layout every route shares carries only the privacy
+check. Both keep the route budgets (#242).
 
 **Other follow-ups**
 

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -36,12 +39,12 @@ function browser(signals: { doNotTrack?: unknown; msDoNotTrack?: unknown; window
   vi.stubGlobal("window", { doNotTrack: signals.windowDoNotTrack, location: { origin: "https://logloads.com", pathname: fake.pathname } })
 }
 
-/** Renders the provider on `pathname` and lets the loader's promise settle. */
+/** Renders the provider on `pathname` and lets the capture code's dynamic import and the loader's promise settle. */
 async function visit(pathname: string) {
   fake.pathname = pathname
   const html = renderToStaticMarkup(<AnalyticsProvider />)
-  await Promise.resolve()
-  await Promise.resolve()
+  await vi.dynamicImportSettled()
+  await new Promise((resolve) => setTimeout(resolve, 0))
   return html
 }
 
@@ -61,6 +64,13 @@ afterEach(() => {
 })
 
 describe("the pageview tracker", () => {
+  it("keeps the capture code out of the layout every route shares: only the privacy check is imported up front", () => {
+    const source = readFileSync(fileURLToPath(new URL("../../components/analytics/AnalyticsProvider.tsx", import.meta.url)), "utf8")
+    const staticImports = [...source.matchAll(/^import\s[^;]*?from\s+"([^"]+)"/gm)].map((match) => match[1])
+
+    expect(staticImports).toEqual(["next/navigation", "react", "@/lib/analytics/consent"])
+  })
+
   it("is inert without a PostHog key: no PostHog, no pageview", async () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "")
 

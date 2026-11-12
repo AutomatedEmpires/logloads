@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => {
       confirmHaulerAvailability: vi.fn(),
       expressInterest: vi.fn(),
       getJob: vi.fn(),
+      listHaulerInterests: vi.fn(),
+      listLandingInterests: vi.fn(),
       postHaulerReply: vi.fn(),
       publishJob: vi.fn(),
       reconfirmJob: vi.fn(),
@@ -76,6 +78,7 @@ const HAULER_ORG = "2d6b8e3f-4a5c-4d7e-9f80-91a2b3c4d5e6"
 const INTEREST_ID = "3e7c9f40-5b6d-4e8f-8091-a2b3c4d5e6f7"
 const LANDING_ID = "4f8d0a51-6c7e-4f90-8a1b-b3c4d5e6f7a8"
 const JOB = "6f1c2a7e-3b4d-4c5e-8f60-718293a4b5c6"
+const REPLY_ID = "5a9e1b62-7c8d-4e9f-a0b1-c2d3e4f5a6b7"
 const MESSAGE = "Call Jo Hauler at (509) 555-0142 or jo.hauler@example.com. Gate code 4411."
 
 /** Everything private the call sites hold. None of it may reach PostHog. */
@@ -297,7 +300,7 @@ function callSites(): CallSite[] {
       expected: { interest: pseudonymousId("interest", INTEREST_ID), org: pseudonymousId("organization", LANDING_ORG), outcome: "replied", side: "landing" },
       fail: () => mocks.port.respondToInterest.mockRejectedValue(new Error("connection reset")),
       organizationId: LANDING_ORG,
-      run: () => respondToInterestAction(form({ body: MESSAGE, decision: "replied", interestId: INTEREST_ID })),
+      run: () => respondToInterestAction(form({ body: MESSAGE, decision: "replied", interestId: INTEREST_ID, replyId: REPLY_ID })),
       site: "respondToInterestAction"
     },
     {
@@ -305,7 +308,7 @@ function callSites(): CallSite[] {
       expected: { interest: pseudonymousId("interest", INTEREST_ID), org: pseudonymousId("organization", HAULER_ORG), outcome: "replied", side: "hauler" },
       fail: () => mocks.port.postHaulerReply.mockRejectedValue(new Error("connection reset")),
       organizationId: HAULER_ORG,
-      run: () => haulerReplyAction(form({ body: MESSAGE, interestId: INTEREST_ID })),
+      run: () => haulerReplyAction(form({ body: MESSAGE, interestId: INTEREST_ID, replyId: REPLY_ID })),
       site: "haulerReplyAction"
     },
     {
@@ -368,6 +371,9 @@ beforeEach(() => {
   mocks.port.expressInterest.mockResolvedValue(interestView(NOW.toISOString()))
   mocks.port.respondToInterest.mockResolvedValue(undefined)
   mocks.port.postHaulerReply.mockResolvedValue(undefined)
+  // The inquiry as it is before an answer: sent a day ago, not yet answered.
+  mocks.port.listHaulerInterests.mockResolvedValue([interestView(new Date(NOW.getTime() - DAY).toISOString())])
+  mocks.port.listLandingInterests.mockResolvedValue([interestView(new Date(NOW.getTime() - DAY).toISOString())])
   mocks.port.getJob.mockResolvedValue(listing("active"))
   mocks.port.reconfirmJob.mockResolvedValue(undefined)
   mocks.port.confirmHaulerAvailability.mockResolvedValue({ confirmed: 3 })
@@ -435,6 +441,66 @@ describe("every call site sends nothing when its write fails", () => {
     await sendResponse()
     expect(mocks.tasks).toHaveLength(0)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe("a replayed answer is not another event (the stores treat it as no change)", () => {
+  const before = (changes: Partial<MarketplaceInterestView>) => [{ ...interestView(new Date(NOW.getTime() - DAY).toISOString()), ...changes }]
+  const answered = (authorSide: "hauler" | "landing") => ({
+    replies: [{ authorName: "Jo Hauler", authorSide, authorUserId: USER, body: MESSAGE, createdAt: new Date(NOW.getTime() - 60_000).toISOString(), id: REPLY_ID }]
+  })
+
+  it("sends nothing when a hauler resubmits a reply the inquiry already holds (the same replyId)", async () => {
+    signedInFor(HAULER_ORG)
+    mocks.port.listHaulerInterests.mockResolvedValue(before(answered("hauler")))
+
+    await settle(() => haulerReplyAction(form({ body: MESSAGE, interestId: INTEREST_ID, replyId: REPLY_ID })))
+    await sendResponse()
+    expect(mocks.port.postHaulerReply).toHaveBeenCalledTimes(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("sends nothing when a landing resubmits its reply, or declines an inquiry it already declined", async () => {
+    mocks.port.listLandingInterests.mockResolvedValue(before({ ...answered("landing"), status: "replied" }))
+    await settle(() => respondToInterestAction(form({ body: MESSAGE, decision: "replied", interestId: INTEREST_ID, replyId: REPLY_ID })))
+
+    mocks.port.listLandingInterests.mockResolvedValue(before({ status: "declined" }))
+    await settle(() => respondToInterestAction(form({ decision: "declined", interestId: INTEREST_ID })))
+
+    await sendResponse()
+    expect(mocks.port.respondToInterest).toHaveBeenCalledTimes(2)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("still sends a new reply on an inquiry that already has others", async () => {
+    mocks.port.listLandingInterests.mockResolvedValue(before({ ...answered("landing"), status: "replied" }))
+
+    await settle(() => respondToInterestAction(form({ body: MESSAGE, decision: "replied", interestId: INTEREST_ID, replyId: "6b0f2c73-8d9e-4fa0-b1c2-d3e4f5a6b7c8" })))
+    await sendResponse()
+    expect(sent().map((body) => body.event)).toEqual(["interest_replied"])
+  })
+
+  it("counts the answer as new when the inquiry cannot be read first", async () => {
+    signedInFor(HAULER_ORG)
+    mocks.port.listHaulerInterests.mockRejectedValue(new Error("connection reset"))
+
+    await settle(() => haulerReplyAction(form({ body: MESSAGE, interestId: INTEREST_ID, replyId: REPLY_ID })))
+    await sendResponse()
+    expect(sent().map((body) => body.event)).toEqual(["interest_replied"])
+  })
+
+  it("makes no extra read when no event would be sent (Do Not Track, Global Privacy Control)", async () => {
+    for (const headers of [{ DNT: "1" }, { "Sec-GPC": "1" }] as Array<Record<string, string>>) {
+      mocks.request.headers = new Headers(headers)
+      await settle(() => respondToInterestAction(form({ body: MESSAGE, decision: "replied", interestId: INTEREST_ID, replyId: REPLY_ID })))
+      signedInFor(HAULER_ORG)
+      await settle(() => haulerReplyAction(form({ body: MESSAGE, interestId: INTEREST_ID, replyId: REPLY_ID })))
+      signedInFor(LANDING_ORG)
+    }
+
+    expect(mocks.port.listLandingInterests).not.toHaveBeenCalled()
+    expect(mocks.port.listHaulerInterests).not.toHaveBeenCalled()
+    expect(mocks.port.respondToInterest).toHaveBeenCalledTimes(2)
   })
 })
 

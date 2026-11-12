@@ -15,6 +15,7 @@ import { PageNotice } from "@/components/v2/PageNotice"
 import { ReportListing } from "@/components/v2/ReportListing"
 import { ShareListing } from "@/components/v2/ShareListing"
 import { FlowClockStop, FlowTapCounter } from "@/lib/analytics/beacons"
+import { clientAnalyticsEnabled } from "@/lib/analytics/client"
 import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { contradictionText, UPDATE_AVAILABILITY, type CapacityContradiction } from "@/lib/marketplace-v2/interest-capacity"
@@ -93,7 +94,8 @@ function SimilarJobs({ jobs }: { jobs: SimilarJob[] }) {
  *
  * Flow timing (#330, docs/analytics/event-plan.md §6) renders nothing: taps are counted while the interest sheet is
  * open, the "sent" answer stops flow A's clock for this job, and the poster's "published" answer stops flow B's. Each
- * does nothing unless a clock is running in this tab and the browser allows measuring.
+ * does nothing unless a clock is running in this tab and the browser allows measuring, and none is rendered (so no
+ * beacon code is fetched) without a PostHog key.
  */
 export default async function JobDetailPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -125,6 +127,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const failure = v2ErrorNotice(query)
   const sent = query.sent === "1"
   const published = query.published === "1" && isPoster
+  const measured = clientAnalyticsEnabled()
   const now = new Date()
   const standing = standingInterest(existing)
   const justSent = sent && standing !== null
@@ -153,8 +156,8 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         <ContentGrid
           aside={
             <div className={styles.anchor} id={INTEREST_ANCHOR}>
-              {sent && canExpress ? <FlowClockStop flow="A" jobId={job.id} step="first_send" /> : null}
-              {published ? <FlowClockStop flow="B" step="published" /> : null}
+              {measured && sent && canExpress ? <FlowClockStop flow="A" jobId={job.id} step="first_send" /> : null}
+              {measured && published ? <FlowClockStop flow="B" step="published" /> : null}
               <Section title="Interested in this job?">
                 <div className={styles.stack}>
                   {justSent ? <PageNotice role="status" tone="positive">{interestConfirmation(standing)}</PageNotice> : null}
@@ -197,7 +200,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                     </div>
                   ) : (
                     <>
-                      <FlowTapCounter flow="A" />
+                      {measured ? <FlowTapCounter flow="A" /> : null}
                       <InterestSheet
                         jobId={job.id}
                         model={interestSheetModel({

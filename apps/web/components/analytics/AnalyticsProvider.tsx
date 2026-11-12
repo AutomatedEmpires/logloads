@@ -3,9 +3,17 @@
 import { usePathname } from "next/navigation"
 import { useEffect } from "react"
 
-import { captureAnalyticsPageview } from "@/lib/analytics-pageview"
-import { clientAnalyticsEnabled, loadProductAnalyticsClient } from "@/lib/analytics/client"
 import { currentBrowserRefusesTracking } from "@/lib/analytics/consent"
+
+/**
+ * The capture code, loaded only once a pageview is to be sent: the layout every route shares carries just this
+ * component and the privacy check, which keeps the route budgets (#242) where they were.
+ */
+const loadCapture = () =>
+  Promise.all([import("@/lib/analytics/client"), import("@/lib/analytics-pageview")]).then(([client, pageview]) => ({
+    capture: pageview.captureAnalyticsPageview,
+    load: client.loadProductAnalyticsClient
+  }))
 
 function PageViewTracker() {
   const pathname = usePathname()
@@ -16,14 +24,16 @@ function PageViewTracker() {
       return
     }
 
-    void loadProductAnalyticsClient().then((posthog) => {
-      if (!posthog) {
-        return
-      }
+    void loadCapture()
+      .then(async ({ capture, load }) => {
+        const posthog = await load()
 
-      // On a sensitive route (message, sign-in, verification, consent, one-tap) this is the route's root only.
-      captureAnalyticsPageview(posthog, window.location.origin, pathname)
-    })
+        if (posthog) {
+          // On a sensitive route (message, sign-in, verification, consent, one-tap) this is the route's root only.
+          capture(posthog, window.location.origin, pathname)
+        }
+      })
+      .catch(() => undefined)
   }, [pathname])
 
   return null
@@ -36,7 +46,8 @@ function PageViewTracker() {
  * same `before_send`, which keeps a sensitive route to a pageview at its root (`lib/analytics-pageview.ts`).
  */
 export function AnalyticsProvider() {
-  if (!clientAnalyticsEnabled()) {
+  // `NEXT_PUBLIC_*` is inlined at build time, as in `clientAnalyticsEnabled` (lib/analytics/client.ts).
+  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) {
     return null
   }
 
