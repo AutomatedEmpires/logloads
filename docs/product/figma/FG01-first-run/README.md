@@ -1,12 +1,29 @@
 # FG01 First run: first-run and sign-in screens in Figma
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235), and on 2026-11-11 for design audit 3 (#334). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
+**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235), on 2026-11-11 for design audit 3 (#334), and on 2026-11-12 for LL-D12 (#352). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
 **Figma page:** [01 First run](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-37) in the LogLoads file (jackson.cole's team).
 **Built from:** the [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) page (FG00, #256, field layer #281).
-- Every instance on the page comes from 00 System, except the "Not for sale yet" plan tag. That tag is one local component, `Plan tag / Not for sale yet` (`305:2117`), kept in page 05's "Composed parts (gaps)" frame until 00 System PlanCard has a not-for-sale state.
+- Every instance on the page comes from 00 System. Since #352 the plan cards are 00 System PlanCard instances in the not-for-sale state, and page 05's local `Plan tag / Not for sale yet` (`305:2117`) is deleted.
 - Every solid fill and stroke outside an instance is bound to a variable.
 - There are no image fills, and all text is IBM Plex.
 - No new styles or variables were made, and no UI code changed.
+
+## LL-D12 (#352)
+
+#352 swapped the parts this page still built by hand for 00 System components. Frame ids did not change.
+
+| Part | Before | After |
+|---|---|---|
+| Plan cards on FR-08 and FR-09 (all widths, the FR-08 error state and the FR-09 Dark copy) | 24 surface cards with the local "Not for sale yet" tag and a 21 px price | 24 PlanCard (State=not for sale) instances. The price is `type/pay` 28 px with its basis, the facts have their check icons, and there is still no plan choice, button or payment control. The #108 status line above the cards is unchanged. |
+| Step indicators at 390 (FR-05, FR-07, FR-08, FR-09, FR-10, their error states and the FR-09 Dark copy) | 10 frames of Step parts | StepIndicator / Narrow instances (Current 1 to 3). Hauler setup has three steps, so step 4 is hidden there. |
+| Step indicators at 768 and 1440 on FR-05 and FR-07 | 4 frames of Step parts | StepIndicator instances with step 4 hidden. FR-08 to FR-10 already used StepIndicator at these widths. |
+| Form buttons at 390 (FR-04 to FR-10, their error states and the FR-04 and FR-09 Dark copies) | FormActions under the form | A BottomActionBar above the tab bar in 13 frames. Stacked where the second action is a ghost button (Continue over Skip for now, Save landing over Cancel, Browse public jobs over See my businesses). Split where it is Back (Back beside Set up business, Back beside Add your first landing). The summary line is off. At 768 and 1440 the forms keep FormActions, as the code does. |
+
+FR-01 to FR-03 keep their buttons inside the Clerk card, because Clerk renders that card.
+
+The 390 frames grew, so the rows were re-stacked again with a 200 px gap: FR-05 to FR-10 moved down by 60 to 712 px.
+
+**Check after #352** (read-only script over the 45 screen frames, 2026-11-12): no text under 14 px, no button under 48 px, no "Preview" text, no disabled control, no node outside its frame and no frames overlapping on the canvas. The script found "(optional)" running past the label row on FR-10's "Exact location (latitude, longitude)" field at 390; the 00 System label row now wraps (FG00). FR-05 390 and FR-09 390 were checked by screenshot after the changes.
 
 ## Design audit 3 (#334)
 
@@ -143,20 +160,18 @@ The example data is illustrative: Ridgeline Hauling, Sweet Home, OR, Cedar Fork 
 
 **Missing from 00 System, composed on the page from existing components and tokens**
 
-- **The plan card's "Not for sale yet" tag.** 00 System PlanCard has no not-for-sale state, so the tag is the local component `305:2117` (see the top of this file).
 - **The Clerk card.**
   - Clerk renders this card. It is composed from FormField, Button and the type styles. The six code cells are frames bound to the field and focus tokens.
   - In code, the match needs a Clerk `appearance` mapping and localization.
-- **App markup composed here:** the plan card (`LandingPlanCards`), the count field (`InterestCountField`), the equipment row and the usage list (`LandingAllowanceFigures`).
-- **Plan price.** It uses `type/panel-title` (21 px semibold), because no style matches the CSS, which is text-xl bold.
+- **App markup composed here:** the count field (`InterestCountField`), the equipment row and the usage list (`LandingAllowanceFigures`). The plan card is 00 System PlanCard since #352.
 
 **00 System defects found here, and their state after #281**
 
 #281 fixed every 00 System defect this page reported (FormField textarea wiring, StepIndicator numbers and the narrow layout, the private VisibilityPanel title, the Checkbox hint wrap, the Button loading opacity, FormFields in slots, the PageHeader slot placeholder and PageNotice). What stays on this page:
 
-- **StepIndicator.** The screens still use the earlier composed indicator built from Step parts. Swapping it for 00 System StepIndicator (wide) and StepIndicator / Narrow (390) is a follow-up. The done step still shows "✓" (audit G12; the code fix is a packages/ui follow-up).
+- **StepIndicator.** Swapped in #352: StepIndicator / Narrow at 390 and StepIndicator at 768 and 1440. The done step still shows "✓" (audit G12; the code fix is a packages/ui follow-up).
 - **Section and VisibilityPanel.** The screens keep the detached outer frames from #257. Every nested component is a linked instance.
-- **Primary action at 390.** The form screens keep FormActions under the form; they do not use the BottomActionBar yet.
+- **Primary action at 390.** Swapped in #352: the form screens use BottomActionBar above the tab bar. The Clerk screens (FR-01 to FR-03) keep the button in the Clerk card.
 
 **Not drawn here**
 

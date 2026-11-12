@@ -1,6 +1,6 @@
 # FG00 System: the LogLoads design system in Figma
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#256). It is not approved yet. Key screens built on it still need the founder's approval (AE-Control `policy/designops.md`). On 2026-11-10, #278 closed the 00 System gaps found while designing screens. On 2026-11-11, #281 added the field layer: the field design bar, a Dark theme and the field components. No UI code changed.
+**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#256). It is not approved yet. Key screens built on it still need the founder's approval (AE-Control `policy/designops.md`). On 2026-11-10, #278 closed the 00 System gaps found while designing screens. On 2026-11-11, #281 added the field layer: the field design bar, a Dark theme and the field components. On 2026-11-12, #352 closed the remaining page 00 gaps and promoted page 02's local parts (see [Remaining gaps and promotions (#352)](#remaining-gaps-and-promotions-352)). No UI code changed.
 **Figma page:** [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) in the LogLoads file (jackson.cole's team). The field layer is the [Field layer](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=193-1082) group.
 **Source of truth:** `packages/ui` on `work/logloads-repair`. Figma mirrors the code, and when the two differ the code wins and this page gets updated. The one exception is the field layer (#281): it is a design target ahead of the code. Every token and component it changes has a `packages/ui` follow-up in [Follow-ups for packages/ui](#follow-ups-for-packagesui). No UI code changed in this task.
 
@@ -12,13 +12,13 @@ The page holds one frame, `00 System`, which contains seven groups:
 |---|---|---|
 | [Documentation](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-19) | `9:19` | Read-me rules and the component → Figma node → code path table, with a Field layer group |
 | [Foundations](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-4) | `9:4` | Semantic colour swatches with a Light chip and a Dark chip, primitive swatches, type styles, spacing, radius, elevation, layout, density and motion notes. Every swatch and bar is bound to its variable. |
-| [Icons](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-7) | `9:7` | 45 icon components |
+| [Icons](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-7) | `9:7` | 46 icon components |
 | [Primitives](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-10) | `9:10` | Buttons, form controls, tabs, dialog, states |
 | [Layout and navigation](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-13) | `9:13` | Top bar, bottom tabs, page header, section, search, filters, detail panel |
 | [Marketplace](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-16) | `9:16` | Pay, freshness, verification, equipment, job rows and list, inquiry row, company header |
 | [Field layer](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=193-1082) | `193:1082` | The field design bar, the Dark theme decision, the measured contrast table, key components in Light and Dark, and the field components |
 
-The icons are one component per `IconKey` in `packages/ui/src/icons/registry.ts`. They use the real Phosphor 2.1 glyphs at their registry weights. Four icons added by the field layer are not in the registry yet (see the follow-ups).
+The icons are one component per `IconKey` in `packages/ui/src/icons/registry.ts`. They use the real Phosphor 2.1 glyphs at their registry weights. Four icons added by the field layer and one added by #352 (`status.paused`) are not in the registry yet (see the follow-ups).
 
 Each component sits in an entry that shows its name, its code path and a short note on behaviour taken from the code comments.
 
@@ -181,6 +181,40 @@ Every interactive component has a focus look and a pressed look. Where adding a 
 
 The ring is `focus/color` at `focus/width` (3 px), 2 px outside the control. Pressed is `pressed/overlay`, or `color/action-pressed` on primary buttons.
 
+## Remaining gaps and promotions (#352)
+
+On 2026-11-12, #352 (LL-D12) closed the 00 System gaps that pages 01, 05 and 07 reported, and, at the lead's request, promoted the parts that page 02 (#295) had composed locally. No variant was renamed or removed. New states are new variant values, and new options are new properties with defaults that keep existing instances as they were.
+
+**Gaps from pages 01, 05 and 07**
+
+| Gap | Fix | Node |
+|---|---|---|
+| Input: the error state ignored Value and Hint | The error variant binds its value to Value and its hint to Hint and Show hint, like the other states. A new Error text property drives the error message. The five error instances (two here, three on page 07) kept their text and keep the hint hidden. | [209:1239](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=209-1239) |
+| EmptyState: the body was a fixed 560 px | The body fills the container, so it is as wide as the title in every instance (pages 02, 05 and 06 use it at 324 to 1376 px). | [16:260](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=16-260) |
+| FreshnessChip: no closed state | Two new states: filled (lock icon, "Filled today" or "Filled Mon, Nov 9") and paused (pause icon, "Paused today"), on the neutral tint. Each state still has its own icon. | [205:1174](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=205-1174) |
+| PlanCard: no not-for-sale state | New State=not for sale: a "Not for sale yet" tag with the info icon beside the name, the positioning line, the price (`type/pay` 28 px), the three `landingPlanCardFacts` lines and "Unlimited job posts, inquiries and replies." It has no action, so it offers no plan choice or payment control (#108). The 36 cards on pages 01 and 05 are now instances of it, and page 05's local `Plan tag / Not for sale yet` (`305:2117`) is deleted. | [212:1295](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=212-1295), variant `325:7826` |
+| BottomActionBar: pages 01 and 07 needed more than one action | New Layout=stacked: the primary full width, then one or two secondary actions under it (Show second action). New Show choices (split and stacked): up to two full-width choice buttons above the actions, for ready replies. Every button is an exposed instance. | [213:1239](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=213-1239), variant `325:7932` |
+| StepIndicator / Narrow: each variant was 54 px tall and its current step 62 px | The variants hug their steps (62 px), so the current label sits inside the component. | [261:16836](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16836) |
+| FormField and Input: a long label pushed "(optional)" outside the field (page 01, FR-10 at 390) | The label row wraps, so the marker moves to the next line. | [13:146](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=13-146) |
+
+New icon: `Icon/status.paused` (Phosphor PauseCircle bold, `325:4123`), drawn on the Phosphor grid like the other field-layer icons.
+
+**Promoted from page 02 (#295)**
+
+| Component | Change | Was on page 02 as |
+|---|---|---|
+| JobResultRow, narrow (9 variants) | The decision order: pay and a labelled 48 px Save (Button secondary md with the save icon), the title, the truck and trailer with its fit, the area and distance, the freshness chip, the business and verification, the schedule, then demand or interest. The fact labels are gone in narrow rows. Existing nodes were moved, not redrawn, so the text on pages 05 and 06 is kept. Wide rows are unchanged. | `Composed / FindWorkRow` (`249:3615`) |
+| JobSummary and JobDetail | The decision order: pay and its source first, then the title, a FreshnessChip ("Confirmed 2 days ago"), the poster and verification, then the facts. Labels are 16 px semibold in sentence case (Truck and trailer, Area, Going to, Schedule, Trucks), and the value notes, disclosure labels and foot are 16 px. Disclosure rows are 48 px. The Listing row is gone, because the chip moved to the top. The value columns fill, so the mobile JobDetail no longer clips. | `Composed / JobDecision` (`253:3681`) |
+| SegmentedControl | 16 px semibold labels. The selected option shows a check icon, so the choice is not colour alone. 2 to 4 options: Show option 3 (on by default) and Show option 4 (off by default), and a new Selected=4. Demo instances with two and four options sit beside the set. | `Composed / SegmentedField` (`252:3648`) |
+| FindWorkSummary | The second line is 16 px, and the action is a 48 px secondary Button "Filters" with the filter icon (add the count, "Filters · 2"). It replaces the "Change" text. | `Composed / FindWorkSearchBar` (`250:3549`) |
+| ResponsiveNavigation, Workspace=landing | Only Overview is current. Landing inbox was current too. | The hauler variant with landing labels |
+| PageHeader | A new Show content property (off by default) hides the Content slot, and the hidden "Slot: page content" text is gone. An empty slot added 18 px and a 16 px gap to every header; none of the 207 instances put anything in the slot. | `Composed / FindWorkHeader`, `Composed / OverviewHeader` |
+| GlobalNavigation, ResponsiveNavigation and BusinessSwitcher | Link and tab labels and the business name are 16 px semibold. Tab labels wrap to two lines when they need to, so "Landing inbox" makes the landing bar 91 px tall. The count badges and the kind and role line stay 14 px. | Gap 2 in FG02 |
+
+The Documentation component map rows for these components were recomputed from the live property definitions, and every changed component's description says what #352 changed.
+
+**Checks (2026-11-12).** Screenshots of every changed component set: Input, EmptyState, FreshnessChip, PlanCard, BottomActionBar, StepIndicator / Narrow, JobResultRow, JobSummary, JobDetail, SegmentedControl, FindWorkSummary, ResponsiveNavigation, GlobalNavigation and PageHeader. A read-only script over the four "Key components in Light and Dark" frames found no text under 14 px, no "Preview" text and nothing outside its frame. Page 02 was not edited; its instances pick up the component changes above.
+
 ## Naming
 
 - **Variables.** The Figma name is the CSS custom property without `--ll-`, with the first hyphen turned into `/`. For example, `--ll-color-text-muted` becomes `color/text-muted` and `--ll-c-row-py` becomes `c/row-py`. Every variable's WEB code syntax is its CSS name, such as `var(--ll-color-text-muted)`, so Dev Mode shows the token.
@@ -222,7 +256,7 @@ Every fill and stroke of the new and changed components is bound to a variable.
 | FormField | [13:146](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=13-146) | `packages/ui/src/primitives/FormField.tsx` | 15: Control (input, select, textarea) × State (default, focus, error, disabled, pressed); Label, Optional, Hint, Show hint, Value, Error. Select variants bind those text properties, the same way input does. |
 | Checkbox | [13:177](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=13-177) | `packages/ui/src/primitives/Checkbox.tsx` | 8: Checked × State (default, disabled, focus, pressed); Label, Hint, Show hint, Focus ring. Rows are at least 48 px. |
 | ChoiceCard | [13:221](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=13-221) | `packages/ui/src/primitives/ChoiceCard.tsx` | 10: Checked × State (default, hover, disabled, focus, pressed); Title, Description |
-| SegmentedControl | [14:77](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-77) (part [14:40](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-40)) | `packages/ui/src/primitives/SegmentedControl.tsx` | 4: Selected (none, 1, 2, 3). Option part: Pressed (aria-pressed) × State (default, hover, focus), Label, Touch pressed |
+| SegmentedControl | [14:77](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-77) (part [14:40](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-40)) | `packages/ui/src/primitives/SegmentedControl.tsx` | 5: Selected (none, 1, 2, 3, 4); Show option 3, Show option 4. Option part: Pressed (aria-pressed) × State (default, hover, focus), Label, Touch pressed. 16 px labels; a check icon on the selected option (#352). |
 | Tabs | [14:131](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-131) (part [14:98](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-98)) | `packages/ui/src/primitives/Tabs.tsx`, `packages/ui/src/primitives/TabList.tsx` | 2: Variant (page, segmented). Tab part: Variant × Selected, Label, Show count, Focus ring, Pressed |
 | NumberStepper | [14:164](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-164) | `packages/ui/src/primitives/NumberStepper.tsx` | 4: Value (set, unset, at-min, at-max); Focus ring, Pressed. Height follows the Component mode. |
 | StepIndicator | [14:231](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-231) (part [14:178](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-178)) | `packages/ui/src/primitives/StepIndicator.tsx` | 4: Current (1–4). Step part: State (done, current, todo), Label, Number (bound), Show label |
@@ -238,7 +272,7 @@ Every fill and stroke of the new and changed components is bound to a variable.
 | BusinessSwitcher | [17:245](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=17-245) | `packages/ui/src/layout/BusinessSwitcher.tsx` | 4: Mode (link, static) × Breakpoint (wide, narrow); Initials, Name, Kind · role, Focus ring, Pressed |
 | AccountMenu | Trigger [17:274](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=17-274), Panel [17:275](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=17-275) | `packages/ui/src/layout/AccountMenu.tsx` | Trigger: Breakpoint × State (default, open, focus, pressed), Show tag, Tag. Panel: Show person, Name, Email, Link, Show note, Show action. Copy from `apps/web/lib/marketplace-v2/account-menu.ts`. |
 | ResponsiveNavigation | [17:464](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=17-464) (tab part [17:403](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=17-403)) | `packages/ui/src/layout/ResponsiveNavigation.tsx` | 2: Workspace (hauler, landing), using the destinations in `apps/web/lib/marketplace-v2/navigation.ts`. Landing is four tabs: Overview (`nav.today`), Landing inbox, Post jobs, Landings. Tab part: Current, Label, Icon, Show count, Focus ring, Pressed |
-| PageHeader | [18:366](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=18-366) | `packages/ui/src/layout/PageHeader.tsx`, `packages/ui/src/layout/PageActions.tsx` | 2: Breakpoint (desktop, mobile); Title, Description, and show/hide for breadcrumbs, description, meta, actions and tabs. Content is a native full-width slot between the title row and the tabs (`children` in PageHeader.tsx). |
+| PageHeader | [18:366](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=18-366) | `packages/ui/src/layout/PageHeader.tsx`, `packages/ui/src/layout/PageActions.tsx` | 2: Breakpoint (desktop, mobile); Title, Description, and show/hide for breadcrumbs, description, meta, actions and tabs. Content is a native full-width slot between the title row and the tabs (`children` in PageHeader.tsx), shown only when Show content is on (#352). |
 | Section | [18:411](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=18-411) | `packages/ui/src/layout/Section.tsx` | 3: Variant (surface, open, flush); Title, Description, Show description, Show actions, Show head, Content (native slot) |
 | SearchToolbar | [18:440](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=18-440) | `packages/ui/src/layout/SearchToolbar.tsx`, `packages/ui/src/layout/SearchDisclosure.tsx` | 2: Breakpoint (composite from bp-md, summary below); Focus ring, Pressed |
 | FilterBar | [18:499](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=18-499) (filter part [18:463](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=18-463)) | `packages/ui/src/layout/FilterBar.tsx` | 2: Breakpoint (desktop, mobile). Filter part: Kind (filter, all-filters, more-filters) × Active, Label, Value, Focus ring, Pressed |
@@ -257,11 +291,11 @@ Every fill and stroke of the new and changed components is bound to a variable.
 | CompanyProfileHeader | [23:963](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=23-963) | `packages/ui/src/marketplace/CompanyProfileHeader.tsx` | 2: Breakpoint (desktop, mobile); Name, Initials, Meta, Show verification, Show action note, Show breadcrumbs |
 | JobSummary | [86:3898](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=86-3898) | `packages/ui/src/marketplace/JobSummary.tsx` | Poster, title, pay, decision facts and the interest action. Modeled on the local summary inside 02 Home `35:80`. |
 | JobDetail | [86:3175](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=86-3175) | `packages/ui/src/marketplace/JobDetail.tsx` | 2: Breakpoint (desktop, mobile). JobSummary, then collapsible sections and a footer. Each disclosure uses [Icon/x.caret-down](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-226), not the CSS border chevron. |
-| FindWorkSummary | [86:3300](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=86-3300) | `apps/web/components/v2/discovery/FindWorkFilters.tsx` | The Find work summary bar; Focus ring, Pressed. The where line uses `type/body-semibold`. Change opens the filter sheet. |
+| FindWorkSummary | [86:3300](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=86-3300) | `apps/web/components/v2/discovery/FindWorkFilters.tsx` | The Find work summary bar; Focus ring, Pressed. The where line uses `type/body-semibold` and the second line is 16 px. The Filters button (exposed) opens the filter sheet (#352). |
 | SortControl | [86:3306](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=86-3306) | `apps/web/components/v2/discovery/SortControl.tsx` | Sort label and select; Value, Focus ring, Pressed. Options from `FIND_WORK_SORT_LABELS`: Newest confirmed, Nearest, Pay within each basis. |
 | HaulerSetupChecklist | [86:4045](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=86-4045) | `apps/web/components/v2/onboarding/HaulerSetupChecklist.tsx` | Title, Note, Done item, Open item, Second open item, Focus ring, Pressed. A done item is muted; an open item is a link. The checklist is hidden once every item is done. |
 | PageNotice | [261:16849](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16849) | `apps/web/components/v2/PageNotice.tsx` | 3: Tone (info, positive, critical) |
-| Field layer components | See [What changed](#what-changed) | See the follow-ups | BottomActionBar, FreshnessChip, Notice, Note, PermissionDenied, Offline, Input, Switch, Fact, Member, PlanCard |
+| Field layer components | See [What changed](#what-changed) and [#352](#remaining-gaps-and-promotions-352) | See the follow-ups | BottomActionBar (single, split, stacked), FreshnessChip (six states), Notice, Note, PermissionDenied, Offline, Input (with Error), Switch, Fact, Member, PlanCard (current, available, not for sale) |
 
 Each component's CSS module sits next to its `.tsx` file and has the same name.
 
@@ -306,13 +340,15 @@ The field layer is ahead of the code. Each change below needs a matching code ta
 - **Checkbox:** a 24 px box and a label row at least 48 px tall.
 - **PageNotice** (`apps/web/components/v2/PageNotice.tsx`): 16 px text (`--ll-text-base`, not `--ll-text-md`) and a tone icon (status.info, status.confirmed, status.warning).
 - **StepIndicator:** draw the done step with `status.confirmed` instead of the "✓" glyph, which renders like a "v" in Plex Mono (audit G12).
+- **From #352:** FormField's error state keeps the hint and value visible, and its label row wraps "(optional)"; EmptyState's body is full width (no 560 px max); AvailabilityStatus gets the filled and paused looks (lock and pause icons) for closed jobs; PlanCard gets a not-for-sale state with no action; BottomActionBar gets the stacked layout and the ready-reply choices; the icon registry gets `status.paused` (PauseCircle, bold); SegmentedControl gets 16 px labels, a check on the selected option and two to four options; FindWorkSummary gets a 16 px second line and a "Filters" button; JobResultRow (below its narrow breakpoint), JobSummary and JobDetail get the decision order and 16 px labels; GlobalNavigation, ResponsiveNavigation and BusinessSwitcher labels go to `--ll-text-base`; and PageHeader renders no slot wrapper when it has no children.
 
 **Figma follow-ups on other pages** (not in this task; 00 System is the only page it edits)
 
-- **Page 07 Flows:** swap its local `Field / Button`, `Field / FreshnessChip`, `Field / Notice`, `Field / Input`, `Field / Checkbox` and `Field / Switch` parts (`106:*`, `131:1092`) for the 00 System components.
-- **Page 04 Settings and page 05 Marketing:** swap the local Note, Plan card, Fact and Member parts for Note, PlanCard, Fact and Member (audit S8, M7).
+- **Page 07 Flows:** done in #334 and #352. No local Field part is left.
+- **Page 04 Settings and page 05 Marketing:** swap the local Note, Plan card, Fact and Member parts for Note, PlanCard, Fact and Member (audit S8, M7). Page 05's plan cards are PlanCard instances since #352.
 - **Every 390 px frame:** set the Component collection to Touch, and put the primary action in a BottomActionBar (audit G3, G4).
-- **Page 01 (#257):** remove the local 16 px text overrides, set the FormFields already inside Section slots to Fill, and swap the local PageNotice for the 00 System one.
+- **Page 01 (#257):** done in #334 and #352 (PlanCard, StepIndicator, StepIndicator / Narrow and BottomActionBar).
+- **Page 02 (#295):** swap the local Composed parts listed in [#352](#remaining-gaps-and-promotions-352) for the promoted 00 System components once #295 lands.
 - **Page 02:** the aging wording "Last confirmed 9 days ago — check with the poster" is too long for a chip at 390 px. Use "Confirmed 9 days ago" and keep the advice in the job sheet.
 
 ## What the code has that Figma does not represent

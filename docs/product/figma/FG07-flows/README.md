@@ -1,10 +1,25 @@
 # FG07 Flows: flows A to E as prototypes
 
-**Status:** TARGET. Drawn for the lead's audit and then founder review on 2026-11-10 (#300, strategy item P0-9), then revised on 2026-11-12 for design audit 3 and the lead's page 07 decisions (#334). These screens are not approved. Approval is a founder comment on the design issue that begins with `approved` (AE-Control `policy/designops.md`).
+**Status:** TARGET. Drawn for the lead's audit and then founder review on 2026-11-10 (#300, strategy item P0-9), then revised on 2026-11-12 for design audit 3 and the lead's page 07 decisions (#334), and again on 2026-11-12 for LL-D12 (#352). These screens are not approved. Approval is a founder comment on the design issue that begins with `approved` (AE-Control `policy/designops.md`).
 **Figma page:** [07 Flows](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=106-2) in the LogLoads file.
 **Sources:** the strategy and field design bar ([#235 comment](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6784066522)), the founder decisions of 2026-11-10 ([#235 comment](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6784468462)), quality bar v1 ([#235 comment](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6783016152)), design audit 2 (#285), the lead's page 07 decisions on #334, the reconfirm interval on #114, the signed-link rules on #292, the SMS rules on #291 and #293, `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`, and the draft copy deck from #274. No UI code changed.
 
 Link base: `https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=` plus the node id with `-` in place of `:`.
+
+## LL-D12 (#352)
+
+#352 replaced the last hand-built parts that 00 System now covers and drew the 1440 frames in columns. Frame ids did not change, and every prototype link was carried over to the new buttons.
+
+| Part | Before | After |
+|---|---|---|
+| Bottom bars on the 390 and 768 screens | 58 local frames ("bottom action bar") | 58 BottomActionBar instances, pinned to the bottom of the frame. Single for one primary, with the summary line where the screen had one (A2, A3, A5, B2, D4, S2 and others). Stacked for a primary over one or two secondary or ghost actions (D2 "Still available" over "Change"; E2 "Still need trucks" over "Filled" and "Pause"; Undo, Back to edit and the like). Split with Show choices for C3: "Reply in one tap", the two ready replies, then Decline beside Write a reply. At 768 the bar spans the screen and its side padding keeps the buttons to the 600 px column. A4b keeps its "Use code 482 913" row: it stands in for the phone's notification in the prototype and is not an action bar. |
+| Flow B step indicator (B2, B3, B4, B-offline, B2-error) | A "Step N of 3" line and a progress bar | StepIndicator / Narrow (Current 1 to 3; The haul, Pay and trucks, Dates and review; step 4 hidden), above the "Draft saved" line |
+| Closed chips (E4, E5, A-expired) | The local `Field / FreshnessChip / closed` | FreshnessChip State=filled ("Filled today", "Filled Mon, Nov 9") and State=paused ("Paused today"). The local component is deleted, and the "Field parts" panel (`106:3`) now only says what is still built from variables. |
+| 1440 frames (y = 9800) | One centred 632 px column with the actions under it | Two columns, 1200 px wide: the content on the left and a 384 px aside on the right with the actions in a card. A2: the job, then the Send interest card and the poster. B5: the audience and facts, then the publish statement with Publish job and Back to edit. C3: the inquiries list (this inquiry open) beside the thread, with the reply card under the thread. D2 and E2: the facts, then the one-tap answers. S1: the switch and number, then the consent words, the links and Turn on texts. There is no bottom bar on desktop. |
+
+The 1440 labels on the canvas and the 768 notes (`131:976`) describe the new layouts.
+
+**Check after #352** (read-only script over the 76 frames on the page, 2026-11-12): no button or link under 48 px, no "Preview" text, no disabled control and no text running past its container. Six texts are under 14 px, all in the share-card picture (A1 and B6), the recorded exception. Eight decorative end-grain rings in the share card (A0, A1 and B6) extend past their frame and are clipped by it. These frames were checked by screenshot after the changes: B2, C3, E2, E4, and A2, C3, E2 and S1 at 1440.
 
 ## Design audit 3 (#334)
 
@@ -44,7 +59,7 @@ The full audit 3 report is not on the issue. The #334 body names four majors on 
 - 76 frames: 58 screens at 390 px (51 from #300 and 7 new states), 6 key screens at 768 px, 6 at 1440 px, 5 Dark copies at 390 px, and the share card at 1200 × 630.
 - The #300 prototype links and 8 flow starting points, plus links on the new frames: A2 → A3 (email), A-waiting → A-expired, D1b → D2, E1b → E2. The 1440 and Dark frames keep the links of the frames they copy. Press Present on the page and pick a flow.
 - One notes panel per flow with the tap count and the target.
-- The panel "Field parts: replaced by 00 System (#334)" (`106:3`), which now holds only the parts that are still local.
+- The panel "Field parts: replaced by 00 System (#334, #352)" (`106:3`). No local Field part is left; the panel says what is still built from variables.
 
 The example is one story. Oak Landing in Sweet Home, OR posts "Oak saw logs to Cascade Mill" at $475 per load. Granite Creek Hauling of Lebanon, OR answers with 1 log truck. Names, places, pay, phone numbers and counts are examples.
 
@@ -84,7 +99,7 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | A-waiting | `315:1308` | Day 14: "Waiting for the poster to confirm", no new interest |
 | A3-error | `315:1388` | The email is incomplete; what was typed stays |
 | A2 at 768 px | `131:922` | The facts sit in two columns |
-| A2 at 1440 px | `313:1154` | Centred column, Send interest under it |
+| A2 at 1440 px | `313:1154` | Two columns: the job, then the Send interest card and the poster |
 
 ### Flow B: a landing posts its first job ([notes](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=118-156))
 
@@ -101,7 +116,7 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | B-expired | `118:612` | An old "finish your job" link. Each link works once, for 72 hours. |
 | B2-error | `315:1427` | Step 1 with two missing fields |
 | B5 at 768 px | `131:969` | |
-| B5 at 1440 px | `313:1204` | |
+| B5 at 1440 px | `313:1204` | Two columns: the audience, then the publish card |
 
 ### Flow C: a landing answers an inquiry ([notes](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=124-248))
 
@@ -120,7 +135,7 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | C-expired | `124:664` | An old inquiry link |
 | C-denied | `315:1506` | Permission denied: signed in to another business |
 | C3 at 768 px | `124:439` | |
-| C3 at 1440 px | `313:1254` | |
+| C3 at 1440 px | `313:1254` | The inquiries list beside the thread and its reply card |
 
 ### Flow D: a hauler confirms availability ([notes](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=124-674))
 
@@ -136,7 +151,7 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | D-error | `124:949` | It did not save. The same two answers stay. |
 | D-expired | `124:972` | An old link: "Send me a new link" |
 | D2 at 768 px | `124:755` | |
-| D2 at 1440 px | `313:1301` | |
+| D2 at 1440 px | `313:1301` | Two columns: the facts, then the answer card |
 
 ### Flow E: a landing reconfirms a job ([notes](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=131-443))
 
@@ -152,7 +167,7 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | E-error | `131:692` | It did not save. The same three answers stay. |
 | E-expired | `131:715` | An old link |
 | E2 at 768 px | `131:520` | |
-| E2 at 1440 px | `313:1330` | |
+| E2 at 1440 px | `313:1330` | Two columns: the job, then the three answers |
 
 ### Text message settings ([notes](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=131-725))
 
@@ -164,7 +179,7 @@ The consent words on these frames are pending the legal review (#291, #293). Tex
 | S2 Text settings, on, with quiet hours | `131:837` | Which texts, and quiet hours from 8:00 pm to 5:00 am |
 | S3 First text, HELP and STOP | `131:860` | The first text and the HELP and STOP answers |
 | S1 at 768 px | `131:782` | |
-| S1 at 1440 px | `313:1354` | |
+| S1 at 1440 px | `313:1354` | Two columns: the switch and number, then the consent words and Turn on texts |
 
 ### Dark theme (390 px, y = 11000)
 
@@ -191,23 +206,21 @@ The lead approved these on #334 (under the founder's delegation): the 72-hour si
 
 ## Still composed on this page
 
-These parts are frames built from 00 System variables, not 00 System components. They are kept in the panel `106:3`.
+These parts are frames built from 00 System variables, not 00 System components.
 
 | Part | Why it is still local |
 |---|---|
-| `Field / FreshnessChip / closed` ("Filled today", "Paused today") | 00 System FreshnessChip has no Filled or Paused state |
-| Bottom action bar frames on the 390 screens | They predate BottomActionBar (#281). They match it (summary line plus a 56 px Button) but are not instances yet. |
+| The "Use code 482 913" row on A4b | It stands in for the phone's notification in the prototype |
 | Top bar, segmented control, choice chips, number stepper, fact row, message bubble | Built as frames from variables in #300; the 00 System equivalents were not swapped in this pass |
 | 10 icons: back, check, plus, minus, caret right, phone, mail, clock, offline, link | Not in the icon registry. Drawn as 2 px strokes bound to colour variables. |
 
-Used from 00 System: Brand, Icon/*, Button, FreshnessChip, Notice, Offline, Input, Checkbox, Switch, LoadingState, PermissionDenied, ResponsiveNavigation, all colour, spacing and radius variables, and the `type/*` text styles.
+Used from 00 System: Brand, Icon/*, Button, BottomActionBar, StepIndicator / Narrow, FreshnessChip (including filled and paused), Notice, Offline, Input, Checkbox, Switch, LoadingState, PermissionDenied, ResponsiveNavigation, all colour, spacing and radius variables, and the `type/*` text styles.
 
 ## Gaps
 
-- **00 System Input, error state.** The error variant does not bind Value or Hint to the component properties, so A3-error and B2-error override those layers directly. Fix on page 00.
-- **00 System FreshnessChip** needs a closed state (Filled, Paused).
-- **1440 frames are single-column.** A desktop inquiry inbox (list and thread side by side) and a two-column job page are not drawn.
-- **Bottom bars and other local parts** listed above are not 00 System instances yet.
+- **Closed in #352:** the Input error state now binds Value, Hint and a new Error property (A3-error and B2-error use them); FreshnessChip has filled and paused states; the 1440 frames are in columns, with the inquiries list beside the thread; the bottom bars and the flow B step indicator are 00 System instances.
+- **Still local:** the top bars, segmented controls, choice chips, number steppers, fact rows and message bubbles listed above. 00 System has NumberStepper and SegmentedControl, but these frames were not swapped in #352.
+- **The landing bottom tab bar** on B1 and C-inbox is 91 px tall since #352, because 00 System tab labels are 16 px and "Landing inbox" wraps.
 - **Present mode.** The prototype was not checked in Present mode on a phone. The bar is pinned to the frame bottom; on frames taller than 844 px it should be checked there.
 - **Text consent words** (S1 to S3, the phone sign-up and the first-text copy) wait for the legal review (#291, #293) before any text goes out. #291 item 17 asks for one unticked box per message category; S1 still has one switch.
 - **Short links** such as `logloads.com/j/oak-cascade` are examples. The link shape belongs to P0-4 and P0-6.
