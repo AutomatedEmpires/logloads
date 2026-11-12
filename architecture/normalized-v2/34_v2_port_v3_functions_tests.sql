@@ -3,7 +3,8 @@
 -- resolution, admin target checks, inquiry and job pages; #294 part B)
 --
 -- NON-ACTIVE PROTOTYPE TEST SUITE. Disposable PostgreSQL only. Run after
--- 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 -> 29 -> 31 -> 33. Wraps everything in BEGIN ... ROLLBACK.
+-- 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 -> 29 -> 31 -> 33; stage 36 runs it again after 35. Wraps everything
+-- in BEGIN ... ROLLBACK.
 -- Negative tests require the expected SQLSTATE AND a matching message or constraint name.
 -- On a database without 33 the suite stops at its first assertion. Each of 33's three redefinitions is needed by at
 -- least one assertion: with any one of them put back to its earlier definition, the suite fails.
@@ -657,8 +658,9 @@ begin
   -- -------------------------------------------------------------------------
   -- Ledger
   -- -------------------------------------------------------------------------
-  perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations) = '06,11,12,16,18,23,26,29,31,33',
-    'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33 in order');
+  perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations)
+                       in ('06,11,12,16,18,23,26,29,31,33', '06,11,12,16,18,23,26,29,31,33,35'),
+    'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33 in order (and 35 after them, when stage 36 runs this suite again)');
 
   raise notice 'ALL PORT V3 FUNCTION (33-I1, 33-I2, 33-T, 33-A1, 33-A2, 33-Q1, 33-Q2) TESTS PASSED.';
 end

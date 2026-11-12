@@ -77,7 +77,7 @@ interface FunctionSpec {
 
 /**
  * The closed list of database functions the adapter may call. Names, argument names and argument types match the SQL
- * exactly (architecture/normalized-v2, stages 01-33).
+ * exactly (architecture/normalized-v2, stages 01-35; 35 adds no callable function).
  *
  * Every function here is SECURITY DEFINER with a pinned `search_path`, is granted EXECUTE to `authenticated` (and to
  * `anon` only where `anonymous` is true) and never to `service_role`; `normalized-adapter.contract.test.ts` proves
@@ -89,10 +89,13 @@ interface FunctionSpec {
  *
  * Never catalogued: anything granted to `service_role` only (the email worker's `claim_email_notifications`,
  * `complete_email_notification`, `record_email_provider_event`, `enqueue_job_alerts` and `issue_unsubscribe_token`,
- * which mints the unsubscribe links; billing events; identity sync), and helpers with no EXECUTE grant
- * (`eligible_invitation_recipients`, `hmac_sha256`, `job_confirmation_current`). `job_takes_new_interest` serves a
- * row-level security policy and is not called from here. This connection cannot become
- * `service_role` (HF-22).
+ * which mints the unsubscribe links, and since 35 `prune_unsubscribe_tokens` and `rotate_unsubscribe_key`, the link's
+ * housekeeping; billing events; identity sync), and helpers with no EXECUTE grant (`eligible_invitation_recipients`,
+ * `hmac_sha256`, `job_confirmation_current`). `job_takes_new_interest` and 35's `job_day14_visible` and
+ * `job_day14_visible_by_id` serve row-level security policies and are not called from here. Since 35, `job_postings`
+ * and `job_posting_equipment` hide an active job past day 14 from direct reads outside its landing desk, as the list
+ * functions do; the desk's own-jobs statements (`normalized-queries.ts`) still see its stale jobs. This connection
+ * cannot become `service_role` (HF-22).
  */
 export const MARKETPLACE_FUNCTIONS = {
   // A business owned by the caller, who becomes its owner (03_entitlements.sql, 06 §4): a landing business (#127) or,

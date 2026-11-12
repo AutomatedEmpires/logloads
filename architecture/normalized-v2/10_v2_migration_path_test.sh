@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# LogLoads normalized-v2 — 10 migration-path test for 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 -> 29 -> 31 -> 33 on existing data
+# LogLoads normalized-v2 — 10 migration-path test for 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 -> 29 -> 31 -> 33 -> 35 on existing data
 #
 # NON-ACTIVE PROTOTYPE TEST HARNESS. Disposable PostgreSQL only; same fail-closed target checks as 05/08.
 # Builds a baseline (01 -> 02 -> 03) holding data created the baseline way — including the states the
@@ -26,7 +26,10 @@
 #       empty, and replaces three policies), so an inquiry shared before a reply stays as stored and is simply no longer
 #       readable by the hauling business;
 #   33  changes no stored row either (it adds seven functions, redefines three and replaces
-#       list_marketplace_interests; no table, policy or trigger changes).
+#       list_marketplace_interests; no table, policy or trigger changes);
+#   35  changes no stored row either (it adds four functions, two restrictive policies, a column that is null on every
+#       existing key and an index, and redefines two functions); on the existing data, anon then reads directly
+#       exactly the jobs that take new interest (job_takes_new_interest).
 # =============================================================================
 set -euo pipefail
 
@@ -251,7 +254,7 @@ grep -q "requires migration 11" "$TMP/early12.log" || fail "12 before 11 failed 
 expect_eq "every table unchanged by the refused runs" "$(all_data)" "$STATE"
 expect_eq "ledger unchanged by the refused runs" "$(q "select string_agg(version, ',' order by version) from marketplace.schema_migrations;")" "06"
 
-echo "[5/6] Applying 11_v2_phase3_policy.sql, 12_v2_billing_events.sql, 16_v2_identity_membership_hardening.sql, 18_v2_review_106_hardening.sql, 23_v2_round2_hardening.sql, 26_v2_team_seats_saved_jobs_outbox.sql, 29_v2_landing_scope_hardening.sql, 31_v2_reply_gate_reconfirmation_unsubscribe.sql and 33_v2_port_v3_functions.sql (each one transaction) on top of existing data..."
+echo "[5/6] Applying 11_v2_phase3_policy.sql, 12_v2_billing_events.sql, 16_v2_identity_membership_hardening.sql, 18_v2_review_106_hardening.sql, 23_v2_round2_hardening.sql, 26_v2_team_seats_saved_jobs_outbox.sql, 29_v2_landing_scope_hardening.sql, 31_v2_reply_gate_reconfirmation_unsubscribe.sql, 33_v2_port_v3_functions.sql and 35_v2_day14_direct_reads_unsubscribe_keys.sql (each one transaction) on top of existing data..."
 apply1 "$SCRIPT_DIR/11_v2_phase3_policy.sql"
 apply1 "$SCRIPT_DIR/12_v2_billing_events.sql"
 MEMBERS_MODIFIED="$(q "select string_agg(id::text || ':' || updated_at::text, ',' order by id) from marketplace.organization_memberships;")"
@@ -271,6 +274,8 @@ AFTER_31="$(all_data schema_migrations,notification_unsubscribe_keys,notificatio
 BEFORE_33="$(all_data schema_migrations)"
 apply1 "$SCRIPT_DIR/33_v2_port_v3_functions.sql"
 AFTER_33="$(all_data schema_migrations)"
+apply1 "$SCRIPT_DIR/35_v2_day14_direct_reads_unsubscribe_keys.sql"
+AFTER_35="$(all_data schema_migrations)"
 
 echo "[6/6] Asserting 11 and 12 fabricated nothing and existing data still works..."
 expect_eq "F1: a profile public only by the pre-V2 default is now private" \
@@ -304,6 +309,11 @@ expect_eq "29 changes no stored row in any marketplace table (the ledger aside)"
 expect_eq "31 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_31" "$AFTER_29"
 expect_eq "31's new tables start empty: no signing key and no used token" "$(q "select (select count(*) from marketplace.notification_unsubscribe_keys) + (select count(*) from marketplace.notification_unsubscribe_uses);")" "0"
 expect_eq "33 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_33" "$BEFORE_33"
-expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31 and 33 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33"
+expect_eq "35 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_35" "$AFTER_33"
+ANON_JOBS="$(q "begin; select set_config('request.jwt.claims', '{\"role\":\"anon\"}', true); set local role anon;
+  select 'IDS ' || coalesce(string_agg(id::text, ',' order by id), '') from marketplace.job_postings; rollback;" | grep '^IDS ' | cut -c5-)"
+expect_eq "35-R: on the existing data anon reads directly exactly the jobs that take new interest" \
+  "$ANON_JOBS" "$(q "select coalesce(string_agg(id::text, ',' order by id), '') from marketplace.job_postings where marketplace.job_takes_new_interest(id);")"
+expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33 and 35 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33,35"
 x "drop schema if exists marketplace cascade;"
 echo "MIGRATION PATH TEST PASSED."

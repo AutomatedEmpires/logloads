@@ -59,6 +59,10 @@ $$;
 create function pg_temp.stage33() returns boolean language sql stable as $$
   select to_regprocedure('marketplace.remove_team_member(uuid)') is not null
 $$;
+-- 35 (the day-14 rule on direct job reads, unsubscribe pruning and key rotation) applied on top of 33.
+create function pg_temp.stage35() returns boolean language sql stable as $$
+  select to_regprocedure('marketplace.prune_unsubscribe_tokens()') is not null
+$$;
 
 -- Runs p_sql and requires failure with SQLSTATE p_state AND a constraint name or message matching
 -- p_reason (case-insensitive regex), so a negative test cannot pass because an unrelated rule fired.
@@ -191,9 +195,11 @@ begin
   -- unsubscribe_with_token; it redefines eight);
   -- + 33 121 (list_invitation_recipients, remove_team_member, admin_resolve_report, interest_queue,
   -- count_marketplace_interests, get_marketplace_interest, list_marketplace_jobs_page; it redefines three and replaces
-  -- list_marketplace_interests by one with more arguments).
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
-    format('expected %s functions in marketplace, found %s', case when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- list_marketplace_interests by one with more arguments);
+  -- + 35 125 (job_day14_visible, job_day14_visible_by_id, rotate_unsubscribe_key, prune_unsubscribe_tokens; it
+  -- redefines two).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec
