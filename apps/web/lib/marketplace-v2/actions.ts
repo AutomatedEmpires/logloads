@@ -18,6 +18,8 @@ import {
   type MarketplaceJobDraft
 } from "@logloads/contracts"
 
+import { DomainRefusalError, planJobReconfirm } from "@logloads/services"
+
 import {
   interestRepliedProperties,
   interestSubmittedProperties,
@@ -394,9 +396,20 @@ async function checkReconfirmRequest(viewer: MarketplaceV2Viewer, jobId: string,
     return { error: "not_own_job", ok: false }
   }
 
-  // 4. Only a listing that is accepting interest can be "still available".
-  if (!job.acceptingInterest) {
-    return { error: "not_accepting", ok: false }
+  // 4. Only a listed job can be "still available": the lifecycle's own rule (`planJobReconfirm`). A day-14 job is
+  //    reported as not accepting interest, but it is still listed (active, unexpired), so its business can reconfirm
+  //    it. A paused, filled, closed or expired job is refused as before.
+  try {
+    planJobReconfirm(
+      { expiresAt: job.expiresAt ?? null, lastConfirmedAt: job.lastConfirmedAt ?? null, moderationHold: null, status: job.status },
+      new Date()
+    )
+  } catch (error) {
+    if (error instanceof DomainRefusalError) {
+      return { error: "not_accepting", ok: false }
+    }
+
+    throw error
   }
 
   // 5. The explicit attestation; its timestamp is the server clock.

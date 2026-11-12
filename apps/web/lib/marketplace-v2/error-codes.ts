@@ -34,6 +34,7 @@ const COPY = {
   // --- Interest and inquiries ---
   job_not_found: "This job isn't listed anymore. It may have been closed or removed.",
   job_closed: "This job is no longer accepting interest. Nothing was sent.",
+  job_unconfirmed: "This job is waiting for the poster to confirm it is still available, so it takes no new interest yet. Nothing was sent.",
   own_job: "This is your own business's job, so you can't send interest on it.",
   hauling_business_required: "Switch to a hauling business to express interest.",
   inquiry_role: "Your role cannot act on inquiries for this business.",

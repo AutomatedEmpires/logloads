@@ -4,6 +4,7 @@ import {
   haulerEquipmentAddInputSchema,
   landingAtCapRefusal,
   LANDING_BILLING_INACTIVE_REFUSAL,
+  MARKETPLACE_JOB_UNCONFIRMED_LABEL,
   PUBLISH_ATTESTATION_REQUIRED
 } from "@logloads/contracts"
 import { DomainRefusalError, FLEET_EDIT_REFUSED } from "@logloads/services"
@@ -56,6 +57,8 @@ describe("refusals with their own copy are named, not logged", () => {
     ["the rate limit's words on a plain error", new Error("Too many attempts. Wait a moment and try again."), "rate_limited"],
     ["the pilot's closed job (a plain service error)", new Error("This job is no longer accepting interest"), "job_closed"],
     ["the store's closed job", new MarketplaceRefusalError("This job is no longer accepting interest", "23514"), "job_closed"],
+    ["the day-14 job (#374)", new MarketplaceRefusalError(MARKETPLACE_JOB_UNCONFIRMED_LABEL, "23514"), "job_unconfirmed"],
+    ["the day-14 job as a plain service error, with a full stop", new Error(`${MARKETPLACE_JOB_UNCONFIRMED_LABEL}.`), "job_unconfirmed"],
     ["the store's stop at the end", new MarketplaceRefusalError("The landing has closed this inquiry.", "23514"), "inquiry_declined"],
     ["another business's inquiry", new MarketplaceRefusalError("Inquiry not found", "42501"), "inquiry_not_found"],
     ["the publish attestations", new MarketplaceRefusalError(PUBLISH_ATTESTATION_REQUIRED, "23514"), "publish_attestation"],

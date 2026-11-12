@@ -9,6 +9,8 @@ import {
   type MarketplaceLandingView
 } from "@logloads/contracts"
 
+import { MarketplaceRefusalError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
+
 /**
  * The landing overview's attention list and new-subscriber checklist (#133, UX B8). Pure: every input is already
  * scoped to the active business by the port, and each function filters by that business's id again, so a list
@@ -29,6 +31,45 @@ export const NEW_JOB_PATH = "/v2/landing/jobs/new"
  */
 export function ownJobFilters(organizationId: string): MarketplaceJobFilters {
   return { acceptingOnly: false, posterOrganizationId: organizationId }
+}
+
+/**
+ * The business's own jobs, every status, for the overview and the job list. The desk's own read (`listOwnJobs`) keeps a
+ * day-14 job (#308), which the public read leaves out because it is off Find Work. A role without the job desk is
+ * refused it and sees what is listed, as before; a store without a desk (the pilot) has only the public read.
+ */
+export async function readOwnJobs(
+  port: Pick<MarketplaceV2Port, "listJobs" | "listOwnJobs" | "supportsPublishing">,
+  viewer: MarketplaceV2Viewer
+): Promise<MarketplaceJobCardView[]> {
+  const organizationId = viewer.organizationId
+  const publicRead = async () => port.listJobs(ownJobFilters(organizationId))
+  let jobs: MarketplaceJobCardView[]
+
+  if (!port.supportsPublishing) {
+    jobs = await publicRead()
+  } else {
+    try {
+      jobs = (await port.listOwnJobs(viewer)).map((view) => view.job)
+    } catch (error) {
+      if (!(error instanceof MarketplaceRefusalError) || error.code !== "42501") {
+        throw error
+      }
+
+      jobs = await publicRead()
+    }
+  }
+
+  return jobs.filter((job) => job.posterOrganizationId === organizationId)
+}
+
+/**
+ * A job its business can confirm as still available: listed (active) and not past its expiry. A day-14 job is
+ * reported as not accepting interest but is listed, so it can be. The server action applies the lifecycle's own rule
+ * (`planJobReconfirm`); this only decides whether to offer the button.
+ */
+export function reconfirmableJob(job: Pick<MarketplaceJobCardView, "status" | "expiresAt" | "lastConfirmedAt" | "lastModifiedAt">, now: string): boolean {
+  return job.status === "active" && postingFreshness(job, now).band !== "expired"
 }
 
 export interface NewInquiriesItem {
@@ -88,13 +129,13 @@ function wholeDays(from: string, to: string): number {
 }
 
 /**
- * The business's listings that accept interest but were not confirmed within `RECENT_CONFIRMATION_DAYS`, the one
+ * The business's listed jobs (a day-14 job among them) that were not confirmed within `RECENT_CONFIRMATION_DAYS`, the one
  * interval the contracts define: past it, haulers see "Last confirmed … check with the poster". Never confirmed
  * first, then the oldest confirmation. An edit is never a confirmation.
  */
 export function unconfirmedJobItems(jobs: readonly MarketplaceJobCardView[], organizationId: string, now: string): UnconfirmedJobItem[] {
   return jobs
-    .filter((job) => job.posterOrganizationId === organizationId && job.acceptingInterest)
+    .filter((job) => job.posterOrganizationId === organizationId && reconfirmableJob(job, now))
     .filter((job) => {
       const band = postingFreshness(job, now).band
       return band === "unconfirmed" || band === "confirmed_aging"

@@ -319,6 +319,40 @@ describe("reconfirmJobAction server-side checks", () => {
     expect(mocks.reconfirmJob).not.toHaveBeenCalled()
   })
 
+  it("lets a business reconfirm its own day-14 job, which the store reports as not accepting interest (#374)", async () => {
+    const lastConfirmedAt = new Date(NOW.getTime() - 15 * 86_400_000).toISOString()
+    mocks.getJob.mockResolvedValue(ownJob({ acceptingInterest: false, lastConfirmedAt, status: "active" }))
+    mocks.reconfirmJob.mockResolvedValue(undefined)
+
+    await redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, ...ATTESTED }, []))
+
+    expect(mocks.reconfirmJob).toHaveBeenCalledExactlyOnceWith(VIEWER, JOB_ID, { action: "reconfirm", confirmedAt: NOW.toISOString() })
+  })
+
+  it("lets a business reconfirm a day-14 job that was never confirmed (#374)", async () => {
+    mocks.getJob.mockResolvedValue(ownJob({ acceptingInterest: false, lastConfirmedAt: null, status: "active" }))
+    mocks.reconfirmJob.mockResolvedValue(undefined)
+
+    await redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, ...ATTESTED }, []))
+
+    expect(mocks.reconfirmJob).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ["paused", { status: "paused" }],
+    ["filled", { status: "filled" }],
+    ["closed", { status: "closed" }],
+    ["expired", { status: "expired" }],
+    ["active past its expiry", { expiresAt: new Date(NOW.getTime() - 1000).toISOString(), status: "active" }]
+  ])("still refuses a %s job (#374)", async (_label, overrides) => {
+    mocks.getJob.mockResolvedValue(ownJob({ acceptingInterest: false, ...overrides }))
+
+    await expect(redirectOf(reconfirmJobAction, form({ jobId: JOB_ID, ...ATTESTED }, []))).resolves.toMatchObject({
+      query: { error: "not_accepting" }
+    })
+    expect(mocks.reconfirmJob).not.toHaveBeenCalled()
+  })
+
   it.each([
     ["missing", {}],
     ["a generic checkbox value", { availabilityAttestation: "on" }]

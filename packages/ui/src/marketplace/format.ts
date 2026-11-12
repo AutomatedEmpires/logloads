@@ -12,6 +12,9 @@ import {
   formatMarketplacePay,
   lastMarketplaceInterestReplySide,
   MARKETPLACE_JOB_STATUS_LABELS,
+  MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS,
+  MARKETPLACE_JOB_UNCONFIRMED_LABEL,
+  MARKETPLACE_JOB_UNCONFIRMED_REASON,
   MARKETPLACE_PAY_UNIT_LABELS,
   marketplaceEquipmentLabel,
   marketplaceJobClosedReason,
@@ -234,12 +237,41 @@ export function unstatedText(job: StatedFields): string | null {
 export const JOB_PUBLIC_STATUS_LABELS: Readonly<Record<MarketplaceJobStatus, string>> = MARKETPLACE_JOB_STATUS_LABELS
 
 /**
+ * The day-14 rule (#308, #374): a listing still on the marketplace (active, not past its expiry) whose poster has not
+ * confirmed it for 14 days, or never has, takes no new interest until they do. It is neither expired nor paused.
+ */
+function waitingForPoster(job: Pick<MarketplaceJobCardView, "status" | "expiresAt" | "lastConfirmedAt">, now: Date): boolean {
+  if (job.status !== "active") {
+    return false
+  }
+
+  if (job.expiresAt) {
+    const expiry = Date.parse(job.expiresAt)
+
+    if (Number.isNaN(expiry) || expiry <= now.getTime()) {
+      return false
+    }
+  }
+
+  const confirmed = job.lastConfirmedAt ? Date.parse(job.lastConfirmedAt) : Number.NaN
+
+  return Number.isNaN(confirmed) || now.getTime() >= confirmed + MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS * 86_400_000
+}
+
+/**
  * Why a listing is not accepting interest, and when, from what the listing records (spec §5.3, UX-07 #130). The why is
  * contracts `marketplaceJobClosedReason`. No view carries the moment a status changed, so the when is never invented:
  * the expiry date when one is set, the last stated work day for an expired job without one, and otherwise the day the
  * listing last changed, worded as exactly that.
  */
-export function jobClosureText(job: Pick<MarketplaceJobCardView, "status" | "expiresAt" | "endsOn" | "lastModifiedAt">): string {
+export function jobClosureText(
+  job: Pick<MarketplaceJobCardView, "status" | "expiresAt" | "endsOn" | "lastModifiedAt" | "lastConfirmedAt">,
+  now: Date = new Date()
+): string {
+  if (waitingForPoster(job, now)) {
+    return `${MARKETPLACE_JOB_UNCONFIRMED_LABEL}. ${MARKETPLACE_JOB_UNCONFIRMED_REASON}`
+  }
+
   const reason = marketplaceJobClosedReason(job.status) ?? "This listing is not accepting interest."
   const when = job.status === "expired" && job.expiresAt
     ? `Expired on ${formatDay(job.expiresAt)}.`

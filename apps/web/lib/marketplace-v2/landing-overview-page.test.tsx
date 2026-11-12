@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   landingAllowance: vi.fn(),
   listJobs: vi.fn(),
   listLandingInterests: vi.fn(),
+  listOwnJobs: vi.fn(),
   listOwnLandings: vi.fn(),
   resolveV2Viewer: vi.fn(),
   supportsPublishing: false
@@ -37,6 +38,7 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
     landingAllowance: mocks.landingAllowance,
     listJobs: mocks.listJobs,
     listLandingInterests: mocks.listLandingInterests,
+    listOwnJobs: mocks.listOwnJobs,
     listOwnLandings: mocks.listOwnLandings,
     get supportsPublishing() {
       return mocks.supportsPublishing
@@ -93,6 +95,7 @@ beforeEach(() => {
   mocks.resolveV2Viewer.mockResolvedValue({ access: { capabilities: DESK, organizationName: "Cedar Fork Logging" }, ok: true, viewer })
   mocks.listOwnLandings.mockResolvedValue([landing()])
   mocks.listJobs.mockResolvedValue([job("j1", "Oak saw-log morning run"), job("j2", "Pulp to Eugene"), job("j9", "Rival run", { posterOrganizationId: OTHER })])
+  mocks.listOwnJobs.mockImplementation(async () => (await mocks.listJobs()).map((own: MarketplaceJobCardView) => ({ job: own })))
   mocks.listLandingInterests.mockResolvedValue([interest("i1", "j1", "Oak saw-log morning run"), interest("i2", "j1", "Oak saw-log morning run"), interest("i3", "j2", "Pulp to Eugene", "replied")])
   mocks.landingAllowance.mockResolvedValue({ activeLandings: 1, cycleEndsAt: "2026-12-01T00:00:00.000Z", invitationsRemaining: 2, planCode: "basic", teamMembers: 2 })
 })
@@ -138,6 +141,21 @@ describe("the landing overview (#133)", () => {
     expect(page).toContain("“Pulp to Eugene” not confirmed for 9 days")
     expect(page).toMatch(/<button[^>]*name="availabilityAttestation"[^>]*value="confirmed"|<button[^>]*value="confirmed"[^>]*name="availabilityAttestation"/)
     expect(page).toContain("name=\"returnTo\" value=\"/v2/landing\"")
+    expect(page).not.toContain("Rival run")
+  })
+
+  it("reads the desk's own jobs through listOwnJobs where the store keeps them, so a day-14 job is listed to confirm (#374)", async () => {
+    mocks.supportsPublishing = true
+    mocks.listOwnJobs.mockResolvedValue([
+      { job: job("j1", "Fresh run") },
+      { job: job("j2", "Off Find Work", { acceptingInterest: false, lastConfirmedAt: "2026-10-01T12:00:00.000Z" }) },
+      { job: job("j9", "Rival run", { posterOrganizationId: OTHER }) }
+    ])
+    const page = await render()
+
+    expect(mocks.listOwnJobs).toHaveBeenCalledExactlyOnceWith(viewer)
+    expect(mocks.listJobs).not.toHaveBeenCalled()
+    expect(page).toContain("“Off Find Work” not confirmed for")
     expect(page).not.toContain("Rival run")
   })
 

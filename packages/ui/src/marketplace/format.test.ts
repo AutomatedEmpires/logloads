@@ -2,6 +2,8 @@ import {
   describeMarketplaceInterestStatus,
   formatMarketplacePay,
   MARKETPLACE_JOB_STATUS_LABELS,
+  MARKETPLACE_JOB_UNCONFIRMED_LABEL,
+  MARKETPLACE_JOB_UNCONFIRMED_REASON,
   marketplaceInterestStatusSchema
 } from "@logloads/contracts"
 import { describe, expect, it } from "vitest"
@@ -202,6 +204,27 @@ describe("what the poster did not state (UX-07, #130)", () => {
 
   it("is null when the poster stated everything", () => {
     expect(unstatedText(jobDetail({ estimatedDailyLoads: 12, estimatedLoadsPerTruckPerDay: 2 }))).toBeNull()
+  })
+})
+
+describe("jobClosureText for a day-14 job (#374)", () => {
+  const now = new Date("2026-11-20T12:00:00.000Z")
+  const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString()
+  const text = `${MARKETPLACE_JOB_UNCONFIRMED_LABEL}. ${MARKETPLACE_JOB_UNCONFIRMED_REASON}`
+
+  it("says the job waits for the poster to confirm, never that it is expired, paused or closed", () => {
+    expect(jobClosureText(jobCard({ acceptingInterest: false, lastConfirmedAt: daysAgo(14), status: "active" }), now)).toBe(text)
+    expect(jobClosureText(jobCard({ acceptingInterest: false, lastConfirmedAt: daysAgo(40), status: "active" }), now)).toBe(text)
+    expect(jobClosureText(jobCard({ acceptingInterest: false, lastConfirmedAt: null, status: "active" }), now)).toBe(text)
+    expect(text).not.toMatch(/expired|paused|closed/i)
+  })
+
+  it("leaves every other status and an expired listing as they were", () => {
+    const stale = { lastConfirmedAt: daysAgo(20) }
+
+    expect(jobClosureText(jobCard({ ...stale, status: "paused" }), now)).toMatch(/^The poster paused this listing\./)
+    expect(jobClosureText(jobCard({ ...stale, status: "expired" }), now)).toMatch(/^This listing expired\./)
+    expect(jobClosureText(jobCard({ ...stale, expiresAt: daysAgo(1), status: "active" }), now)).not.toContain(MARKETPLACE_JOB_UNCONFIRMED_LABEL)
   })
 })
 
