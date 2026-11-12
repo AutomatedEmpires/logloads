@@ -62,6 +62,37 @@ Until #143 merges into `work/logloads-repair`, **every PR's `extended-validation
 its own diff. That includes the docs PRs #100, #115 and #142, and the database PR #123. Read each PR's status
 per workflow, never as one combined colour.
 
+### Hang and flake bounds (#323, IMPLEMENTED)
+
+Measured on 2026-11-12 from the Actions API.
+
+**The 53-minute E2E hang.** Under `next start`, Next.js 15.5 lends the browser's socket to its internal fetch of a
+local image. If the browser cancels a `/_next/image` request while that size is being generated for the first
+time, the generation never finishes. Next.js then joins every later request for that URL to it
+([vercel/next.js#98402](https://github.com/vercel/next.js/issues/98402)). The fix is in Next.js 16.4, not in
+15.5.29.
+
+In CI this hit the logo at `w=64`, the first size the desktop project needs. After sign-in the test navigates
+before the logo has arrived. From then on, no page that shows the logo fires `load`. Each of the 23 remaining
+desktop journeys timed out twice at 60 s: the step ran 53 minutes and the job 65. At least 21 of the 294 CI runs
+between 2026-11-04 and 2026-11-12 ran 63 minutes or more. All 14 that were opened match exactly (86 passed, 23
+failed, 13 not run). In the two whose traces were read, all 92 failed attempts were waiting on that one image.
+
+**What bounds it now:**
+
+| Where | Bound |
+|---|---|
+| `tools/e2e-server.mjs` | Both suites' `next start` runs behind a loopback proxy. The proxy never cancels a request the server already has, so the image is generated and later requests are served. It names any request still unanswered after 20 s. It writes the server's output to `server.log` in the suite's output directory, which is uploaded when a suite fails. Once the server exits, it refuses connections, so the remaining tests fail at once. `pnpm test:tools` covers it. Against Next.js 15.5.28 locally, 8 of 72 cancelled image URLs hung without the proxy and 0 of 108 behind it. |
+| `apps/web/tests/playwright.config.mjs`, `apps/web/tests/design-system.config.mjs` | In CI a run stops after 5 tests that also failed their retry (a test that passes on retry does not count), or after 15 minutes (pilot) or 12 minutes (DS-05). A navigation times out at 30 s. The pilot server is ready only when `/api/health` answers 200. Every failure keeps its trace. |
+| `ci.yml`, `performance-budget.yml` | Each long step has a time limit: the stack start, the build, the browser install and each suite. `extended-validation` stops at 45 minutes. Chromium is cached per Playwright version. Its install, whose apt mirrors sometimes fail to resolve (exit 100), is retried up to 3 times. |
+| `tools/db-check.sh` | The Supabase stack start is tried up to 3 times. After each failure the script prints the CLI's last 60 lines (keys masked), the stack's containers and anything listening on ports 553xx. It then removes the stack before the next try. The migrations and the `supabase/verify/` checks are never retried. |
+
+The full suites still run on every code PR, and no required check changed its name. A limit only ends a run that
+is already failing.
+
+**Timings before the fix:** a passing `extended-validation` took 15–18 minutes, with E2E smoke at 4.4–5.0 minutes.
+A hung one took 63–67 minutes, 53–54 of them in E2E smoke.
+
 ## 3. Normalized V2 database CI
 
 **Workflow:** `.github/workflows/normalized-v2-ci.yml`, on `work/logloads-repair` since PR #123 merged on
