@@ -18,6 +18,8 @@ import {
 import styles from "@/components/v2/JobEditor.module.css"
 import { JobDraftSession } from "@/components/v2/JobDraftSession"
 import { PublishButton } from "@/components/v2/PublishButton"
+import { FlowTapCounter } from "@/lib/analytics/beacons"
+import { clientAnalyticsEnabled } from "@/lib/analytics/client"
 import { publishJobAction } from "@/lib/marketplace-v2/actions"
 import { draftQueryString, draftValuesFromQuery, hasDraftValues } from "@/lib/marketplace-v2/draft-params"
 import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
@@ -39,6 +41,7 @@ function one(value: string | string[] | undefined): string {
  * components discovery uses (JobResultRow `context="preview"` and JobDetail), lists what haulers never see, and
  * asks for the three V2-DEC-03 statements. Publish stays aria-disabled until all three are ticked; the server
  * (`publishJobAction`) re-checks everything. A draft that isn't ready goes back to the step that needs fixing.
+ * Taps here count toward flow B's clock, which the editor started (#330); nothing is sent from this page.
  */
 export default async function JobPreviewPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -89,6 +92,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
 
   return (
     <JobEditorLayout aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} values={values} />} organizationName={access.organizationName}>
+      {clientAnalyticsEnabled() ? <FlowTapCounter flow="B" /> : null}
       {failure ? <EditorNotice tone="critical">{failure.message}</EditorNotice> : null}
       {one(query.unavailable) === "publish" ? (
         <EditorNotice>Publishing isn&apos;t saved yet: it needs the normalized marketplace store. Your draft is unchanged.</EditorNotice>

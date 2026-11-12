@@ -10,6 +10,7 @@ import {
 } from "@logloads/contracts"
 import type { z } from "zod"
 
+import { availabilityReconfirmedProperties, recordProductEvent } from "../analytics/server"
 import { checkRateLimit } from "../rate-limit"
 import { V2_FAULT_CODES } from "./error-codes"
 import { reportV2Error } from "./error-log"
@@ -136,6 +137,17 @@ export async function reportHaulerAvailabilityAction(formData: FormData): Promis
 export async function confirmHaulerAvailabilityAction(formData: FormData): Promise<void> {
   await run("confirm", formData, {}, async (viewer) => {
     const { confirmed } = await pilotMarketplaceV2.confirmHaulerAvailability(viewer)
-    return confirmed === 0 ? { saved: "nothing_to_confirm" } : { confirmed, saved: "confirmed" }
+
+    if (confirmed === 0) {
+      return { saved: "nothing_to_confirm" }
+    }
+
+    // Flow D (#330): the business re-stated its availability, signed in. Sent after the response, never failing this.
+    await recordProductEvent(
+      "availability_reconfirmed",
+      () => availabilityReconfirmedProperties({ confirmed, organizationId: viewer.organizationId, signedIn: true, via: "in_app" }),
+      { actor: viewer }
+    )
+    return { confirmed, saved: "confirmed" }
   })
 }
