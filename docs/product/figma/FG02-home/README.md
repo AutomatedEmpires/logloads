@@ -1,97 +1,172 @@
 # FG02 Home: landing Overview and hauler Find Work in Figma
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#258). It is not approved yet. These are key screens, so they need the founder's approval before anyone builds a change from them (AE-Control `policy/designops.md`).
+**Status:** TARGET. First built on 2026-11-10 (#258). Revised on 2026-11-11 (#295) to pass design audit 2 (#285) with zero blockers. It is not approved yet. These are key screens, so they need the founder's approval before anyone builds a change from them (AE-Control `policy/designops.md`).
 **Figma page:** [02 Home](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-79) in the LogLoads file (jackson.cole's team).
-**Built from:** page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) (#256, `docs/product/figma/FG00-system/README.md`): its components, variables and text styles. No UI code changed in this task.
-**Matches:** the coded screens on `work/logloads-repair` at `c3eedc8`. Each frame shows the code first. The one change designed here is one the UX spec calls for: the Find Work loading state.
+**Built from:** page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) (#256, #281, `docs/product/figma/FG00-system/README.md`): its components, variables and text styles, including the #281 field layer merged at `13dc399` (FreshnessChip, BottomActionBar, Notice, Offline, PermissionDenied, Fact, Input, FormField at 16 px, the Touch mode and the Dark mode). Page 00 was not edited. No UI code changed in this task.
+**Standards:** quality bar v1 (#235 comment 6783016152) and the field design bar FD1 to FD8 (#235 comment 6784066522).
+
+## What changed in the audit 2 revision
+
+Every frame and local component from #258 was replaced. The old sections, the old composed components (including the local JobDetail copy `35:261`) and the old annotation were deleted. Figma's version history keeps them.
+
+The page now has 61 screen frames in four sections (51 Light frames at 390, 768 and 1440 px, and 10 Dark frames of the key 390 px screens), a section of local components, and an [annotation](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=266-8451) (`266:8451`) that repeats the fixes and the gaps.
+
+- Every screen has a 390, 768 and 1440 px frame. Every 390 and 768 px frame sets the Component collection to Touch; 1440 px uses Comfortable. A read-back confirms the mode on every frame.
+- The dark theme is decided: it follows the phone. The 10 key 390 px screens have a Dark copy that sets the Color collection to Dark.
+- Overlays are one viewport tall (390 × 844, 768 × 1024, 1440 × 900). The page behind is an inert copy of the matching results frame under the backdrop.
+- The example data is the same in every frame: the hauler is Granite Creek Hauling (GC, the hauler on page 03), the landing business is North Ridge Logging on the Pro plan, and the new subscriber is Cedar Flat Logging on Basic. Places are Oregon towns from `apps/web/lib/marketplace-v2/places.ts`.
 
 ## Frames
 
-Every screen is 1440 px or 390 px wide. Overlay frames are one viewport tall (1440 × 900 and 390 × 844), so the dialog and sheet sit where they open.
+### Overview (landing home) · `/v2/landing` · [section 261:16864](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16864)
 
-| Screen | 1440 px | 390 px | Route | Spec | Code |
-|---|---|---|---|---|---|
-| Overview · Needs attention | [42:1479](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=42-1479) | [42:1632](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=42-1632) | `/v2/landing` | §4.0, §4.1; UX B8 (#133) | `apps/web/app/v2/landing/page.tsx`, `apps/web/components/v2/landing/OverviewSections.tsx` |
-| Overview · New subscriber checklist | [42:1804](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=42-1804) | [42:1938](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=42-1938) | `/v2/landing`, when a step is open and nothing needs attention | §4.1 Empty; §3.4 First use | `OverviewChecklist`, `apps/web/lib/marketplace-v2/landing-overview.ts` |
-| Find Work · Results | [45:1306](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=45-1306) | [45:1518](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=45-1518) | `/v2/work?near=Sweet+Home&radius=100&equipment=mine` | §5.1, §5.2, §3.3 | `apps/web/app/v2/work/page.tsx`, `apps/web/components/v2/discovery/FindWorkResults.tsx`, `SortControl.tsx` |
-| Find Work · Filters open | [45:1730](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=45-1730) | [45:2116](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=45-2116) | `/v2/work`: "Change" opens Filter jobs, a centred dialog from 768 px and a bottom sheet below | §5.2; §3.5 (bottom sheet with Apply and Reset) | `FindWorkFilters.tsx`, `FindWorkFields.tsx` |
-| Find Work · Empty | [46:2277](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=46-2277) | [46:2365](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=46-2365) | `/v2/work?near=Burns&radius=50&equipment=any` | §3.4 No equipment match and Empty region; §5.2 | `findWorkEmptyState` in `apps/web/lib/marketplace-v2/find-work.ts` |
-| Find Work · Loading (spec addition) | [46:2467](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=46-2467) | [46:2557](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=46-2557) | `/v2/work` while the results load | §3.4 Loading; §5.1 low bandwidth | Not in the code yet (see below) |
-| Job detail entry · DetailPanel | [46:2660](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=46-2660) | | `/v2/work?job=<id>` from bp-xl (1200 px) | §5.3; §5.1 "open detail" | `FindWorkResults.tsx` (DetailPanel), `packages/ui/src/marketplace/JobDetail.tsx`, `JobSummary.tsx` |
-| Job detail entry · sheet | | [46:3011](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=46-3011) | `/v2/work?job=<id>` below bp-xl. "Open the job's page" goes to `/v2/work/[jobId]` | §5.3; §3.5 | `FindWorkResults.tsx` (Dialog sheet), `apps/web/app/v2/work/[jobId]/page.tsx` |
+| Screen | 390 px | 768 px | 1440 px |
+|---|---|---|---|
+| Needs attention | [261:16865](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-16865) | [261:17040](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-17040) | [261:17210](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-17210) |
+| Still available confirmed, with Undo | [261:17365](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-17365) | [261:17534](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-17534) | [261:17703](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-17703) |
+| New subscriber checklist (empty) | [261:17857](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-17857) | [261:18064](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-18064) | [261:18250](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-18250) |
+| Loading | [263:10669](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=263-10669) | [263:10904](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=263-10904) | [263:11132](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=263-11132) |
+| Load failed | [263:11349](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=263-11349) | [263:11463](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=263-11463) | [263:11569](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=263-11569) |
+| Offline, last overview | [263:11659](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=263-11659) | [263:11842](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=263-11842) | [263:12023](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=263-12023) |
 
-That is 14 screen frames. The page also has:
+### Find Work (hauler home) · `/v2/work` · [section 255:3872](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=255-3872)
 
-- an [annotation frame](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=51-5603) (`51:5603`) with the same table, the changes and the gaps;
-- one Figma section per row: [Overview](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=42-1478), [Find Work](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=45-1305), [Find Work states](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=46-2276) and [Job detail entry](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=46-2659);
-- a [Composed components](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-80) section with the local components the screens reuse (below).
+| Screen | 390 px | 768 px | 1440 px |
+|---|---|---|---|
+| Results | [255:3873](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=255-3873) | [255:4076](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=255-4076) | [255:4285](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=255-4285) |
+| Empty | [258:4553](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=258-4553) | [258:4681](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=258-4681) | [258:4812](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=258-4812) |
+| Loading | [258:4934](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=258-4934) | [258:5078](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=258-5078) | [258:5234](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=258-5234) |
+| Load failed | [258:5377](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=258-5377) | [258:5495](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=258-5495) | [258:5620](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=258-5620) |
+| Offline, last results | [260:6573](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=260-6573) | [260:6785](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=260-6785) | [260:7002](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=260-7002) |
+| More than 100 jobs | [260:7210](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=260-7210) | [260:7390](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=260-7390) | [260:7581](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=260-7581) |
+
+### Find Work overlays · [section 261:6383](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-6383)
+
+| Screen | 390 px (sheet) | 768 px (dialog) | 1440 px |
+|---|---|---|---|
+| Filters open | [261:6384](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-6384) | [261:6506](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-6506) | [261:6615](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-6615) (dialog) |
+| Filters, location blocked | [293:9047](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-9047) | [293:9345](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-9345) | [293:9642](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-9642) (dialog) |
+| Job selected | [261:14303](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14303) | [261:14407](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14407) | [261:14511](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14511) (DetailPanel) |
+| Interest sent | [261:14799](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14799) | [261:14901](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14901) | [261:15002](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-15002) (DetailPanel) |
+| Interest waiting for signal | [261:15283](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-15283) | [261:15385](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-15385) | [261:15486](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-15486) (DetailPanel) |
+
+### Dark theme (follows the phone) · key screens at 390 px · [section 293:9960](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-9960)
+
+| Screen | Dark 390 px |
+|---|---|
+| Overview · Needs attention | [293:9961](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-9961) |
+| Overview · Still available confirmed | [293:9969](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-9969) |
+| Overview · New subscriber checklist | [293:9977](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-9977) |
+| Find Work · Results | [255:4485](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=255-4485) |
+| Find Work · Empty | [293:9985](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-9985) |
+| Find Work · Offline, last results | [293:9996](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-9996) |
+| Find Work · Filters open | [293:10007](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-10007) |
+| Find Work · Job selected, sheet | [293:10028](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-10028) |
+| Find Work · Interest sent, sheet | [293:10048](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-10048) |
+| Find Work · Interest waiting for signal, sheet | [293:10069](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-10069) |
 
 ## What each screen shows
 
-- **Overview · Needs attention.** A Pro-plan landing business. The page header holds the action row in the spec's order: Post a job, Inbox (4 new), and Find trucks, which is disabled with the code's note. Needs attention lists new inquiries per job (Review) and a listing unconfirmed for 9 days (Confirm still available), followed by the attestation sentence. The aside has This billing cycle (plan, landings, team and invitations, worded by `landing-workspace.ts`) and Landings, with the All jobs and All landings links. On 390 px the attention list comes before the allowances (spec §4.1 "Stack urgent actions above metrics").
-- **Overview · New subscriber checklist.** A Basic-plan business with no landing yet. Get started shows the three steps: Add a landing and Post a job are links, and "Set how haulers reach you" is done because first contact is always through LogLoads messages. Landings says "No landings yet."
-- **Find Work · Results.** A hauler signed in with two setups. The page header has the summary bar ("Near Sweet Home, OR · 100 mi", "My trucks · Any pay basis", Change). The flush results Section shows "3 jobs" with its description, Sort, Show map and the desktop-only Density control. The JobResultList rows are in the hauler context and have no Save button, as on Find Work today: a sponsored row, a confirmed row and an aging row, on three pay bases, with the footnote that bases are never converted.
-- **Find Work · Filters open.** Filter jobs with every field the GET form has: Location and Radius, Equipment with "My trucks (2 setups)", Product and Pay basis, Starting, Keywords (optional) and "Include filled, paused and closed jobs". Reset and Apply are in the footer. On 390 px the sheet is 88% of the viewport and its body scrolls.
-- **Find Work · Empty.** The code's empty state: it names the active constraints and offers one-tap changes (Widen to 100 mi; Include filled and closed jobs). It never suggests that unlisted jobs exist.
-- **Find Work · Loading.** The header, summary bar and result heading stay readable while LoadingState rows stand in for the list.
-- **Job detail entry.** From bp-xl the selected row opens JobDetail in the DetailPanel beside the list (432 px at bp-2xl). Below that it opens a "Job details" sheet with "Open the job's page" under the detail.
+- **Overview · Needs attention.** The header holds Post a job (primary), Inquiries (4 new) and Find trucks, all enabled. The job due for reconfirming comes first: its title, a FreshnessChip "Confirmed 9 days ago", the statement as its hint, and one 48 px primary "Still available". The inquiry rows say "See inquiries". This billing cycle lists each allowance in one form (what it is, then how much is used). Landings gives each landing's status in words.
+- **Overview · Still available confirmed.** The success Notice replaces the due row: "Job confirmed. Hog fuel from Green Peter now shows as confirmed today." with Undo.
+- **Overview · New subscriber checklist.** Cedar Flat Logging on Basic: Get started with an empty circle or a check per step and its 48 px action, Basic allowances, and the Landings empty state with Add a landing.
+- **Overview · Loading, Load failed, Offline.** Loading keeps the header and the card titles and shows LoadingState rows. Load failed uses ErrorState ("Nothing is lost.") with Try again. Offline shows the Offline banner ("This is your overview from 6:40 AM", Retry) above the saved overview.
+- **Find Work · Results.** The header has the title, a description from 768 px, and the summary bar with "Filters · 2". The results head has the count, Sort, Show map, and Density at 1440 px only. Each FindWorkRow reads pay and basis, title, trailer and distance, fit, freshness, then the poster, the dates and the demand. Every row has a labelled Save.
+- **Find Work · Empty.** "No open jobs within 50 mi of Burns, OR", with Widen to 100 mi and Include filled and closed jobs. The text wraps and the buttons stack at 390 px.
+- **Find Work · Loading, Load failed, Offline, More than 100 jobs.** Loading keeps the search readable and shows LoadingState rows. Load failed says the search is kept, with Try again. Offline shows the banner with the time of the saved results and the saved rows. More than 100 jobs ends the first 25 with "Show 25 more" and "Narrow my search".
+- **Find Work · Filters open.** Use my location first, then Near, Distance (25, 50, 100, 200 mi) and Trucks (My trucks, Any truck) as taps, then Product, Pay basis and Starting as 00 System FormField selects, Keywords (optional) and the closed-jobs checkbox. At 390 px the sheet foot is the BottomActionBar: Reset and "Show 3 jobs".
+- **Find Work · Filters, location blocked.** The ending of "Use my location" when the phone or browser blocks it: 00 System PermissionDenied ("Location is blocked for LogLoads") says where to allow it, offers "Type a town instead", and sits above the form, so the hauler is never stuck.
+- **Find Work · Job selected.** JobDecision in a sheet, a dialog or the DetailPanel beside the list. The foot is the BottomActionBar: Save, the 56 px "Send interest", and the summary "1 log truck · from Nov 17 as Granite Creek Hauling", so a returning hauler sends in one tap from the sheet.
+- **Find Work · Interest sent and waiting for signal.** The foot becomes a success Notice ("Interest sent", See my inquiries) or a warning Notice ("Waiting for signal. Saved on this phone. It sends by itself once you have signal.", Cancel sending).
 
-Business names, places and figures are illustrative. Places are Oregon towns from `apps/web/lib/marketplace-v2/places.ts`. Status, pay, freshness, equipment-fit, allowance and empty-state wording is the copy the code produces.
+## Audit 2 findings fixed
 
-## Changes from the coded screens
+Page 02 had no blockers in audit 2. Every major and polish finding for 02 Home is fixed, and so is each across-pages finding that applies to this page.
 
-- **Find Work loading state (new).** Spec §3.4 asks for a skeleton that preserves filters and visible text. The code renders on the server and has no loading route. The design keeps the header, the summary bar and the result heading, and shows LoadingState `rows` (label "Loading jobs") in place of the list. Sort and Density are hidden until the count is known; Show map stays.
-- **Nothing else changed.** Preview-only notices that the code shows while the normalized store is missing, such as "Confirming isn't saved in this preview", are left out. Find trucks stays disabled with its note, because that feature is not built.
+| Finding | Fix on page 02 |
+|---|---|
+| H1 disabled Find trucks (audit 1 F16) | Enabled secondary that opens Find trucks on page 06; the "not available in this preview" line is gone. |
+| H2 reconfirm buried (flow E) | The due job comes first with one 48 px primary "Still available"; the confirmed frame shows the success Notice with Undo. |
+| H3 six sizes, muted distance, dot-only freshness | FindWorkRow uses pay 28, title 17 and 16 for everything else; "6 mi from you" is on the first fact line beside the trailer; freshness is the FreshnessChip with an icon and words. |
+| H4 Save only on the job page, icon only | A labelled 48 px Save on every hauler row and in the job sheet, dialog and panel foot. |
+| H5 typed location and five selects | Use my location first; distance and trucks are 48 px taps; product, pay basis and start stay selects. |
+| H6 "I'm interested" inline, secondary fixed | Send interest is the 56 px primary in the BottomActionBar; "Open the job's page" is a text link under the head. |
+| H7 business first, no distance from the hauler | JobDecision order: pay and basis, title, "Log truck, pole trailer · 6 mi from you", "About 22 days · 6 trucks, 3 a day", fit, freshness, then the poster and verification. |
+| H8 missing states | Find Work: load failed, offline with saved results, more than 100 jobs. Overview: loading, load failed, offline. Each at 390, 768 and 1440 px. |
+| H9 facts 48 px from the sheet edge | JobDecision has no inner padding; the container sets 24 px. |
+| H10 "Change" | "Filters · 2" with the filter icon. |
+| G2 one colour mode | The dark theme is decided (it follows the phone). The 10 key 390 px screens have Dark frames using the 00 System Dark mode. |
+| G3 36 px controls | Every control is 48 px; every button label is 16 px; 390 and 768 px frames use the Touch mode. |
+| G4 no bottom bar | BottomActionBar on the job sheet, dialog and panel, and the filter sheet. |
+| G5 15 px body | All page 02 text outside the 00 System navigation is 16 px or larger. |
+| G6 no 768 px frames | Every screen has one. |
+| G7 key facts under 7:1 | Pay basis, distance, duration and freshness are color/text (16.7:1) or text-secondary (10.7:1). |
+| G9 wrong active tab | Overview frames mark Overview; Find Work frames mark Find work. |
+| G10 three names for inquiries | "Inquiries" in the tab, the top navigation and "Inquiries (4 new)". |
+| G11 clipped state text | EmptyState and ErrorState text fills the card width and wraps; at 390 px the actions stack. |
+| G13 local JobDetail copy | Deleted, with the old gaps note. |
+| G14 plan pill on the account chip | Fixed by #281 (`13dc399`): AccountMenu / Trigger (`17:274`) has the tag off by default, and page 02 does not override it. A read-back finds no "Preview" text. |
+| Audit 1 F18, F19, F20, F24 | Job names are not quoted and buttons name their action; every allowance has one form; every widow found in the screenshot checks was fixed; whole-dollar pay has no cents. |
 
-## Spec items not designed here
+### Design audit 3 items (lead, 2026-11-11)
 
-None of these is in the code. Each needs its own task or a founder decision.
+| Item | Status on page 02 |
+|---|---|
+| Blocker: disabled Find trucks with "Searching for trucks isn't available in this preview yet" on the four Overview frames (`42:1479`, `42:1632`, `42:1804`, `42:1938`) | Fixed. Those frames are deleted. All 21 Find trucks buttons on the page are enabled 48 px secondaries that open the trucks directory (#251; Find trucks on page 06), and the line is gone. |
+| Blocker: "TRUCK AND TRAILER" clipped at the right edge of 390 px job rows | Fixed. The two-column fact grid is gone. Trailer and distance are one 16 px line in color/text (16.7:1) that wraps: "Log truck, pole trailer · 6 mi from you". A read-back found no text past the edge of any 390 px frame or clipping container. |
+| Blocker: "Preview" tag in the header (00 System `17:274`) | Gone. Page 02 does not override it, and #281 turned it off by default. |
+| Majors: 768 px frames, every ending, 16 px body, 48 px controls | Done: see the frame tables, the findings above and the checks below. |
 
-- §4.1: links to unfinished drafts and active boosts, and a boost status. Boosts and drafts are not built.
-- §4.8: Find Trucks. It is shown disabled, as the code does.
-- §5.1: saved-job and invitation counts, an availability prompt in the header, and separate equipment and radius chips. Today the summary bar states equipment and radius as text. 00 System's FilterBar could carry chips if the founder wants them.
-- §5.1 and §3.4 Empty region: alerts and a saved search in the empty state. Neither is built.
-- §5.2: the map view. The Show map toggle is drawn; the map itself is not.
+### After #281 merged (lead, 2026-11-11)
 
-## Composed components (local to 02 Home)
+| Item | Status on page 02 |
+|---|---|
+| Use the new 00 System components | BottomActionBar, FreshnessChip, Notice, Offline, PermissionDenied, Input and FormField (select, now 16 px) are 00 System instances. The local Select is deleted. Switch is not used: page 02 has no setting that takes effect at once. |
+| "Preview" tag gone | Confirmed: no "Preview" text on the page. |
+| Aging wording overflows at 390 px | All 85 FreshnessChip instances were reset to the component's sizing and given their label again. Aging reads "Confirmed 9 days ago" (the component's wording). A read-back finds no chip past its row at 390 px. |
+| Touch mode on 390 px frames | Set on every 390 and 768 px frame, including overlays and Dark frames. |
+| Dark theme decided | 10 Dark frames of the key 390 px screens. |
 
-00 System has no component for these, so they are composed from its components, variables and text styles and reused as instances:
+**Flow A check at 390 × 844.** In Find Work Results 390 the first job's pay ends at y 362, its trailer and distance at y 476, and its freshness chip at y 552. All three are above the tab bar at y 787. The second job's pay and title are in the first viewport too.
 
-| Component | Node | Code it mirrors |
+## Local components (section [249:3492](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=249-3492))
+
+Each one is composed from 00 System components, variables and text styles.
+
+| Component | Node | Why it is local |
 |---|---|---|
-| Composed / JobDetail (Breakpoint: desktop, mobile) | [35:261](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-261) | `packages/ui/src/marketplace/JobDetail.tsx`, `JobSummary.tsx` |
-| Composed / FindWorkFilters summary | [35:81](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-81) | `apps/web/components/v2/discovery/FindWorkFilters.tsx` |
-| Composed / SortControl | [35:88](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-88) | `apps/web/components/v2/discovery/SortControl.tsx` |
-| Composed / Find work header (desktop, mobile) | [39:305](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=39-305) | `PageHeader` with `FindWorkFilters` in its children slot |
-| Composed / Find work results (State × Layout) | [39:1322](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=39-1322) | `FindWorkResults.tsx` |
-| Composed / Overview header (desktop, mobile) | [36:556](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=36-556) | `PageHeader` with `OverviewActions` in its children slot |
-| Composed / Overview · Needs attention (desktop, mobile) | [36:665](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=36-665) | `OverviewAttention` |
-| Composed / Overview · Get started | [36:704](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=36-704) | `OverviewChecklist` |
-| Composed / Overview · This billing cycle | [36:740](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=36-740) | `OverviewAllowance`, `LandingAllowanceFigures` |
-| Composed / Overview · Landings (State: list, empty) | [36:823](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=36-823) | `OverviewLandings` |
+| Composed / FindWorkRow (Layout narrow, wide × Tone default, sponsored) | [249:3615](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=249-3615) | 00 System JobResultRow (narrow) still has two-column facts and an icon-only Save. |
+| Composed / JobDecision | [253:3681](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=253-3681) | 00 System JobDetail and JobSummary still put the poster first, with 14 px labels. |
+| Composed / FindWorkSearchBar | [250:3549](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=250-3549) | 00 System FindWorkSummary has a 14 px second line and the word "Change". |
+| Composed / FindWorkHeader (narrow, medium, wide) | [250:3610](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=250-3610) | PageHeader shows a "Slot: page content" placeholder when empty (audit G1). |
+| Composed / ResultsHead (narrow, wide) | [250:3660](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=250-3660) | App component. |
+| Composed / FindWorkFilterForm | [252:3649](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=252-3649) | App component. |
+| Composed / SegmentedField (Options 2, 4) | [252:3648](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=252-3648) | 00 System SegmentedControl options are 14 px and it has 3 options. |
+| Composed / TextLink | [254:3831](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=254-3831) | No 48 px text link in 00 System. |
+| Composed / OverviewHeader (narrow, medium, wide) | [253:3862](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=253-3862) | PageHeader slot placeholder (G1). |
+| Composed / NeedsAttention (narrow, wide × due, confirmed) | [253:4016](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=253-4016) | App component (`OverviewAttention`). |
+| Composed / BillingCycle | [254:3836](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=254-3836) | App component (`OverviewAllowance`), built from 00 System Fact. |
+| Composed / Landings (list, empty) | [254:3914](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=254-3914) | App component (`OverviewLandings`). |
+| Composed / GetStarted (narrow, wide) | [254:3984](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=254-3984) | App component (`OverviewChecklist`). |
 
-## Gaps in 00 System
+## Gaps
 
-These were found while composing. They are follow-ups for the design system (#256), not changes made here.
+These are follow-ups. They were not changed here, because page 00 belongs to #281 and the rest needs its own task or a founder decision.
 
-1. **No JobDetail or JobSummary.** Composed locally from PayFigure, VerificationIndicator, EquipmentRequirement, AvailabilityStatus and Button.
-2. **Slots are plain frames.** Section, DetailPanel and Dialog content slots are frames named `content`, not native Figma slots, so an instance cannot take content. Each use is detached at the wrapper only. Nested instances and variable bindings are kept.
-3. **PageHeader has no full-width children slot.** `PageHeader.tsx` renders `children` in a full-width slot, and both pages use it. The header is detached and a slot frame added.
-4. **ResponsiveNavigation landing variant has 3 tabs.** `Workspace=landing` shows Landing inbox, Post jobs and Landings. The code gives a landing-only business 4: Overview, Landing inbox, Post jobs and Landings. The 390 px Overview uses the 4-tab variant with the landing labels and icons.
-5. **FormField select variants are not wired.** `Control=select` does not connect the Label, Hint and Value text properties (`Control=input` does). Those texts are overridden directly.
-6. **LoadingState bars are fixed widths.** The CSS sizes them by percentage (20, 60, 35). The two loading variants detach LoadingState to size them.
-7. **JobResultRow facts are fixed-width columns.** Beside the 432 px panel the list is 848 px wide and the columns overflow. That frame overrides them to share the width.
-8. **No component for the Find Work summary bar or sort control.** They are app components. SearchToolbar's summary has no "Change" label. Both are composed locally.
-9. **No 15 px semibold text style.** It is used by `landing.module.css` `.rowTitle` and the summary bar's place line. `type/button` has the same values and is used.
-10. **Disclosure chevron.** JobDetail's chevron is a rotated CSS border. It is drawn with `Icon/x.caret-down`.
-11. **No HaulerSetupChecklist.** It is not shown: the example hauler has finished setup, so the code hides it.
-
-Some texts inside the detached PageHeader and Section (titles, descriptions, the DetailPanel "Close" label) carry no text style, as on 00 System, where their fonts are set directly.
-
-**Observation, not changed.** In the 390 px job sheet the facts sit 48 px from each edge: the Dialog body pads 24 px and JobSummary pads another 24 px. That is what the code renders.
+1. **00 System to adopt page 02's local parts.** JobResultRow (narrow) should take the FindWorkRow order and labelled Save; JobDetail and JobSummary should take the JobDecision order and 16 px labels; SegmentedControl needs 16 px labels and up to 4 options; FindWorkSummary needs a 16 px second line and the Filters label.
+2. **00 System navigation text under 16 px.** After #281 the GlobalNavigation and ResponsiveNavigation labels are 14 px. They are the only text under 16 px on page 02.
+3. **00 System ResponsiveNavigation `Workspace=landing`** marks Overview and Landing inbox both current and says "Landing inbox". Page 02 uses the hauler variant with landing labels, icons and one current tab.
+4. **00 System PageHeader** shows a "Slot: page content" box when its slot is empty (audit G1). Page 02 composes its headers instead.
+5. **Not designed here:** the saved-jobs list that Save leads to, a "Mark filled" action (flow E), the map view, alerts and saved searches in the empty state, and the inquiry screens behind "See inquiries" and "See my inquiries" (flow C).
+6. **Dark frames at 768 and 1440 px** are not drawn. They switch through the Color collection the same way as the 390 px ones.
+7. **Code.** The loading, error, offline, more-than-100, interest-sent and waiting states, the reconfirm-with-Undo flow and one-tap Send interest are not in the code yet. They need their own build tasks after approval.
 
 ## Checks
 
-- A read-back of page 02 Home found 3,037 nodes: 562 instances, 20 components and 6 component sets. It found no image fills, so nothing is a flattened screenshot. Every text uses IBM Plex Sans, Plex Sans Condensed or Plex Mono.
-- Outside instances, every solid fill and stroke is bound to a variable. The only exceptions are the default backgrounds of the five Figma sections.
-- Each screen was checked with `get_screenshot`. The defects found were fixed and re-checked: the narrow results heading overlapped its tools, empty-state buttons clipped at 390 px, select fields kept placeholder copy, skeleton bars overflowed, and row facts overflowed beside the panel.
+- A read-back of page 02 after #281 merged found 9,459 nodes: 2,811 instances, 27 components and 8 component sets in 61 screen frames. It found no image fills, so nothing is a flattened screenshot. Every text uses IBM Plex Sans or IBM Plex Sans Condensed.
+- Every text under 16 px is a 14 px label inside the 00 System GlobalNavigation or ResponsiveNavigation (gap 2). The only 22 px text is the LogLoads wordmark.
+- No screen frame contains placeholder text, builder notes, "Preview", "Truck and trailer", "isn't available" or a disabled button. No visible text runs past the edge of a 390 px frame or of a clipping container, and no freshness chip runs past its row.
+- Every 390 and 768 px frame is in Touch mode and every 1440 px frame in Comfortable.
+- 28 of the 61 frames were checked with `get_screenshot`, covering every screen at one width or more, most screens at 390 px and 3 Dark frames. The other frames use the same components and were checked by the read-back above, not by screenshot.
+- Defects found were fixed and checked again: the 390 px summary bar wrapped its first line, the 390 px header clipped the Filters button, the 390 px empty state's buttons overflowed, empty and error cards repeated their title, a chip-van job said "Fits your trucks", a lost "Filters · 1" label, and ten widows or split words.
+- Nothing was checked in a browser. Focus order, screen-reader names and the sticky bottom bar need the Playwright check when the screens are built.
