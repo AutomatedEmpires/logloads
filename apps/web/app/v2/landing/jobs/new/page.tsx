@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation"
 import { Button, EmptyState } from "@logloads/ui/primitives"
 
 import { EditorNotice, JobEditorAside, JobEditorLayout, JobEditorStepForm, RestoredNotice, StepIssuesNotice } from "@/components/v2/JobEditor"
+import { FlowClockStart } from "@/lib/analytics/beacons"
 import { draftQueryString, draftValuesFromQuery } from "@/lib/marketplace-v2/draft-params"
 import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
@@ -21,6 +22,10 @@ function one(value: string | string[] | undefined): string {
  * draft. The page validates the step being left, on the server, and shows the next one, or the first step that
  * fails with focus on its first invalid field. When steps 1–3 pass, the review step takes over. A refused
  * publish (`publishJobAction`) also returns here, to the step that needs fixing.
+ *
+ * The editor opening starts flow B's clock (#330, docs/analytics/event-plan.md §6); a clock already running in this
+ * tab is kept, so moving between steps or coming back after a refusal does not restart it. Business and landing
+ * setup before the editor are not timed.
  */
 export default async function NewJobPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -69,6 +74,7 @@ export default async function NewJobPage({ searchParams }: { searchParams: Searc
       aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} preview={{ job: preview?.job ?? null }} values={values} />}
       organizationName={access.organizationName}
     >
+      <FlowClockStart flow="B" />
       {failure ? <EditorNotice tone="critical">{failure.message}</EditorNotice> : <StepIssuesNotice count={screen.issues.length} />}
       {restored ? <RestoredNotice /> : null}
       <JobEditorStepForm

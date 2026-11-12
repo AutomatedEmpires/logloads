@@ -1,9 +1,10 @@
 # LogLoads product events and analytics plan
 
-> **Status:** Written 2026-11-10 for #286.
+> **Status:** Written 2026-11-10 for #286; call sites and rule 8 added 2026-11-11 for #330.
 > - The event module and its tests are IMPLEMENTED in `apps/web/lib/analytics/`.
-> - Every call site is TARGET. No product event reaches PostHog until a call site is wired (§6) and
->   `NEXT_PUBLIC_POSTHOG_KEY` is set in the environment.
+> - The call sites in §6 are IMPLEMENTED (#330), except the share page (#287) and the one-tap links (#292), which
+>   are TARGET. No product event reaches PostHog until `NEXT_PUBLIC_POSTHOG_KEY` is set in the environment, and
+>   delivery is UNVERIFIED (§7).
 > - The per-basin liquidity board (§5) is TARGET. It waits for the real store (#271, #112).
 >
 > This plan measures the five flows in the LogLoads strategy (logloads#235, "LogLoads strategy") and the marketplace
@@ -52,8 +53,9 @@ tests check each one.
    signals that browsers send:
    - on the server, a request with `DNT: 1` or `Sec-GPC: 1` sends no event;
    - in the browser, Do Not Track (`navigator.doNotTrack`, `msDoNotTrack`, `window.doNotTrack`) or Global Privacy
-     Control (`navigator.globalPrivacyControl`) means PostHog is never loaded for product events, and no flow timing
-     is stored.
+     Control (`navigator.globalPrivacyControl`) means PostHog is never loaded, for pageviews or product events, and
+     no flow timing is stored. The pageview tracker and the product events share one PostHog initialisation
+     (`loadProductAnalyticsClient`).
 
    Without `NEXT_PUBLIC_POSTHOG_KEY` everything is inert.
 5. **Server events fire on commit.** Each one is sent after the write it describes succeeds. A click or a page load
@@ -65,6 +67,16 @@ tests check each one.
    no autocapture, session recording, surveys or campaign data, and query strings are removed before send.
 7. **Analytics never breaks a flow.** Capture never throws. An unreachable PostHog never fails an action, and server
    capture runs inside `after()` so the response does not wait for it.
+8. **Sensitive routes send no input (legal review §6.5, P0 item 12).** California and Washington wiretap laws have
+   been used against sites where a third-party script captures what people type. Session recording, autocapture,
+   rage clicks, heatmaps, surveys and conversations are off everywhere (`ANALYTICS_CAPTURE_POLICY`), and there is no
+   chat widget or advertising pixel. On the message, sign-in, sign-up, verification, consent and one-tap routes
+   (`/v2/inquiries`, `/v2/landing/inquiries`, `/sign-in`, `/sign-up`, `/v2/act`, and any path with a segment such as
+   `phone`, `sms`, `verify`, `verification`, `consent` or `messages`, for the #291 screens), the send hook
+   (`sanitizePostHogEvent`) lets through a pageview at most, at the route's root with no id or token from the path
+   and no page title, and drops every other event, including `flow_timed` and `share_link_opened`. The same hook
+   removes a sensitive route's ids from every URL, path and referrer an ordinary page's events carry. Flow C ends on
+   the inbox, so its timing comes only from the server events (§4).
 
 ## 3. Event catalogue, version 1
 
@@ -212,46 +224,46 @@ everyone, including people who opted out of analytics, and gives exact freshness
 3. A recorded basin decision, which adds the basin rows.
 4. PostHog funnel dashboards for flows A to E (§4). These need the call sites in §6 and a production PostHog key.
 
-## 6. Wiring the call sites (follow-ups)
+## 6. The call sites
 
-Every call site was held by another task when #286 was claimed, so this task added no call. Each row below is a few
-lines at its call site, with a builder from `apps/web/lib/analytics/server.ts` or a beacon from
-`apps/web/lib/analytics/beacons.tsx`. Server events go inside `after()` from `next/server`, after the write succeeds:
+#330 wired these. Each server event is a few lines at its call site, with a builder from
+`apps/web/lib/analytics/server.ts`, sent by `recordProductEvent` after the write succeeds. It reads the request's
+privacy headers while the request is in scope, then sends inside `after()` from `next/server`, so the response never
+waits for PostHog and a builder or PostHog failure never fails the action:
 
 ```ts
-import { after } from "next/server"
-import { captureProductEvent, jobPublishedProperties } from "@/lib/analytics/server"
+import { jobPublishedProperties, recordProductEvent } from "../analytics/server"
 
 // publishJobAction, once `published` is set:
-after(() =>
-  captureProductEvent(
-    "job_published",
-    jobPublishedProperties({ draft: checked.draft, jobId: published.jobId, landing, organizationId: viewer.organizationId }),
-    { actor: viewer }
-  )
+await recordProductEvent(
+  "job_published",
+  () => jobPublishedProperties({ draft: checked.draft, jobId: published.jobId, landing: checked.landing, organizationId: viewer.organizationId }),
+  { actor: viewer }
 )
 ```
 
-| Event | Call site | Held by when claimed | What to add |
-|---|---|---|---|
-| `job_published` | `publishJobAction`, `apps/web/lib/marketplace-v2/actions.ts` | #279 | Return the matched landing from `checkPublishRequest`, then the snippet above |
-| `interest_submitted` | `expressInterestAction`, same file | #279 | Keep the view `expressInterest` returns: `interestSubmittedProperties({ interest, now })` |
-| `interest_replied` | `respondToInterestAction` (`side: "landing"`) and `haulerReplyAction` (`side: "hauler"`), same file | #279 | `interestRepliedProperties({ decision, interestId, organizationId, side })`. "Viewed" returns null and sends nothing |
-| `job_reconfirmed` | `reconfirmJobAction`, same file | #279 | Return `job` from `checkReconfirmRequest`. Then `jobReconfirmedProperties({ job, now: attestation.confirmedAt, organizationId, resumed: false, via: "in_app" })` |
-| `availability_reconfirmed` | `confirmHaulerAvailabilityAction`, `apps/web/lib/marketplace-v2/fleet-actions.ts` | #279 | `availabilityReconfirmedProperties({ confirmed, organizationId, signedIn: true, via: "in_app" })` |
-| `job_stopped`, `job_reconfirmed` with `resumed: true` | The jobs group's pause, fill, close and resume actions, `apps/web/lib/marketplace-v2/jobs/` | #247 | `jobStoppedProperties(...)` or `jobReconfirmedProperties({ ..., resumed: true })`, with the job as it was before the change |
-| `share_link_opened` and flow A start | The share page under apps/web/app/v2/share (#287, not yet built) | #287 | `<ShareLinkOpenedBeacon channel={…} jobId={job.id} signedIn={…} />` |
-| Flow A taps and outcome | `apps/web/app/v2/work/[jobId]/page.tsx` | #279 | `<FlowTapCounter flow="A" />` beside the interest sheet. `<FlowClockStop flow="A" jobId={job.id} step="first_send" />` when `sent=1` |
-| Flow B start and outcome | `apps/web/app/v2/landing/jobs/new/page.tsx`, and the job page with `published=1` | #279 | `<FlowClockStart flow="B" />` on a new draft. `<FlowClockStop flow="B" step="published" />` on the published notice |
-| `via: "one_tap_link"` and flows C to E | The signed one-tap links for C, D and E | P0-6 (no issue yet) | Pass `via: "one_tap_link"` and `signedIn: false` where no one is signed in. Put `<FlowClockStart>` on the page the link opens and `<FlowClockStop>` on its confirmation, with `jobId` for a job's links |
+| Event | Call site | Status |
+|---|---|---|
+| `job_published` | `publishJobAction`, `apps/web/lib/marketplace-v2/actions.ts`. `checkPublishRequest` returns the matched landing, so only its state code is sent | IMPLEMENTED (#330) |
+| `interest_submitted` | `expressInterestAction`, same file, from the view `expressInterest` returns | IMPLEMENTED (#330) |
+| `interest_replied` | `respondToInterestAction` (`side: "landing"`) and `haulerReplyAction` (`side: "hauler"`), same file. "Viewed" sends nothing | IMPLEMENTED (#330) |
+| `job_reconfirmed` | `reconfirmJobAction`, same file. `checkReconfirmRequest` returns the listing as it was, and `now` is the attestation's time | IMPLEMENTED (#330) |
+| `availability_reconfirmed` | `confirmHaulerAvailabilityAction`, `apps/web/lib/marketplace-v2/fleet-actions.ts`. A confirmation of no truck types sends nothing | IMPLEMENTED (#330) |
+| `job_stopped`, `job_reconfirmed` with `resumed: true` | The jobs group's `setJobStatus` and `resumeJob`, `apps/web/lib/marketplace-v2/jobs/methods.ts`, through `JobLifecycleEvents`: once the transaction commits, with the locked row as it was. A status the job already has, a refusal and a failed write send nothing | IMPLEMENTED (#330) |
+| Flow A taps and outcome | `apps/web/app/v2/work/[jobId]/page.tsx`: `<FlowTapCounter flow="A" />` beside the interest sheet, and `<FlowClockStop flow="A" jobId={job.id} step="first_send" />` on the `sent=1` answer for a business that can express interest | IMPLEMENTED (#330) |
+| Flow B start, taps and outcome | `<FlowClockStart flow="B" />` when the job editor opens (`apps/web/app/v2/landing/jobs/new/page.tsx`), `<FlowTapCounter flow="B" />` on the review step (`.../jobs/preview/page.tsx`), and `<FlowClockStop flow="B" step="published" />` on the poster's `published=1` answer on the job page | IMPLEMENTED (#330) |
+| `share_link_opened` and flow A start | The share page under apps/web/app/v2/share: `<ShareLinkOpenedBeacon channel={…} jobId={job.id} signedIn={…} />` | TARGET: waits for #287 |
+| `via: "one_tap_link"` and flows D and E from a link | The signed one-tap links (#292). Pass `via: "one_tap_link"` and `signedIn: false` where no one is signed in; the jobs group takes its own `JobLifecycleEvents` for that route. `/v2/act` is a sensitive route (§2, rule 8), so a flow timed from a link cannot end there in the browser | TARGET: waits for #292 |
 
 **Other follow-ups**
 
-- **Pageviews and Do Not Track.** The pageview tracker (`apps/web/components/analytics/AnalyticsProvider.tsx`) does
-  not read Do Not Track or Global Privacy Control yet. It should check `currentBrowserRefusesTracking()` from
-  `apps/web/lib/analytics/consent.ts` before it loads PostHog, and use `loadProductAnalyticsClient` from
-  `apps/web/lib/analytics/client.ts`, so there is one initialisation.
-- **OBSERVABILITY.md.** [OBSERVABILITY.md](../OBSERVABILITY.md) §3 should point here.
+- **Pageviews and Do Not Track.** Done in #330: the pageview tracker
+  (`apps/web/components/analytics/AnalyticsProvider.tsx`) checks `currentBrowserRefusesTracking()` before it loads
+  PostHog, and uses `loadProductAnalyticsClient`, so there is one initialisation.
+- **OBSERVABILITY.md.** Done in #330: [OBSERVABILITY.md](../OBSERVABILITY.md) §3 points here.
+- **The #291 screens.** The phone verification and SMS consent screens must sit under a path that §2 rule 8 catches
+  (a `phone`, `sms`, `verify`, `verification` or `consent` segment), or be added to `SENSITIVE_ROUTES` in
+  `apps/web/lib/analytics-pageview.ts`.
 - **A secret pepper for pseudonyms.** Legacy pilot events in the same PostHog project carry raw profile ids. Anyone
   who holds a raw id and this namespace can recompute its pseudonym. A server-only pepper kept in Doppler would stop
   that. Adding it needs an entry in `ops/production-env-contract.json`.
@@ -270,5 +282,13 @@ after(() =>
   - capture never throws.
 
   A test also checks that this plan names every event and property in the code.
-- **Delivery (owner, later):** once a call site is wired and a production key is set, look in PostHog Live Events
+- **Call-site tests** (#330):
+  - `apps/web/lib/analytics/call-sites.test.ts` drives every server call site through its real action or method,
+    down to the PostHog request. Each sends exactly one event, after the write and the response, with none of the
+    private values it held. Nothing is sent under Do Not Track or Global Privacy Control, or when the write fails.
+  - `apps/web/lib/marketplace-v2/jobs/methods.test.ts` checks that the jobs group reports each committed change once.
+  - `apps/web/lib/analytics/flow-pages.test.tsx` checks which beacons the flow A and B pages render.
+  - `apps/web/lib/analytics/provider.test.tsx` and `apps/web/lib/analytics-pageview.test.ts` check Do Not Track,
+    Global Privacy Control and each sensitive route (§2, rule 8).
+- **Delivery (owner, later):** once a production key is set, look in PostHog Live Events
   for one synthetic event of each kind. Record the UTC time, the SHA and the event, as OBSERVABILITY.md §4 asks.

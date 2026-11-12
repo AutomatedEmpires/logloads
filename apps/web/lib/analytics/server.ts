@@ -2,6 +2,8 @@ import "server-only"
 
 import { createHash } from "node:crypto"
 
+import { after } from "next/server"
+
 import {
   postingFreshness,
   type MarketplaceDraftLandingContext,
@@ -27,10 +29,11 @@ import {
 export type { ProductEventOutcome } from "./events"
 
 /**
- * Server capture for the product events (#286). Call it after the write it describes has committed, never on a click
- * or a page load, and preferably inside `after()` from `next/server` so the response never waits for PostHog:
+ * Server capture for the product events (#286). Call sites (#330) use `recordProductEvent` after the write they
+ * describe has committed, never on a click or a page load; it sends inside `after()` from `next/server`, so the
+ * response never waits for PostHog:
  *
- *     after(() => captureProductEvent("job_published", jobPublishedProperties({ ... }), { actor: viewer }))
+ *     await recordProductEvent("job_published", () => jobPublishedProperties({ ... }), { actor: viewer })
  *
  * It never throws and never makes the action fail. It sends nothing when PostHog is not configured, when the request
  * asks not to be tracked (`DNT: 1` or `Sec-GPC: 1`), or when the properties fail the event's schema or the
@@ -134,6 +137,44 @@ export async function captureProductEvent<N extends ServerProductEventName>(
     return "sent"
   } catch {
     return "invalid"
+  }
+}
+
+/**
+ * What a call site uses (§6): records one server product event for a write that has just committed, without making
+ * the response wait. The request's privacy headers are read now, while the request is in scope, and the event is sent
+ * inside `after()` from `next/server` once the response has gone. Outside a request (a scheduled job, a script) there
+ * is no response to wait for and no signal to read, so it is sent in the background.
+ *
+ * `build` makes the properties from what the call site holds, with one of the builders below; `null` records nothing.
+ * Like `captureProductEvent` it never throws, and a builder that throws records nothing, so analytics never fails the
+ * write it describes.
+ */
+export async function recordProductEvent<N extends ServerProductEventName>(
+  name: N,
+  build: () => ProductEventProperties<N> | null,
+  options: { actor: ProductEventActor }
+): Promise<void> {
+  try {
+    const properties = build()
+
+    if (properties === null) {
+      return
+    }
+
+    const headers = await currentRequestHeaders()
+    const send = async () => {
+      await captureProductEvent(name, properties, { actor: options.actor, headers })
+    }
+
+    try {
+      after(send)
+    } catch {
+      // Outside a request scope: nothing to wait for.
+      void send()
+    }
+  } catch {
+    // The builder could not read what the call site holds: nothing is recorded.
   }
 }
 

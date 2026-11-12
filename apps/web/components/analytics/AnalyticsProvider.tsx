@@ -3,49 +3,25 @@
 import { usePathname } from "next/navigation"
 import { useEffect } from "react"
 
-import {
-  ANALYTICS_CAPTURE_POLICY,
-  captureAnalyticsPageview,
-  createAnalyticsClientLoader,
-  sanitizePostHogEvent
-} from "@/lib/analytics-pageview"
-
-const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY
-const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com"
-
-const loadPostHogClient = createAnalyticsClientLoader(async () => {
-  const { default: posthog } = await import("posthog-js")
-
-  posthog.init(POSTHOG_KEY!, {
-    ...ANALYTICS_CAPTURE_POLICY,
-    api_host: POSTHOG_HOST,
-    before_send: sanitizePostHogEvent
-  })
-
-  return posthog
-})
-
-async function ensurePostHog() {
-  if (!POSTHOG_KEY || typeof window === "undefined") {
-    return null
-  }
-
-  return loadPostHogClient()
-}
+import { captureAnalyticsPageview } from "@/lib/analytics-pageview"
+import { clientAnalyticsEnabled, loadProductAnalyticsClient } from "@/lib/analytics/client"
+import { currentBrowserRefusesTracking } from "@/lib/analytics/consent"
 
 function PageViewTracker() {
   const pathname = usePathname()
 
   useEffect(() => {
-    if (!POSTHOG_KEY) {
+    // Do Not Track or Global Privacy Control: PostHog is never loaded here, so nothing is sent.
+    if (currentBrowserRefusesTracking()) {
       return
     }
 
-    void ensurePostHog().then((posthog) => {
+    void loadProductAnalyticsClient().then((posthog) => {
       if (!posthog) {
         return
       }
 
+      // On a sensitive route (message, sign-in, verification, consent, one-tap) this is the route's root only.
       captureAnalyticsPageview(posthog, window.location.origin, pathname)
     })
   }, [pathname])
@@ -54,11 +30,13 @@ function PageViewTracker() {
 }
 
 /**
- * Product analytics, activated only when NEXT_PUBLIC_POSTHOG_KEY is set. Without
- * it this is inert — no network, no bundle init.
+ * Pageviews, activated only when NEXT_PUBLIC_POSTHOG_KEY is set. Without it this is inert: no network, no bundle
+ * init. It honours Do Not Track and Global Privacy Control (docs/analytics/event-plan.md §2), and shares one PostHog
+ * initialisation with the product events (`loadProductAnalyticsClient`), so both use the same capture policy and the
+ * same `before_send`, which keeps a sensitive route to a pageview at its root (`lib/analytics-pageview.ts`).
  */
 export function AnalyticsProvider() {
-  if (!POSTHOG_KEY) {
+  if (!clientAnalyticsEnabled()) {
     return null
   }
 
