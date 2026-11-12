@@ -30,10 +30,10 @@ import type { NormalizedViewerMembership } from "./normalized-mapping"
  *   (`normalized-session.ts`). A first sign-in is linked there through `sync_verified_identity`.
  *
  * On both, the identity comes only from the server session, and the active business is always one of the person's
- * active memberships: the signed cookie's selection is honoured only while it matches one, and a selection that no
- * longer matches is marked invalid instead of falling through to another business. Every request reads the
- * memberships again, so a removed membership loses access on the next request. Legacy cockpits keep using the
- * pilot session; this is V2's view only.
+ * active memberships: the signed cookie's selection is honoured only for the person it was signed for (#246) and only
+ * while it matches one, and a selection that no longer matches is marked invalid instead of falling through to another
+ * business. Every request reads the memberships again, so a removed membership loses access on the next request.
+ * Legacy cockpits keep using the pilot session; this is V2's view only.
  */
 
 export type V2SessionStore = "pilot" | "normalized"
@@ -162,9 +162,14 @@ const normalizedSession = cache(async (): Promise<NormalizedSession | null> => {
     return null
   }
 
-  const memberships = resolved.memberships.map(v2MembershipFromNormalized)
-  const { active, invalid } = selectV2Membership(memberships, identity.requestedOrganizationId)
   const { person } = resolved
+  const memberships = resolved.memberships.map(v2MembershipFromNormalized)
+  // #246: the signed selection is honoured only for the person it was signed for, the id a re-signed selection
+  // carries (`normalizedSessionCookieUserId`). One an earlier sign-in left on this browser is not this person's, so
+  // they start on their own first business instead of an invalid selection.
+  const selectionOwner = identity.cookieUserId ?? person.id
+  const requestedOrganizationId = identity.selectionUserId === selectionOwner ? identity.requestedOrganizationId : null
+  const { active, invalid } = selectV2Membership(memberships, requestedOrganizationId)
 
   return {
     actor: {

@@ -33,6 +33,12 @@ import {
  * advertisement into the legacy load/slot/route-pack records would recreate the dispatch model, and a
  * second permanent JSON job model would compete with the normalized `job_postings` table. Those two
  * operations wait for the normalized adapter; the authoring screens validate and preview only.
+ *
+ * The day-14 reconfirmation rule (#308, #321) belongs with them. It takes a job off Find Work until its poster
+ * reconfirms it, and the pilot records no "still available" confirmation (`lastConfirmedAt` is always null) and takes
+ * none. Applied here, it would hide every pilot job from Find Work and from its own landing desk, with no way back. So
+ * a pilot job's board place and new interest follow its status alone, as before. The normalized adapter applies the
+ * rule (`jobTakesNewInterest`), and so does the store.
  */
 
 function publicJobs(state: LogLoadsDatabaseState, at = new Date()): MarketplaceJobDetailView[] {
