@@ -3,7 +3,8 @@
 -- signed-out unsubscribe, founding-offer reads, the job lifecycle's not-found answer; #294 part A)
 --
 -- NON-ACTIVE PROTOTYPE TEST SUITE. Disposable PostgreSQL only. Run after
--- 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 -> 29 -> 31. Wraps everything in BEGIN ... ROLLBACK.
+-- 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 -> 29 -> 31; stage 34 runs it again after 33. Wraps
+-- everything in BEGIN ... ROLLBACK.
 -- Negative tests require the expected SQLSTATE AND a matching message or constraint name.
 -- The P1 attack of the security sweep is asserted first, as the attacker and then by its effect. On a database
 -- without 31 that attack succeeds and the suite stops there. Each change of 31 is needed by at least one assertion:
@@ -772,8 +773,9 @@ begin
   -- -------------------------------------------------------------------------
   -- Ledger
   -- -------------------------------------------------------------------------
-  perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations) = '06,11,12,16,18,23,26,29,31',
-    'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31 in order');
+  perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations)
+                       in ('06,11,12,16,18,23,26,29,31', '06,11,12,16,18,23,26,29,31,33'),
+    'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31 in order (and 33 after them, when stage 34 runs this suite again)');
 
   raise notice 'ALL REPLY GATE, RECONFIRMATION, UNSUBSCRIBE, FOUNDING OFFER AND NOT-FOUND (31-P1, 31-R, 31-U, 31-F, 31-O) TESTS PASSED.';
 end
