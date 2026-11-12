@@ -98,9 +98,15 @@ function identity(overrides: Record<string, unknown> = {}) {
     cookieUserId: null,
     hints: async () => ({ fullName: "Rae Ridge", verifiedEmail: null }),
     requestedOrganizationId: null,
+    selectionUserId: null,
     source: "clerk",
     ...overrides
   }
+}
+
+/** A Clerk sign-in whose cookie holds a selection this person made: the V2 switch signs it with their person id. */
+function selecting(organizationId: string, overrides: Record<string, unknown> = {}) {
+  return identity({ requestedOrganizationId: organizationId, selectionUserId: PERSON_ID, ...overrides })
 }
 
 function resolved(memberships: NormalizedViewerMembership[]) {
@@ -221,14 +227,41 @@ describe("the normalized store (#213)", () => {
   })
 
   it("acts for the signed selection while it is still a membership", async () => {
-    mocks.getSessionIdentity.mockResolvedValue(identity({ requestedOrganizationId: LANDING_ID }))
+    mocks.getSessionIdentity.mockResolvedValue(selecting(LANDING_ID))
     mocks.resolve.mockResolvedValue(resolved([normalizedMembership(), landingMembership]))
 
     await expect(getV2SessionActor()).resolves.toMatchObject({ activeOrganization: { id: LANDING_ID }, workspaceSelectionInvalid: false })
   })
 
+  it("ignores a selection signed for someone else, such as an earlier sign-in on this browser (#246)", async () => {
+    mocks.resolve.mockResolvedValue(resolved([normalizedMembership(), landingMembership]))
+
+    // Another person's selection: this person starts on their own first business, and nothing is marked invalid.
+    mocks.getSessionIdentity.mockResolvedValue(selecting(LANDING_ID, { selectionUserId: "99999999-9999-4999-8999-999999999999" }))
+    await expect(getV2SessionActor()).resolves.toMatchObject({ activeOrganization: { id: HAULER_ID }, workspaceSelectionInvalid: false })
+
+    // A stale business of someone else's does not make a first sign-in look like a removed membership.
+    mocks.getSessionIdentity.mockResolvedValue(selecting(REMOVED_ID, { selectionUserId: PILOT_USER_ID }))
+    await expect(getV2SessionActor()).resolves.toMatchObject({ activeOrganization: { id: HAULER_ID }, workspaceSelectionInvalid: false })
+
+    // A cookie with no selection owner carries no selection.
+    mocks.getSessionIdentity.mockResolvedValue(selecting(LANDING_ID, { selectionUserId: null }))
+    await expect(getV2SessionActor()).resolves.toMatchObject({ activeOrganization: { id: HAULER_ID }, workspaceSelectionInvalid: false })
+  })
+
+  it("binds a dev sign-in's selection to its profile id, the id its cookie is re-signed with", async () => {
+    mocks.resolve.mockResolvedValue(resolved([normalizedMembership(), landingMembership]))
+
+    mocks.getSessionIdentity.mockResolvedValue(selecting(LANDING_ID, { cookieUserId: PILOT_USER_ID, selectionUserId: PILOT_USER_ID, source: "dev" }))
+    await expect(getV2SessionActor()).resolves.toMatchObject({ activeOrganization: { id: LANDING_ID } })
+
+    // The person's normalized id is not the dev cookie's identity.
+    mocks.getSessionIdentity.mockResolvedValue(selecting(LANDING_ID, { cookieUserId: PILOT_USER_ID, selectionUserId: PERSON_ID, source: "dev" }))
+    await expect(getV2SessionActor()).resolves.toMatchObject({ activeOrganization: { id: HAULER_ID } })
+  })
+
   it("loses a removed membership on the next request: the stale selection is invalid and nothing else is selected", async () => {
-    mocks.getSessionIdentity.mockResolvedValue(identity({ requestedOrganizationId: REMOVED_ID }))
+    mocks.getSessionIdentity.mockResolvedValue(selecting(REMOVED_ID))
     mocks.resolve.mockResolvedValue(resolved([normalizedMembership()]))
 
     const actor = await getV2SessionActor()

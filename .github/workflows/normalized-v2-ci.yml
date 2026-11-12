@@ -4,7 +4,7 @@ name: Normalized V2 Database CI
 # created inside each job. No production, staging, hosted-Supabase or Vercel credentials are used or needed.
 #   Job 1 (baseline): the verified 01..05 suite on PostgreSQL 17 + PostGIS, unchanged. 3 fresh databases.
 #   Job 2 (alignment): 01, 02, 03, 06, 11, 12, 16, 18, 23, then 04, 07, 09, 13, 21, 17, 19, 24, then 26 and 27, then 29 and 30,
-#   then 31 and 32, then 33 and 34, then 08, 20, 25, 28, 10, 15 on PostgreSQL 17 + PostGIS.
+#   then 31 and 32, then 33 and 34, then 35 and 36, then 08, 20, 25, 28, 37, 10, 15 on PostgreSQL 17 + PostGIS.
 #   Job 3 (Supabase): the same chain and suites, plus PostgREST/JWT API tests (14) and the #112 auth harness (22), on a Supabase CLI
 #   local stack started inside the job (real authenticator / anon / authenticated / service_role roles,
 #   non-superuser migration role, Supabase's PostgreSQL 17 image).
@@ -330,6 +330,15 @@ jobs:
         timeout-minutes: 12
         run: bash tools/normalized-v2-ci/run-stage.sh 34
 
+      # 35 runs after 34; stage 36 runs its own suite, then 04, 07, 09, 13, 21, 17, 19, 27, 30, 32 and 34 again.
+      - name: "Stage 35: 35_v2_day14_direct_reads_unsubscribe_keys.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 35
+
+      - name: "Stage 36: 36_v2_day14_direct_reads_unsubscribe_keys_tests.sql (and 04, 07, 09, 13, 21, 17, 19, 27, 30, 32, 34 again on the 35 schema)"
+        timeout-minutes: 14
+        run: bash tools/normalized-v2-ci/run-stage.sh 36
+
       - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
         timeout-minutes: 12
         run: bash tools/normalized-v2-ci/run-stage.sh 8
@@ -345,6 +354,10 @@ jobs:
       - name: "Stage 28: 28_v2_team_seats_outbox_concurrency_test.sh"
         timeout-minutes: 8
         run: bash tools/normalized-v2-ci/run-stage.sh 28
+
+      - name: "Stage 37: 37_v2_day14_unsubscribe_concurrency_test.sh"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 37
 
       - name: "Stage 10: 10_v2_migration_path_test.sh"
         timeout-minutes: 6
@@ -545,6 +558,15 @@ jobs:
         timeout-minutes: 12
         run: bash tools/normalized-v2-ci/run-stage.sh 34
 
+      # 35 runs after 34; stage 36 runs its own suite, then 04, 07, 09, 13, 21, 17, 19, 27, 30, 32 and 34 again.
+      - name: "Stage 35: 35_v2_day14_direct_reads_unsubscribe_keys.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 35
+
+      - name: "Stage 36: 36_v2_day14_direct_reads_unsubscribe_keys_tests.sql (and 04, 07, 09, 13, 21, 17, 19, 27, 30, 32, 34 again on the 35 schema)"
+        timeout-minutes: 14
+        run: bash tools/normalized-v2-ci/run-stage.sh 36
+
       - name: "Stage 14: 14_supabase_api_tests.sh (PostgREST + JWT, real Supabase roles)"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 14
@@ -575,6 +597,10 @@ jobs:
       - name: "Stage 28: 28_v2_team_seats_outbox_concurrency_test.sh"
         timeout-minutes: 8
         run: bash tools/normalized-v2-ci/run-stage.sh 28
+
+      - name: "Stage 37: 37_v2_day14_unsubscribe_concurrency_test.sh"
+        timeout-minutes: 6
+        run: bash tools/normalized-v2-ci/run-stage.sh 37
 
       - name: "Stage 10: 10_v2_migration_path_test.sh"
         timeout-minutes: 6
