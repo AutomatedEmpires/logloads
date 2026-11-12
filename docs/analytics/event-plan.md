@@ -255,9 +255,9 @@ await recordProductEvent(
 | `share_link_opened` and flow A start | The share page under apps/web/app/v2/share: `<ShareLinkOpenedBeacon channel={…} jobId={job.id} signedIn={…} />` | TARGET: waits for #287 |
 | `via: "one_tap_link"` and flows D and E from a link | The signed one-tap links (#292). Pass `via: "one_tap_link"` and `signedIn: false` where no one is signed in; the jobs group takes its own `JobLifecycleEvents` for that route. `/v2/act` is a sensitive route (§2, rule 8), so a flow timed from a link cannot end there in the browser | TARGET: waits for #292 |
 
-The pages render the beacons only when `NEXT_PUBLIC_POSTHOG_KEY` is set, so without a key no beacon code is fetched. The
-pageview tracker loads its capture code with a dynamic import, so the layout every route shares carries only the privacy
-check. Both keep the route budgets (#242).
+The pages render the beacons only when `NEXT_PUBLIC_POSTHOG_KEY` is set. The beacons themselves import only React and load
+the capture and clock code with a dynamic import, once, when one has work to do. The pageview tracker loads the same code
+the same way, so the layout every route shares carries only the privacy check. All three keep the route budgets (#242).
 
 **Other follow-ups**
 
