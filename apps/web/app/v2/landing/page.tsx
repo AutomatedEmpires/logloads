@@ -5,6 +5,8 @@ import { ContentGrid, PageContainer, PageHeader } from "@logloads/ui/layout"
 
 import { OverviewActions, OverviewAllowance, OverviewAttention, OverviewChecklist, OverviewLandings } from "@/components/v2/landing/OverviewSections"
 import { PageNotice } from "@/components/v2/PageNotice"
+import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
+import { reportV2Error } from "@/lib/marketplace-v2/error-log"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import {
   checklistIncomplete,
@@ -30,14 +32,18 @@ function one(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? ""
 }
 
-/** A read the role may not have (or the store may refuse) becomes `null`, which the page states plainly. */
-async function load<T>(allowed: boolean, read: () => Promise<T>): Promise<T | null> {
+/**
+ * A read the role may not have (or the store may refuse) becomes `null`, which the page states plainly. A failure is
+ * logged under a request id unless it is a refusal with its own copy (#279, K2).
+ */
+async function load<T>(allowed: boolean, operation: string, read: () => Promise<T>): Promise<T | null> {
   if (!allowed) return null
 
   try {
     return await read()
   } catch (error) {
     unstable_rethrow(error)
+    reportV2Error(error, operation)
     return null
   }
 }
@@ -70,11 +76,11 @@ export default async function LandingOverviewPage({ searchParams }: { searchPara
   const can = (capability: string) => access.capabilities.includes(capability as never)
   const organizationId = viewer.organizationId
   const [interests, jobs, landings, allowance] = await Promise.all([
-    load(can("inquiry.respond"), () => pilotMarketplaceV2.listLandingInterests(viewer)),
+    load(can("inquiry.respond"), "landing_overview.inquiries", () => pilotMarketplaceV2.listLandingInterests(viewer)),
     // Scoped to this business in the store, before its row limit (#209); the row filter stays as a second check.
-    load(true, async () => (await pilotMarketplaceV2.listJobs(ownJobFilters(organizationId))).filter((job) => job.posterOrganizationId === organizationId)),
-    load(can("job.publish"), () => pilotMarketplaceV2.listOwnLandings(viewer)),
-    load(can("job.publish"), () => pilotMarketplaceV2.landingAllowance(viewer))
+    load(true, "landing_overview.jobs", async () => (await pilotMarketplaceV2.listJobs(ownJobFilters(organizationId))).filter((job) => job.posterOrganizationId === organizationId)),
+    load(can("job.publish"), "landing_overview.landings", () => pilotMarketplaceV2.listOwnLandings(viewer)),
+    load(can("job.publish"), "landing_overview.allowance", () => pilotMarketplaceV2.landingAllowance(viewer))
   ])
   const summary = allowance ? summarizeLandingAllowance(allowance) : null
   const now = new Date().toISOString()
@@ -83,6 +89,8 @@ export default async function LandingOverviewPage({ searchParams }: { searchPara
   // A job read that failed is not an empty job history: no checklist is derived from it (#209 review).
   const showChecklist = can("job.publish") && jobs !== null && checklistIncomplete(steps) && attention.length === 0
   const plan = summary?.plan ? `${summary.plan.name} plan` : summary ? "no plan is active" : null
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
 
   return (
     <div data-ds-page="landing-overview">
@@ -104,7 +112,7 @@ export default async function LandingOverviewPage({ searchParams }: { searchPara
               {one(query.unavailable) === "reconfirm" ? (
                 <PageNotice role="status"><p>Confirming isn&rsquo;t saved in this preview yet: it needs the normalized marketplace store. Nothing was changed.</p></PageNotice>
               ) : null}
-              {one(query.error) ? <PageNotice role="alert" tone="critical"><p>{one(query.error)}</p></PageNotice> : null}
+              {failure ? <PageNotice role="alert" tone="critical"><p>{failure.message}</p></PageNotice> : null}
               {interests === null && can("inquiry.respond") ? <PageNotice role="status"><p>Your inquiries could not be loaded, so new inquiries are not listed.</p></PageNotice> : null}
               {jobs === null ? <PageNotice role="status"><p>Your jobs could not be loaded, so listings to confirm are not listed.</p></PageNotice> : null}
               {showChecklist ? (
