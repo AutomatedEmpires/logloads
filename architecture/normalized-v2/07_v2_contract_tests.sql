@@ -955,14 +955,24 @@ begin
     'V2-DEC-02 & V2-DEC-03 (f2): Historical unquoted/unconfirmed record remains readable and honestly labeled without fabricated pay, confirmation, or truck totals'
   );
 
-  -- Verify `list_marketplace_jobs` orders all 4 confirmed jobs ahead of the unconfirmed legacy job (`NULLS LAST`).
-  select job_id into v_rec
-  from marketplace.list_marketplace_jobs(null, null, null, true, v_org_landing, null, null, 2, 10)
-  offset 4 limit 1;
-  perform pg_temp.assert_true(
-    v_rec.job_id = v_job_legacy,
-    'V2-DEC-03 (f3): Confirmed V2 jobs sort ahead of unconfirmed legacy job (last_confirmed_at IS NOT NULL DESC)'
-  );
+  if to_regprocedure('marketplace.job_confirmation_current(timestamptz)') is null then
+    -- Verify `list_marketplace_jobs` orders all 4 confirmed jobs ahead of the unconfirmed legacy job (`NULLS LAST`).
+    select job_id into v_rec
+    from marketplace.list_marketplace_jobs(null, null, null, true, v_org_landing, null, null, 2, 10)
+    offset 4 limit 1;
+    perform pg_temp.assert_true(
+      v_rec.job_id = v_job_legacy,
+      'V2-DEC-03 (f3): Confirmed V2 jobs sort ahead of unconfirmed legacy job (last_confirmed_at IS NOT NULL DESC)'
+    );
+  else
+    -- From 31 (31-R, the day-14 rule of #308) a job that was never confirmed is off the list until its poster
+    -- reconfirms it; it stays readable by id (f2 above). Stage 32 runs this suite on the 31 schema.
+    perform pg_temp.assert_true(
+      (select count(*) = 4 and bool_and(l.job_id <> v_job_legacy)
+       from marketplace.list_marketplace_jobs(null, null, null, true, v_org_landing, null, null, 2, 10) l),
+      'V2-DEC-03 (f3, from 31): the 4 confirmed V2 jobs are listed and the never-confirmed legacy job is not (31-R)'
+    );
+  end if;
 
   -- ===========================================================================
   -- 4. Known Gap 2 & 4 End-to-End Inquiry Flow (Equipment Breakdown, Private

@@ -2,6 +2,33 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-11 — Normalized-v2 stage 31: who reads a founding offer, and three rules now enforced in SQL (#294)
+
+Decided by the lead on #294 (2026-11-11) and implemented by `31_v2_reply_gate_reconfirmation_unsubscribe.sql`. The
+schema is still a non-active prototype: nothing here activates billing, a deployment or a hosted database.
+
+- **Founding offer: every member with `plan.view` may read the business's redemption.** Before, only owners could
+  (`promotion_redemptions_read`), while every active member already holds `plan.view` and reads the plan and the
+  allowance (`get_org_entitlement_state`). The offer is part of what the plan costs; it gives no power to change
+  it. Members read its status, grant date and cycles applied, never who granted it (16's column grant stands). A
+  member of a business that redeemed a promotion also reads that promotion's terms after it closes, so an offer's
+  terms no longer disappear. The adapter's `foundingOffer` read model still answers owners only until the billing
+  feature widens it. Source: #248's report on #235; the lead's scope note on #294.
+- **Private details and the site phone: only after the landing replies and opts in, in the database too.** This is
+  the founder's 2026-11-10 phone-reveal rule. The security sweep of 2026-11-11 found the schema let a desk member
+  share them by marking an inquiry viewed, before any reply (P1). Stage 31 closes it: the hauling business reads
+  them only while its inquiry is `replied`, and a decline, a revocation or a withdrawal ends it.
+- **Day 14: the reconfirmation stop of #308 is enforced by the store.** From exactly 14 x 24 hours after its last
+  confirmation, and for a legacy job that was never confirmed, an active job is off `list_marketplace_jobs` and
+  `search_job_postings` and takes no new interest ("Waiting for the poster to confirm"). It is not expired or
+  paused, its poster still sees it, and reconfirming restores it at once. Same boundary as
+  `packages/services/src/v2/jobs/lifecycle.ts`.
+- **A signed-out unsubscribe link works without an account session.** One signed, expiring, single-use token turns
+  off one person's one channel preference and reveals nothing. The signing key never leaves the database.
+- **A job of another business reads as not found** to the job lifecycle functions, exactly like an unknown id.
+
+Review: the lead rechecks the founding-offer read when the billing screens are designed (#248 follow-up).
+
 ## 2026-11-10 — Decision register #114 closed out: delegated decisions and dated deferrals (#308)
 
 Every item here was **decided by the lead and agents under the founder's 2026-11-10 delegation** ("108 and 114 you
