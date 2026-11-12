@@ -16,7 +16,6 @@ import {
 } from "@logloads/contracts"
 import { createInMemoryDatabase, type LogLoadsDatabaseState } from "@logloads/db"
 import {
-  acceptPercentageBillingAgreement,
   activateOrganizationSubscription,
   activateAuthorizedOrganizationSubscriptionFromProvider,
   authorizePilotConversionSubscription,
@@ -933,6 +932,79 @@ describe("payment_method.detached", () => {
   })
 })
 
+// ── The retired percentage fee ────────────────────────────────────────────────
+
+/**
+ * Everything a provider event could use to revive the retired fee: billing
+ * accounts, the fee ledger, and the audit records of acceptances and accruals.
+ */
+function retiredFeeRecords(state: LogLoadsDatabaseState) {
+  return structuredClone({
+    accounts: state.organizationBillingAccounts,
+    acceptanceAndAccrualAudits: state.auditEvents.filter(
+      (event) =>
+        event.action === "percentage_v1_agreement_accepted" ||
+        event.action === "platform_fee_accrued"
+    ),
+    fees: state.platformFeeEvents
+  })
+}
+
+describe("the billing webhook and the retired percentage fee", () => {
+  it("records a card without creating an agreement or a fee", async () => {
+    const { host, state } = webhookState()
+    state.hostBillingProfiles = []
+    const before = retiredFeeRecords(state)
+
+    harness(state, {
+      event: billingEvent("setup_intent.succeeded", {
+        customer: "cus_retired_fee",
+        id: "seti_retired_fee",
+        metadata: { logloadsOrganizationId: host.id },
+        payment_method: "pm_retired_fee"
+      })
+    })
+
+    expect((await POST(webhookRequest())).status).toBe(200)
+    expect(hostBillingStatus(state, host.id)).toBe("attached")
+    expect(retiredFeeRecords(state)).toEqual(before)
+  })
+
+  it("settles a bill recorded before the retirement without recording a new fee", async () => {
+    const { fee, state } = webhookState()
+    const before = retiredFeeRecords(state)
+
+    harness(state, {
+      event: billingEvent("invoice.payment_succeeded", stripeInvoiceObject(state))
+    })
+
+    expect((await POST(webhookRequest())).status).toBe(200)
+    expect(state.hostInvoices[0]).toMatchObject({ status: "paid" })
+    expect(state.platformFeeEvents).toEqual([fee])
+    expect(retiredFeeRecords(state)).toEqual(before)
+  })
+
+  it("ignores a checkout that names the percentage agreement, and writes nothing", async () => {
+    const { host, state } = webhookState()
+    const before = retiredFeeRecords(state)
+
+    harness(state, {
+      event: billingEvent("checkout.session.completed", {
+        id: "cs_retired_fee",
+        metadata: {
+          logloadsOrganizationId: host.id,
+          product: "percentage_v1"
+        }
+      })
+    })
+
+    const response = await POST(webhookRequest())
+
+    await expect(response.json()).resolves.toEqual({ handled: "ignored", received: true })
+    expect(retiredFeeRecords(state)).toEqual(before)
+  })
+})
+
 // ── Collecting the monthly fee ────────────────────────────────────────────────
 
 describe("invoice.payment_succeeded", () => {
@@ -1292,15 +1364,26 @@ describe("Network subscription provider events", () => {
     expect(owner).toBeDefined()
     if (!owner) return
 
-    acceptPercentageBillingAgreement(
-      fixture.state,
-      {
-        acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
-        actorUserId: owner.userId,
-        organizationId: fixture.host.id
-      },
-      "2026-08-02T12:00:00.000Z"
+    // The agreement exactly as the retired acceptance stored it before the
+    // percentage fee was retired. The service can no longer write it.
+    const preservedAccount = fixture.state.organizationBillingAccounts.find(
+      (account) => account.organizationId === fixture.host.id
     )
+    expect(preservedAccount).toBeDefined()
+    if (!preservedAccount) return
+    preservedAccount.activationState = "percentage_active"
+    preservedAccount.billingModel = "percentage_v1"
+    preservedAccount.effectiveAt = "2026-08-02T12:00:00.000Z"
+    preservedAccount.subscriptionId = null
+    preservedAccount.percentageTermsSnapshot = {
+      acceptedAt: "2026-08-02T12:00:00.000Z",
+      acceptedByUserId: owner.userId,
+      acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+      billingCadence: "monthly_in_arrears",
+      currency: "USD",
+      feeBps: PLATFORM_FEE_BPS
+    }
+    preservedAccount.updatedAt = "2026-08-02T12:00:00.000Z"
     const accountBefore = structuredClone(
       fixture.state.organizationBillingAccounts.find(
         (account) => account.organizationId === fixture.host.id

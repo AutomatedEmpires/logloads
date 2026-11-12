@@ -895,7 +895,7 @@ describe("subscription activation and commercial scope", () => {
     ).toBe("dispatch_pro")
   })
 
-  it("does not let a historical Dispatch subscription publish after percentage cutover", () => {
+  it("lets a historical Dispatch subscription host publish after cutover without reviving it", () => {
     const state = freshState()
     paidDispatchAndOperating(state)
     const template = state.loadPostings.find(
@@ -910,30 +910,31 @@ describe("subscription activation and commercial scope", () => {
     state.loadPostings.push(load)
     const capacityCount = state.opportunityCapacities.length
     const slotCount = state.truckSlots.length
+    const commercialBefore = structuredClone({
+      accounts: state.organizationBillingAccounts,
+      fees: state.platformFeeEvents,
+      subscriptions: state.organizationSubscriptions,
+      usage: state.networkUsageEvents
+    })
 
-    expect(() =>
-      provisionLoadCapacity(
-        state,
-        load,
-        "open_network",
-        "request_approval",
-        "2026-08-04T16:00:00.000Z"
-      )
-    ).toThrow(/current LogLoads fee agreement/)
-    expect(state.opportunityCapacities).toHaveLength(capacityCount)
-    expect(state.truckSlots).toHaveLength(slotCount)
+    // Publication needs no agreement now that the percentage fee is retired,
+    // and the historical subscription neither authorizes nor blocks it.
+    provisionLoadCapacity(
+      state,
+      load,
+      "open_network",
+      "request_approval",
+      "2026-08-04T16:00:00.000Z"
+    )
 
-    expect(() =>
-      provisionLoadCapacity(
-        state,
-        load,
-        "private_network",
-        "request_approval",
-        "2026-08-04T16:00:00.000Z"
-      )
-    ).toThrow(/current LogLoads fee agreement/)
-    expect(state.opportunityCapacities).toHaveLength(capacityCount)
-    expect(state.truckSlots).toHaveLength(slotCount)
+    expect(state.opportunityCapacities).toHaveLength(capacityCount + 1)
+    expect(state.truckSlots.length).toBeGreaterThan(slotCount)
+    expect({
+      accounts: state.organizationBillingAccounts,
+      fees: state.platformFeeEvents,
+      subscriptions: state.organizationSubscriptions,
+      usage: state.networkUsageEvents
+    }).toEqual(commercialBefore)
   })
 
   it("blocks every included-Dispatch plan until a paid fleet entitlement is retired", () => {
@@ -1700,7 +1701,7 @@ describe("dunning and Pilot conversion boundaries", () => {
     expect(recovered.paymentGraceEndsAt).toBeNull()
   })
 
-  it("does not revive historical Dispatch publishing through payment recovery", () => {
+  it("publishes without reviving historical Dispatch billing through payment recovery", () => {
     const state = freshState()
     const subscription = paidDispatchAndOperating(state)
     const loadTemplate = state.loadPostings.find(
@@ -1716,15 +1717,18 @@ describe("dunning and Pilot conversion boundaries", () => {
       id: "94949494-9494-4494-8494-949494949401"
     }
     state.loadPostings.push(load)
-    expect(() =>
-      provisionLoadCapacity(
-        state,
-        load,
-        "private_network",
-        "request_approval",
-        "2026-08-04T16:00:00.000Z"
-      )
-    ).toThrow(/current LogLoads fee agreement/)
+    const subscriptionBefore = structuredClone(subscription)
+
+    provisionLoadCapacity(
+      state,
+      load,
+      "private_network",
+      "request_approval",
+      "2026-08-04T16:00:00.000Z"
+    )
+
+    expect(state.opportunityCapacities.some((capacity) => capacity.loadPostingId === load.id)).toBe(true)
+    expect(subscription).toEqual(subscriptionBefore)
     expect(subscription.status).toBe("active")
   })
 
