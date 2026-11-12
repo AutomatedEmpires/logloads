@@ -64,6 +64,8 @@ function signedIn(requestedOrganizationId: string | null) {
     cookieUserId: null,
     hints: async () => ({ fullName: "Nora Normal", verifiedEmail: null }),
     requestedOrganizationId,
+    // The selection is this person's own: the V2 switch signs it with their person id (#246).
+    selectionUserId: requestedOrganizationId ? PERSON_ID : null,
     source: "clerk"
   })
   mocks.hasSessionIdentity.mockResolvedValue(true)

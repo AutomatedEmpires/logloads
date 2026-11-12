@@ -16,7 +16,17 @@ import { MarketplaceAdapterConfigurationError } from "./port"
  * A Clerk user id that links to no one is linked on first sign-in through `sync_verified_identity`, the schema's own
  * identity bridge, over its separate identity-sync connection. The subject and the hints come from the server
  * session only. Without that connection nothing is written and the sign-in simply has no business yet.
+ *
+ * A person linked before their provider verified an email address has none on file, so an invitation to that address
+ * could never be claimed. That step resumes too (#246, UX spec §2.1 "email not verified"): while the store holds no
+ * verified address for the person, the provider is asked again, at most once per `EMAIL_REFRESH_INTERVAL_MS` per
+ * person, and a newly verified address is recorded through the same function.
  */
+
+/** How long a person with no verified email on file waits before the provider is asked again (#246). */
+export const EMAIL_REFRESH_INTERVAL_MS = 10 * 60 * 1000
+/** How many people a store remembers asking, so its memory stays flat however many sign in. */
+export const EMAIL_REFRESH_MEMORY = 1000
 
 export interface NormalizedViewerSession {
   person: NormalizedViewerPerson
@@ -46,13 +56,60 @@ export interface NormalizedSessionDependencies {
   sync?: MarketplaceIdentitySync | null
   /** Where a failed link is reported (server logs only; never shown and never with an identifier). */
   log?: (message: string, error: unknown) => void
+  /** The clock that spaces out email refreshes; `Date.now` outside tests. */
+  now?: () => number
 }
 
-export function createNormalizedSessionStore({ db, identity, log = defaultLog, sync = null }: NormalizedSessionDependencies): NormalizedSessionStore {
+export function createNormalizedSessionStore({ db, identity, log = defaultLog, now = Date.now, sync = null }: NormalizedSessionDependencies): NormalizedSessionStore {
+  /** When each person's provider was last asked for a verified email, oldest first (insertion order). */
+  const askedAt = new Map<string, number>()
+
   async function read(subject: string): Promise<NormalizedViewerSession | null> {
     const principal: MarketplacePrincipal = { audience: identity.audience, issuer: identity.issuer, subject }
 
     return viewerSessionFromRows(await db.asUser(principal, (calls) => calls.viewerSession(), { readOnly: true }))
+  }
+
+  function askedRecently(subject: string): boolean {
+    const at = askedAt.get(subject)
+
+    return at !== undefined && now() - at < EMAIL_REFRESH_INTERVAL_MS
+  }
+
+  function markAsked(subject: string) {
+    askedAt.delete(subject)
+
+    if (askedAt.size >= EMAIL_REFRESH_MEMORY) {
+      const oldest = askedAt.keys().next().value
+
+      if (oldest !== undefined) {
+        askedAt.delete(oldest)
+      }
+    }
+
+    askedAt.set(subject, now())
+  }
+
+  /** `sync_verified_identity` for the subject; false when it failed for any reason other than configuration. */
+  async function syncIdentity(
+    bridge: MarketplaceIdentitySync,
+    subject: string,
+    fullName: string,
+    verifiedEmail: string | null,
+    failure: string
+  ): Promise<boolean> {
+    try {
+      await bridge.link({ displayName: fullName, email: verifiedEmail, emailVerified: verifiedEmail !== null, issuer: identity.issuer, subject })
+      return true
+    } catch (error) {
+      // An unsafe or missing identity-sync credential is a configuration error: it fails closed like the adapter.
+      if (error instanceof MarketplaceAdapterConfigurationError) {
+        throw error
+      }
+
+      log(failure, error)
+      return false
+    }
   }
 
   return {
@@ -61,23 +118,31 @@ export function createNormalizedSessionStore({ db, identity, log = defaultLog, s
     async resolve({ hints, subject }) {
       const found = await read(subject)
 
-      if (found || !sync) {
+      if (!sync) {
         return found
       }
 
-      const { fullName, verifiedEmail } = await hints()
-
-      try {
-        await sync.link({ displayName: fullName, email: verifiedEmail, emailVerified: verifiedEmail !== null, issuer: identity.issuer, subject })
-      } catch (error) {
-        // An unsafe or missing identity-sync credential is a configuration error: it fails closed like the adapter.
-        if (error instanceof MarketplaceAdapterConfigurationError) {
-          throw error
+      if (found) {
+        // A verified address on file, or the provider asked recently: the session is read as it is.
+        if (found.person.email !== null || askedRecently(subject)) {
+          return found
         }
 
-        // Two first requests can race to link the same person; the loser's insert fails. Read again either way.
-        log("normalized identity link failed", error)
+        markAsked(subject)
+        const { fullName, verifiedEmail } = await hints()
+
+        if (verifiedEmail === null || !(await syncIdentity(sync, subject, fullName, verifiedEmail, "normalized identity email refresh failed"))) {
+          return found
+        }
+
+        return read(subject)
       }
+
+      markAsked(subject)
+      const { fullName, verifiedEmail } = await hints()
+
+      // Two first requests can race to link the same person; the loser's insert fails. Read again either way.
+      await syncIdentity(sync, subject, fullName, verifiedEmail, "normalized identity link failed")
 
       return read(subject)
     }

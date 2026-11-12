@@ -1,8 +1,8 @@
 /**
  * Whether a person has asked not to be tracked (#286). LogLoads has no analytics consent banner or opt-out setting,
- * so product events honour the two signals browsers send: Do Not Track and Global Privacy Control. Either one turns
- * product events off for that request or that browser. The legacy pageview tracker does not read them yet (see
- * docs/analytics/event-plan.md, "Follow-ups").
+ * so analytics honours the two signals browsers send: Do Not Track and Global Privacy Control. Either one turns
+ * product events off for that request or that browser, and in the browser the pageview tracker never loads PostHog
+ * either (#330, `components/analytics/AnalyticsProvider.tsx`).
  */
 
 export interface HeaderReader {
