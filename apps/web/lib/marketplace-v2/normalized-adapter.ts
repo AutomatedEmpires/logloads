@@ -24,6 +24,7 @@ import {
   type MarketplaceMemberRole,
   type MarketplaceV2Feature
 } from "@logloads/contracts"
+import { jobTakesNewInterest, unconfirmedJobNotice } from "@logloads/services"
 
 import { normalizedAdmin } from "./admin"
 import { normalizedAlerts } from "./alerts"
@@ -168,6 +169,27 @@ function freshAttestation(
 
 const isMemberRole = (value: string): value is MarketplaceMemberRole => (MARKETPLACE_MEMBER_ROLES as readonly string[]).includes(value)
 
+/*
+ * The day-14 rule (#308, #321), as the job desk applies it (`jobTakesNewInterest`, packages/services/src/v2/jobs): a job
+ * still on the marketplace whose poster has not confirmed it for 14 x 24 hours, or never has (a legacy import), is off
+ * Find Work and takes no new interest until they reconfirm it. It keeps its status, so it never reads as expired or
+ * paused, and it is still read by id. The store enforces the same rule (stage 31). The adapter applies it to what the
+ * store returns as well, so a store a version or a moment behind can neither list such a job nor take new interest in it.
+ */
+function lifecycleOf(job: MarketplaceJobDetailView) {
+  return { expiresAt: job.expiresAt, lastConfirmedAt: job.lastConfirmedAt, moderationHold: null, status: job.status }
+}
+
+/** `null` for a job the rule leaves alone; otherwise the label that names the missing confirmation. */
+function waitingForConfirmation(job: MarketplaceJobDetailView, now: Date): { label: string; reason: string } | null {
+  return unconfirmedJobNotice(lifecycleOf(job), now)
+}
+
+/** The job as the store read it, except that it takes no new interest when the rule says so. */
+function withNewInterestRule(job: MarketplaceJobDetailView, now: Date): MarketplaceJobDetailView {
+  return job.acceptingInterest && !jobTakesNewInterest(lifecycleOf(job), now) ? { ...job, acceptingInterest: false } : job
+}
+
 /** The same publication rules the server action applies, re-checked at the store boundary. */
 function publishableDraft(draft: MarketplaceJobDraft): MarketplaceJobDraft {
   const validation = validateMarketplaceJobDraft(draft)
@@ -280,7 +302,10 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
     }
 
     const rows = await db.asAnon((calls) => calls.call("list_marketplace_jobs", args))
-    return { exact: rows.length < args.p_limit, jobs: refineDiscovery(rows.map(jobViewFromRow), filters) }
+    const at = now()
+    // The day-14 rule first, so "accepting only" and the count both see it.
+    const listed = rows.map(jobViewFromRow).filter((job) => waitingForConfirmation(job, at) === null).map((job) => withNewInterestRule(job, at))
+    return { exact: rows.length < args.p_limit, jobs: refineDiscovery(listed, filters) }
   }
 
   return {
@@ -316,6 +341,20 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
       const args = expressInterestArguments(viewer.organizationId, input)
 
       return asViewer(viewer, async (calls) => {
+        // The day-14 rule decides first (#321), in the same transaction, so a refused inquiry never reaches the store.
+        // Changing an inquiry already sent is not new interest; sending a withdrawn one again is. Every other refusal
+        // (a job that stopped, one the person cannot read, a declined inquiry) is the store's own.
+        const [jobRow] = await calls.call("get_marketplace_job", { p_job_id: args.p_job_id })
+        const waiting = jobRow ? waitingForConfirmation(jobViewFromRow(jobRow), now()) : null
+
+        if (waiting) {
+          const standing = await calls.call("list_marketplace_interests", { p_job_id: args.p_job_id, p_org_id: viewer.organizationId, p_side: "hauler" })
+
+          if (standing.map(interestViewFromRow).every((interest) => interest.status === "withdrawn")) {
+            throw new MarketplaceRefusalError(waiting.label, "23514")
+          }
+        }
+
         const [submitted] = await calls.call("submit_expression_of_interest", args)
         const id = submittedInterestId(submitted)
         const rows = await calls.call("list_marketplace_interests", { p_job_id: args.p_job_id, p_org_id: viewer.organizationId, p_side: "hauler" })
@@ -344,7 +383,8 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
           })
         : null
       const [row] = asPerson ?? (await db.asAnon((calls) => calls.call("get_marketplace_job", { p_job_id: jobId })))
-      return row ? jobViewFromRow(row) : null
+      // By id, a job the day-14 rule took off Find Work is still there: active, and not taking new interest.
+      return row ? withNewInterestRule(jobViewFromRow(row), now()) : null
     },
 
     // Listing reports (UX-07, #130)
