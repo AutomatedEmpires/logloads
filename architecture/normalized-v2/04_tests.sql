@@ -51,6 +51,14 @@ $$;
 create function pg_temp.stage26() returns boolean language sql stable as $$
   select to_regclass('marketplace.team_invitations') is not null
 $$;
+-- 31 (reply gate, day-14 reconfirmation, signed-out unsubscribe) applied on top of 29.
+create function pg_temp.stage31() returns boolean language sql stable as $$
+  select to_regclass('marketplace.notification_unsubscribe_keys') is not null
+$$;
+-- 33 (the missing port v3 functions) applied on top of 31.
+create function pg_temp.stage33() returns boolean language sql stable as $$
+  select to_regprocedure('marketplace.remove_team_member(uuid)') is not null
+$$;
 
 -- Runs p_sql and requires failure with SQLSTATE p_state AND a constraint name or message matching
 -- p_reason (case-insensitive regex), so a negative test cannot pass because an unrelated rule fired.
@@ -163,9 +171,9 @@ begin
   select count(*) into v_tables from pg_tables where schemaname = 'marketplace';
   -- Exact inventory per schema level: baseline 32; + 06 alignment 36 (incl. the schema_migrations ledger);
   -- + 11/12 Phase 3 (moderation holds, billing provider event ledger) 38; + 26 (team invitations and their landings,
-  -- landing scopes, saved jobs, notification outbox) 43.
-  perform pg_temp.assert_true(v_tables = case when pg_temp.stage26() then 43 when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end,
-    format('expected %s tables in marketplace, found %s', case when pg_temp.stage26() then 43 when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end, v_tables));
+  -- landing scopes, saved jobs, notification outbox) 43; + 31 (unsubscribe signing keys and used tokens) 45.
+  perform pg_temp.assert_true(v_tables = case when pg_temp.stage31() then 45 when pg_temp.stage26() then 43 when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end,
+    format('expected %s tables in marketplace, found %s', case when pg_temp.stage31() then 45 when pg_temp.stage26() then 43 when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end, v_tables));
 
   select count(*) into v_views from pg_views where schemaname = 'marketplace';
   perform pg_temp.assert_true(v_views = 0, format('expected 0 views in marketplace, found %s', v_views));
@@ -178,9 +186,14 @@ begin
   where n.nspname = 'marketplace';
   -- Functions: baseline 44; + 06 63; + 11/12 74 (5 in 11, 6 in 12); + 16 82 (the rest redefine existing ones);
   -- + 18 86 (three visibility helpers and one trigger function; the rest redefine existing ones);
-  -- + 26 109 (20 functions and 3 trigger functions; it also redefines ten existing ones).
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
-    format('expected %s functions in marketplace, found %s', case when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- + 26 109 (20 functions and 3 trigger functions; it also redefines ten existing ones); 29 only redefines;
+  -- + 31 114 (job_confirmation_current, job_takes_new_interest, hmac_sha256, issue_unsubscribe_token,
+  -- unsubscribe_with_token; it redefines eight);
+  -- + 33 121 (list_invitation_recipients, remove_team_member, admin_resolve_report, interest_queue,
+  -- count_marketplace_interests, get_marketplace_interest, list_marketplace_jobs_page; it redefines three and replaces
+  -- list_marketplace_interests by one with more arguments).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec

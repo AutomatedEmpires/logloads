@@ -1231,7 +1231,7 @@ export function resolveAssignmentBillingCommitment(
   if (account.activationState === "legacy") {
     assertDomainCondition(
       Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
-      "Accept the current percentage_v1 agreement before committing new work"
+      "Legacy percentage terms cover only work committed before the August 1, 2026 cutover. The completed-load percentage fee is retired and cannot be accepted for new work."
     )
     assertCondition(
       account.billingModel === "legacy_percentage",
@@ -1274,7 +1274,7 @@ export function resolveAssignmentBillingCommitment(
   )
   assertDomainCondition(
     Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
-    "Historical subscriptions no longer authorize new work; accept the current percentage agreement after provider retirement"
+    "Historical subscriptions no longer authorize new work. The completed-load percentage fee is retired and cannot be accepted instead."
   )
   const subscriptionId = assertFound(
     account.subscriptionId ?? undefined,

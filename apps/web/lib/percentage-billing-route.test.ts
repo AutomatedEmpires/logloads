@@ -1,9 +1,18 @@
 import { createHash } from "node:crypto"
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { PERCENTAGE_V1_TERMS_VERSION } from "@logloads/contracts"
+import {
+  PERCENTAGE_FEE_RETIRED_CODE,
+  PERCENTAGE_FEE_RETIRED_MESSAGE
+} from "@logloads/contracts"
 
 vi.mock("server-only", () => ({}))
+
+/**
+ * The completed-load percentage fee is retired. This route used to record a
+ * host's acceptance of the 5% agreement; it now refuses every request with one
+ * typed answer, and nothing it does can reach the operating state.
+ */
 
 const mocks = vi.hoisted(() => {
   class ApiError extends Error {
@@ -19,6 +28,7 @@ const mocks = vi.hoisted(() => {
     ApiError,
     acceptPercentageBillingAgreement: vi.fn(),
     enforceApiRateLimit: vi.fn(),
+    mutateState: vi.fn(),
     requireApiActor: vi.fn()
   }
 })
@@ -26,18 +36,11 @@ const mocks = vi.hoisted(() => {
 vi.mock("@/lib/api-actor", () => ({
   ApiError: mocks.ApiError,
   apiErrorResponse(error: unknown) {
-    const status =
-      error instanceof mocks.ApiError
-        ? error.status
-        : error instanceof Error && error.name === "ZodError"
-          ? 422
-          : 500
+    const status = error instanceof mocks.ApiError ? error.status : 500
     const message =
       error instanceof mocks.ApiError
         ? error.message
-        : status === 422
-          ? "The request had missing or invalid fields."
-          : "We could not complete that request."
+        : "We could not complete that request."
 
     return Response.json({ error: message }, { status })
   },
@@ -47,6 +50,8 @@ vi.mock("@/lib/api-actor", () => ({
 
 vi.mock("@/lib/services", () => ({
   mutateState<T>(mutate: (draft: unknown) => T): Promise<T> {
+    mocks.mutateState()
+
     return Promise.resolve(
       mutate({
         acceptPercentageBillingAgreement:
@@ -60,8 +65,9 @@ import { POST } from "@/app/api/billing/percentage-agreement/route"
 
 const ACTOR_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const ORGANIZATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-const ORGANIZATION_SCOPE_SHA256 =
-  "00f765af1c54eb24e437746c4f64b5841490757b647bf3a392b042f872ad7090"
+const ORGANIZATION_SCOPE_SHA256 = createHash("sha256")
+  .update(ORGANIZATION_ID)
+  .digest("hex")
 
 function actor(role = "owner", type = "landing_source") {
   return {
@@ -78,180 +84,92 @@ function actor(role = "owner", type = "landing_source") {
   }
 }
 
-function request(body: Record<string, unknown>) {
-  return new Request(
-    "https://logloads.test/api/billing/percentage-agreement",
-    {
-      body: JSON.stringify(body),
-      headers: { "Content-Type": "application/json" },
-      method: "POST"
-    }
-  )
+async function expectRetired(response: Response) {
+  expect(response.status).toBe(410)
+  expect(response.headers.get("cache-control")).toBe("private, no-store")
+  await expect(response.json()).resolves.toEqual({
+    code: PERCENTAGE_FEE_RETIRED_CODE,
+    error: PERCENTAGE_FEE_RETIRED_MESSAGE
+  })
 }
 
-function rawRequest(body: string) {
-  return new Request(
-    "https://logloads.test/api/billing/percentage-agreement",
-    {
-      body,
-      headers: { "Content-Type": "application/json" },
-      method: "POST"
-    }
-  )
+function expectNothingReachedState() {
+  expect(mocks.mutateState).not.toHaveBeenCalled()
+  expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
 }
 
-describe("percentage billing agreement route", () => {
+describe("the retired percentage agreement route", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "enabled")
-    vi.stubEnv(
-      "LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS",
-      ORGANIZATION_ID
-    )
-    vi.stubEnv(
-      "LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256",
-      ORGANIZATION_SCOPE_SHA256
-    )
     mocks.requireApiActor.mockResolvedValue(actor())
-    mocks.acceptPercentageBillingAgreement.mockReturnValue({
-      account: {
-        activationState: "percentage_active",
-        billingModel: "percentage_v1",
-        percentageTermsSnapshot: {
-          acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION
-        }
-      },
-      changed: true
-    })
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
   })
 
-  it("binds the authenticated host to the server-owned agreement", async () => {
-    const response = await POST(request({ acceptPercentageTerms: true }))
-
-    expect(response.status).toBe(200)
-    expect(mocks.acceptPercentageBillingAgreement).toHaveBeenCalledWith({
-      acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
-      actorUserId: ACTOR_ID,
-      organizationId: ORGANIZATION_ID
-    })
-    await expect(response.json()).resolves.toEqual({
-      agreement: {
-        activationState: "percentage_active",
-        billingModel: "percentage_v1",
-        termsVersion: PERCENTAGE_V1_TERMS_VERSION
-      },
-      changed: true
-    })
+  it("refuses a billing owner's acceptance with the typed retired answer", async () => {
+    await expectRetired(await POST())
+    expect(mocks.requireApiActor).toHaveBeenCalledOnce()
+    expectNothingReachedState()
   })
 
-  it("allows an organization administrator to accept the current agreement", async () => {
-    mocks.requireApiActor.mockResolvedValue(actor("admin"))
-
-    const response = await POST(request({ acceptPercentageTerms: true }))
-
-    expect(response.status).toBe(200)
-    expect(mocks.acceptPercentageBillingAgreement).toHaveBeenCalledOnce()
-  })
-
-  it("refuses a carrier workspace", async () => {
-    mocks.requireApiActor.mockResolvedValue(actor("owner", "carrier"))
-
-    const response = await POST(request({ acceptPercentageTerms: true }))
-
-    expect(response.status).toBe(403)
-    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
-  })
-
-  it("refuses a host member without billing authority", async () => {
-    mocks.requireApiActor.mockResolvedValue(actor("viewer"))
-
-    const response = await POST(request({ acceptPercentageTerms: true }))
-
-    expect(response.status).toBe(403)
-    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
-  })
-
-  it("refuses a dispatcher without billing authority", async () => {
-    mocks.requireApiActor.mockResolvedValue(actor("dispatcher"))
-
-    const response = await POST(request({ acceptPercentageTerms: true }))
-
-    expect(response.status).toBe(403)
-    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
-  })
-
-  it("keeps commercial enrollment dark until the exact host is activated", async () => {
-    vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "disabled")
-
-    const disabled = await POST(
-      request({ acceptPercentageTerms: true })
-    )
-
-    expect(disabled.status).toBe(403)
-    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
-
+  it("refuses even when enrollment is switched on and the host is on the allowlist", async () => {
+    // Exactly the configuration that used to open acceptance for this host.
     vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "enabled")
-    vi.stubEnv(
-      "LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS",
-      "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
-    )
+    vi.stubEnv("LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS", ORGANIZATION_ID)
     vi.stubEnv(
       "LOGLOADS_PERCENTAGE_EXPECTED_ORGANIZATION_SCOPE_SHA256",
-      createHash("sha256")
-        .update("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
-        .digest("hex")
+      ORGANIZATION_SCOPE_SHA256
     )
+    vi.stubEnv("LOGLOADS_FEE_COLLECTION", "enabled")
 
-    const unlisted = await POST(
-      request({ acceptPercentageTerms: true })
-    )
-
-    expect(unlisted.status).toBe(403)
-    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
+    await expectRetired(await POST())
+    expectNothingReachedState()
   })
 
-  it("rejects client-selected commercial terms", async () => {
-    const response = await POST(
-      request({
-        acceptPercentageTerms: true,
-        acceptedTermsVersion: "attacker-selected",
-        feeBps: 1
-      })
-    )
+  it("refuses with enrollment switched off as well", async () => {
+    vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "disabled")
 
-    expect(response.status).toBe(422)
-    expect(mocks.requireApiActor).toHaveBeenCalledOnce()
-    expect(mocks.enforceApiRateLimit).toHaveBeenCalledOnce()
-    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
+    await expectRetired(await POST())
+    expectNothingReachedState()
   })
 
-  it("authenticates and rate limits before rejecting malformed JSON", async () => {
-    const response = await POST(rawRequest("{"))
+  it.each([
+    ["an administrator", actor("admin")],
+    ["a viewer", actor("viewer")],
+    ["a dispatcher", actor("dispatcher")],
+    ["a carrier owner", actor("owner", "carrier")]
+  ])("gives %s the same answer", async (_label, signedIn) => {
+    mocks.requireApiActor.mockResolvedValue(signedIn)
 
-    expect(response.status).toBe(422)
-    await expect(response.json()).resolves.toEqual({
-      error: "The request must contain a valid JSON object"
-    })
-    expect(mocks.requireApiActor).toHaveBeenCalledOnce()
-    expect(mocks.enforceApiRateLimit).toHaveBeenCalledOnce()
-    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
+    await expectRetired(await POST())
+    expectNothingReachedState()
   })
 
-  it("stops an undeclared oversized body while streaming it", async () => {
-    const response = await POST(
-      rawRequest(JSON.stringify({ padding: "x".repeat(2_048) }))
+  it("takes no request, so no body, terms or content type can reach it", () => {
+    // A handler with no parameter cannot parse client-selected terms, a fee, a
+    // terms version or an oversized body. The refusal is the whole contract.
+    expect(POST.length).toBe(0)
+  })
+
+  it("answers every retry identically", async () => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expectRetired(await POST())
+    }
+
+    expect(mocks.requireApiActor).toHaveBeenCalledTimes(3)
+    expectNothingReachedState()
+  })
+
+  it("still requires a signed-in caller", async () => {
+    mocks.requireApiActor.mockRejectedValue(
+      new mocks.ApiError("Sign in to continue", 401)
     )
 
-    expect(response.status).toBe(413)
-    await expect(response.json()).resolves.toEqual({
-      error: "The percentage agreement request is too large"
-    })
-    expect(mocks.requireApiActor).toHaveBeenCalledOnce()
-    expect(mocks.enforceApiRateLimit).toHaveBeenCalledOnce()
-    expect(mocks.acceptPercentageBillingAgreement).not.toHaveBeenCalled()
+    const response = await POST()
+
+    expect(response.status).toBe(401)
+    expectNothingReachedState()
   })
 })

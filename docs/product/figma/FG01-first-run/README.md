@@ -1,12 +1,32 @@
 # FG01 First run: first-run and sign-in screens in Figma
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
+**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235), and on 2026-11-11 for design audit 3 (#334). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
 **Figma page:** [01 First run](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-37) in the LogLoads file (jackson.cole's team).
-**Built from:** the [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) page (FG00, #256).
-- Every instance on the page comes from 00 System.
+**Built from:** the [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) page (FG00, #256, field layer #281).
+- Every instance on the page comes from 00 System, except the "Not for sale yet" plan tag. That tag is one local component, `Plan tag / Not for sale yet` (`305:2117`), kept in page 05's "Composed parts (gaps)" frame until 00 System PlanCard has a not-for-sale state.
 - Every solid fill and stroke outside an instance is bound to a variable.
 - There are no image fills, and all text is IBM Plex.
-- No new styles, variables or components were made, and no UI code changed in this task.
+- No new styles or variables were made, and no UI code changed.
+
+## Design audit 3 (#334)
+
+The full audit 3 report is not on the issue. The findings below are the ones the #334 body names for this page, the #281 follow-ups for page 01, and a re-check of every frame against quality bar v1 and the field design bar.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| FR-09 Plan (`92:3573`, `92:3903`, `92:4218`) shows $149, $299 and $499 without "Not for sale yet" | Major (#108 ruling) | Applied exactly. The #108 status line sits **above** the cards as a 00 System PageNotice (info): "**Billing is not open.** Nothing on this page charges you, and creating an account does not start a charge. Plan terms will be published before any plan is sold." Each plan card has a "Not for sale yet" tag beside its name. There is no plan choice, button or other payment control (checked: none existed, none were added). The old "Billing isn't active yet" notice under the cards is gone. The same fix is on FR-08 Landing business (`92:2428`, `92:2913`, `92:3285`) and its error state `173:2944`, which show the same prices: 21 tags and 7 status lines in all. |
+| The "Preview" tag on signed-in screens | Blocker (from page 00) | Confirmed gone after #281: AccountMenu / Trigger defaults Show tag to off, and a read-back found no "Preview" text on page 01. |
+| FR-10 Add your first landing: a disabled "Recruiting now" checkbox plus a "See plans" link | Major (no disabled dead ends) | Replaced on all four frames (`93:2091`, `93:2699`, `93:3180`, `173:3093`) by a 00 System Note: "Billing is not open, so a new landing is saved paused. Saved and paused landings don’t count toward a plan." |
+| Text under 14 px: the 11 px "Welcome back" and "Create account" eyebrows and the detached VisibilityPanel labels ("Seen by haulers", "Private …") | Major (V2, field bar) | 41 texts now use `type/label` (14 px). The FR-00 annotation's 17 lines of 11 px text use `type/meta` (14 px). |
+| Local 16 px overrides (#281 follow-up) | Minor (V2) | Removed. 33 texts inside instances got their component style back, now 16 px in the component. 211 loose texts and 39 mixed-weight texts now use the `type/*` styles. Six long 14 px body lines (the code errors on FR-03 and the truck-count hint on FR-07) are `type/body`, 16 px. |
+| FormFields inside slots should be set to Fill (#281 follow-up) | Minor | Checked: every FormField (84), ChoiceCard (26) and Checkbox (8) on the page already fills its parent. These screens use detached Section frames, not slots, so nothing needed to change. |
+| Local PageNotice parts (#281 follow-up) | Minor (V5) | The four composed PageNotices (positive and info) are now 00 System PageNotice instances. Bold names are kept. |
+| 390 frames did not use the Touch mode | Minor | All 22 frames at 390 set the Component collection to Touch. |
+| No Dark frames | Minor | FR-01 Sign in `307:3317`, FR-04 Choose a path `307:3339` and FR-09 Plan `307:3353` repeat in the Dark theme at x = 5000. |
+
+The rows were re-stacked after the fixes (FR-07's error state had grown into FR-08's row), so the y positions of rows FR-02 to FR-10 changed. Frame ids did not.
+
+**Check after the fixes** (read-only script over the 45 screen frames, 2026-11-11): no text under 14 px, no interactive control under 48 px, no "Preview" text, no disabled control, no text outside its frame, and no payment control. The only 14 px long lines left are PageHeader breadcrumbs inside 00 System instances. FR-09 390 and its Dark copy were checked by screenshot. The other frames were checked by the script only.
 
 **Sources:**
 
@@ -53,14 +73,22 @@ The annotation frame [FR-00](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6
 | FR-08 Landing business | Business name missing | [173:2944](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=173-2944) |
 | FR-10 Add your first landing | Name missing, a gate code in a public field, and a short phone number | [173:3093](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=173-3093) |
 
+**Dark theme, at 390 px (x = 5000)**
+
+| Screen | Frame |
+|---|---|
+| FR-01 Sign in · Dark | [307:3317](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=307-3317) |
+| FR-04 Choose a path · Dark | [307:3339](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=307-3339) |
+| FR-09 Plan · Dark | [307:3353](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=307-3353) |
+
 The error states keep what the person typed. The messages are the validation messages in `packages/contracts`.
 
 The example data is illustrative: Ridgeline Hauling, Sweet Home, OR, Cedar Fork Logging, Hills Creek Unit 4 and sam@example.com. Interface wording is copied from the code. Plan facts are worded from `LANDING_PLANS` and `landingPlanCardFacts` in `packages/contracts`.
 
 ## Rules applied on every frame
 
-- **16 px body text.** Running text that 00 System sets at 14 or 15 px (type/body and type/body-secondary) is set to 16 px by a local override. That override detaches those text layers from their style. When the 00 System follow-up raises type/body, the override can go. Labels, hints and meta text keep their sizes.
-- **44 px touch targets.**
+- **16 px body text, from the styles.** Since #281, `type/body` and `type/body-secondary` are 16 px, so the old local overrides are gone (audit 3). Labels and meta text are 14 px (`type/label`, `type/meta`); nothing on a screen is smaller.
+- **48 px touch targets** (00 System controls are 48 px since #281; the 390 frames use the Touch mode).
   - No small (36 px) buttons are used.
   - Standalone links, such as "Browse public jobs", "Forgot password?", "See plans" and "Use another email", sit in 44 px rows bound to `target/touch`.
 - **Three widths.**
@@ -68,7 +96,7 @@ The example data is illustrative: Ridgeline Hauling, Sweet Home, OR, Cedar Fork 
   - Field pairs sit side by side from 600 px.
   - The plan cards wrap to two columns at 768 px and sit in three columns at 1440 px.
   - The main and aside columns sit side by side only at 1440 px.
-- **Loading buttons.** Buttons in the loading state keep full colour, with the spinner and an "-ing" label (audit F11). 00 System's loading variant still uses 50 % opacity, so the frames override it.
+- **Loading buttons.** Buttons in the loading state keep full colour, with the spinner and an "-ing" label (audit F11). Since #281 the 00 System loading variant has no opacity in Figma; the 50 % dimming in code is a packages/ui follow-up (FG00).
 - **Notices.** Notices carry a tone icon (audit C11).
 
 ## What each screen shows, and what changed from the code
@@ -97,45 +125,38 @@ The example data is illustrative: Ridgeline Hauling, Sweet Home, OR, Cedar Fork 
   - Changed: Update and "Save availability" are 44 px buttons, and setup uses the narrow container.
   - Changed, in the error state: the add-form error appears under the field that caused it. The code puts it under Truck whatever the cause.
 - **FR-08 Landing business.**
-  - Matches the code: the "Seen by haulers" and private panels, "Set up business", the three plan cards and the "Billing isn't active yet" notice.
+  - Matches the code: the "Seen by haulers" and private panels, "Set up business" and the three plan cards.
+  - Changed (audit 3, #108): the status line "Billing is not open. …" sits above the plan cards, and each card is tagged "Not for sale yet". It replaces the code's "Billing isn't active yet" notice.
   - Changed: adds a 4-step indicator (UX 02 B1 shows "● ○ ○ ○").
   - Not shown: the founding-offer line from UX 02 B2. The offer cannot be bought while billing is inactive, and the code does not show it either (see the open questions).
 - **FR-09 Plan, not purchasable yet.**
-  - The state after "Set up business". There is no plan choice, no price selection and no checkout, and the notice says nothing on the page charges you.
+  - The state after "Set up business". There is no plan choice, no price selection and no checkout.
+  - Changed (audit 3, #108): the status line sits above the cards, and each card carries a "Not for sale yet" tag.
   - Changed: step 2 of 4, with one next action, "Add your first landing".
 - **FR-10 Add your first landing.**
   - Matches the code with billing inactive.
   - Changed: one "latitude, longitude" field that takes what map apps paste, instead of two decimal fields (audit C14). A US longitude is negative, and the decimal keypad has no minus key.
-  - Changed: with no plan active, only "See plans" is offered.
+  - Changed (audit 3): the disabled "Recruiting now" checkbox and its "See plans" link are replaced by one Note. While billing is not open, a new landing is saved paused.
   - Changed: step 3 of 4, in setup only.
 
 ## Gaps
 
 **Missing from 00 System, composed on the page from existing components and tokens**
 
-- **PageNotice, now with a tone icon.** `apps/web/components/v2/PageNotice.tsx` is an app component. Audit F5 asks for a Notice in 00 System.
+- **The plan card's "Not for sale yet" tag.** 00 System PlanCard has no not-for-sale state, so the tag is the local component `305:2117` (see the top of this file).
 - **The Clerk card.**
   - Clerk renders this card. It is composed from FormField, Button and the type styles. The six code cells are frames bound to the field and focus tokens.
   - In code, the match needs a Clerk `appearance` mapping and localization.
 - **App markup composed here:** the plan card (`LandingPlanCards`), the count field (`InterestCountField`), the equipment row and the usage list (`LandingAllowanceFigures`).
 - **Plan price.** It uses `type/panel-title` (21 px semibold), because no style matches the CSS, which is text-xl bold.
 
-**00 System defects still open at the time of writing**
+**00 System defects found here, and their state after #281**
 
-On 2026-11-10 another session was revising 00 System while this page was built. That session fixed the FormField select wiring and the four-tab landing navigation. These remain open:
+#281 fixed every 00 System defect this page reported (FormField textarea wiring, StepIndicator numbers and the narrow layout, the private VisibilityPanel title, the Checkbox hint wrap, the Button loading opacity, FormFields in slots, the PageHeader slot placeholder and PageNotice). What stays on this page:
 
-- **FormField textarea.** Its label, hint and value are not bound to the properties. The screens override the text.
-- **StepIndicator.**
-  - The step number is not bound to the Number property, and `Current=1` shows "3" for later steps.
-  - There is no layout below 600 px. The mobile frames detach the outer frame to shrink the other steps to 28 px, and every step stays a linked instance.
-  - The three-step hauler indicator removes the fourth step the same way.
-- **VisibilityPanel, private variant.** Its title is not bound to the Title property.
-- **Checkbox.** The hint does not wrap, because its text column hugs. FR-10 sets it to fill.
-- **Button loading.** It still uses 50 % opacity (F11). The frames override it.
-- **Section and VisibilityPanel content.**
-  - Section gained a Content slot during this work. A FormField instance placed in that slot renders at its default 320 px at 768 px, even though its width says otherwise.
-  - So the screens still detach the outer Section and VisibilityPanel frames. Every nested component stays a linked instance.
-- **PageHeader's new Content slot.** It is hidden in every header on this page. Its default child is a "Slot: page content" placeholder.
+- **StepIndicator.** The screens still use the earlier composed indicator built from Step parts. Swapping it for 00 System StepIndicator (wide) and StepIndicator / Narrow (390) is a follow-up. The done step still shows "✓" (audit G12; the code fix is a packages/ui follow-up).
+- **Section and VisibilityPanel.** The screens keep the detached outer frames from #257. Every nested component is a linked instance.
+- **Primary action at 390.** The form screens keep FormActions under the form; they do not use the BottomActionBar yet.
 
 **Not drawn here**
 

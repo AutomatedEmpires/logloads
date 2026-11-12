@@ -7,6 +7,8 @@
 -- Each attack in the review is asserted as the attacker first, then by its effect. On a database without 29 the first
 -- attack succeeds and the suite stops there. Each of 29's four changes is needed by at least one assertion: with any
 -- one of them put back to its 26 definition, the suite fails.
+-- The landing shares its private details with a reply or after one, never with 'viewed' alone: 31 (31-P1) refuses
+-- that, and this suite also runs on the 31 schema (stage 32).
 -- Run as the role that applied 29 (the table owner, which the fixture uses for service steps and for a write that
 -- stands in for any SECURITY DEFINER path).
 -- =============================================================================
@@ -203,7 +205,7 @@ begin
     '29-P2: ... none of the inquiries at landing B changed, and no message was written');
 
   perform pg_temp.as_jwt('authenticated', 's29_own');
-  perform marketplace.respond_to_interest(e_b3, 'viewed', true);
+  perform marketplace.respond_to_interest(e_b3, 'replied', true, gen_random_uuid(), 'Come by B on Monday; the gate details are shared here.');
   perform pg_temp.as_jwt('authenticated', 's29_dual');
   perform pg_temp.fails(format('select marketplace.respond_to_interest(%L::uuid, %L, false)', e_b3, 'viewed'),
     '42501', 'not one of the landings', '29-P2: ... cannot revoke the private details the owner shared on an inquiry at landing B');
@@ -217,12 +219,12 @@ begin
     '42501', 'not one of the landings', '29-P2 (landing_scope_guard): ... nor decline an inquiry at landing B');
   perform pg_temp.fails(format($q$update marketplace.expressions_of_interest set status = 'viewed' where id = %L$q$, e_b),
     '42501', 'not one of the landings', '29-P2 (landing_scope_guard): ... nor mark one viewed');
-  perform pg_temp.fails(format('update marketplace.expressions_of_interest set responded_at = now() where id = %L', e_b3),
-    '42501', 'not one of the landings', '29-P2 (landing_scope_guard): ... nor stamp a response time on one');
+  perform pg_temp.fails(format($q$update marketplace.expressions_of_interest set responded_at = now() - interval '1 hour' where id = %L$q$, e_b3),
+    '42501', 'not one of the landings', '29-P2 (landing_scope_guard): ... nor change the response time on one');
   perform pg_temp.fails(format('update marketplace.expressions_of_interest set private_details_shared_at = null, private_details_shared_by = null where id = %L', e_b3),
     '42501', 'not one of the landings', '29-P2 (landing_scope_guard): ... nor revoke the owner''s sharing');
   perform pg_temp.as_jwt('harness');
-  perform pg_temp.ok((select status = 'viewed' and private_details_shared_at is not null and private_details_shared_by = u_own
+  perform pg_temp.ok((select status = 'replied' and private_details_shared_at is not null and private_details_shared_by = u_own
                       from marketplace.expressions_of_interest where id = e_b3)
                      and (select status = 'submitted' and responded_at is null and private_details_shared_at is null
                           from marketplace.expressions_of_interest where id = e_b)
@@ -244,15 +246,17 @@ begin
   -- 29-P2: everything in scope, and every hauler-side action, still works
   -- =========================================================================
   perform pg_temp.as_jwt('authenticated', 's29_dual');
-  perform marketplace.respond_to_interest(e_a, 'viewed', true);
+  perform marketplace.respond_to_interest(e_a, 'viewed');
   perform pg_temp.as_jwt('authenticated', 's29_lmgr');
   perform marketplace.respond_to_interest(e_a, 'replied', null, gen_random_uuid(), 'Load at A on Monday');
+  perform pg_temp.as_jwt('authenticated', 's29_dual');
+  perform marketplace.respond_to_interest(e_a, 'viewed', true);
   perform pg_temp.as_jwt('authenticated', 's29_wide');
   perform marketplace.respond_to_interest(e_b2, 'declined');
   perform pg_temp.as_jwt('harness');
   perform pg_temp.ok((select status = 'replied' and responded_at is not null and private_details_shared_by = u_dual
                       from marketplace.expressions_of_interest where id = e_a),
-    '29-P2: at landing A the attacker still views an inquiry and shares A''s details, and the limited manager replies');
+    '29-P2: at landing A the attacker still views an inquiry, the limited manager replies, and the attacker then shares A''s details');
   perform pg_temp.ok((select status = 'declined' and responded_at is not null from marketplace.expressions_of_interest where id = e_b2),
     '29-P2: ... and staff for every landing still decline an inquiry at landing B');
 
@@ -338,8 +342,9 @@ begin
   -- -------------------------------------------------------------------------
   -- Ledger
   -- -------------------------------------------------------------------------
-  perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations) = '06,11,12,16,18,23,26,29',
-    'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29 in order');
+  perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations)
+                       in ('06,11,12,16,18,23,26,29', '06,11,12,16,18,23,26,29,31', '06,11,12,16,18,23,26,29,31,33'),
+    'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29 in order (and 31 and 33 after them, when stages 32 and 34 run this suite again)');
 
   raise notice 'ALL LANDING-SCOPE HARDENING (29-P2, 29-P3) TESTS PASSED.';
 end
