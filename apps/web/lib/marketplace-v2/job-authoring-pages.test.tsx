@@ -340,7 +340,7 @@ describe("job editor: validation per step on the server", () => {
   })
 
   it("returns a refused publish to the step that needs fixing, with the refusal", async () => {
-    const html = await render(NewJobPage, { ...COMPLETE, error: "Fix the highlighted fields before publishing", landingId: OTHER_LANDING_ID })
+    const html = await render(NewJobPage, { ...COMPLETE, error: "fix_fields", landingId: OTHER_LANDING_ID })
 
     expect(html).toContain("Fix the highlighted fields before publishing")
     expect(html).toContain('id="landingId-error"')
@@ -419,7 +419,7 @@ describe("job editor: review and publish", () => {
   })
 
   it("focuses the first statement when the server refused a publish without all three", async () => {
-    const html = await render(JobPreviewPage, { ...COMPLETE, error: PUBLISH_ATTESTATION_REQUIRED })
+    const html = await render(JobPreviewPage, { ...COMPLETE, error: "publish_attestation" })
 
     expect(html).toContain(PUBLISH_ATTESTATION_REQUIRED)
     expect(tagWithId(html, "publish-attestRealJob")).toContain('autofocus=""')
@@ -544,5 +544,33 @@ describe("job postings page", () => {
     for (const tab of ["draft", "paused", "expired", "archived"]) {
       expect(attestationInputs(await render(LandingJobsPage, { tab }))).toHaveLength(0)
     }
+  })
+})
+
+describe("the job editor and job list show fixed copy for ?error=, never its words (#279, C2)", () => {
+  const PHISHING = "Your account is locked. Call 541-555-0100 to keep your listings."
+  const GENERIC = /Something went wrong on our side\. Try again in a moment\./
+
+  it("on a step of the editor", async () => {
+    const html = await render(NewJobPage, { ...COMPLETE, error: PHISHING, landingId: OTHER_LANDING_ID })
+
+    expect(html).not.toContain("541-555-0100")
+    expect(html).toMatch(GENERIC)
+  })
+
+  it("on the review, where only the attestation code focuses the statements", async () => {
+    const html = await render(JobPreviewPage, { ...COMPLETE, error: PUBLISH_ATTESTATION_REQUIRED })
+
+    expect(html).not.toContain(PUBLISH_ATTESTATION_REQUIRED)
+    expect(html).toMatch(GENERIC)
+    expect(tagWithId(html, "publish-attestRealJob")).not.toContain('autofocus=""')
+  })
+
+  it("on the job list", async () => {
+    const injected = await render(LandingJobsPage, { error: PHISHING })
+
+    expect(injected).not.toContain("541-555-0100")
+    expect(injected).toMatch(GENERIC)
+    expect(await render(LandingJobsPage, { error: "not_accepting" })).toContain("Only a job that is accepting interest can be confirmed as still available.")
   })
 })

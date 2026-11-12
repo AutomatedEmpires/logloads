@@ -145,9 +145,9 @@ describe("/v2/hauler/trucks", () => {
   })
 
   it("keeps what was posted when a save was refused or not available", async () => {
-    const html = await render({ count: "3", equipmentCode: "log_truck", form: "availability", fromDate: "2026-12-01", message: "You have 2 Log trucks listed, so at most 2 can be available.", outcome: "refused", state: "from" })
+    const html = await render({ count: "3", equipmentCode: "log_truck", error: "fleet_over_listed", form: "availability", fromDate: "2026-12-01", outcome: "refused", state: "from" })
 
-    expect(html).toMatch(/role="alert"[^>]*>[^<]*You have 2 Log trucks listed/)
+    expect(html).toMatch(/role="alert"[^>]*>You can&#x27;t report more trucks available than you list\./)
     expect(html).toContain('value="2026-12-01"')
   })
 })
@@ -167,12 +167,58 @@ describe("fleet actions", () => {
   it("validate on the server before the store, and pass the store's refusal through", async () => {
     let url = await redirected(reportHaulerAvailabilityAction(post({ count: "", equipmentCode: "log_truck", fromDate: "", state: "from" })))
     expect(url.searchParams.get("outcome")).toBe("invalid")
+    expect(url.searchParams.get("error")).toBe("fleet_available_count")
     expect(mocks.reportHaulerAvailability).not.toHaveBeenCalled()
 
     mocks.reportHaulerAvailability.mockRejectedValue(new MarketplaceRefusalError("You have 2 Log trucks listed, so at most 2 can be available."))
     url = await redirected(reportHaulerAvailabilityAction(post({ count: "3", equipmentCode: "log_truck", fromDate: "", state: "now" })))
     expect(url.searchParams.get("outcome")).toBe("refused")
-    expect(url.searchParams.get("message")).toContain("at most 2")
+    expect(url.searchParams.get("error")).toBe("fleet_over_listed")
+    expect(url.searchParams.has("message")).toBe(false)
+    expect(url.search).not.toContain("Log")
     expect(mocks.reportHaulerAvailability).toHaveBeenCalledWith(viewer, { count: 3, equipmentCode: "log_truck", fromDate: null, state: "now" })
+  })
+})
+
+describe("My trucks answers with codes, never words (#279, C2)", () => {
+  const PHISHING = "Your account is locked. Call 541-555-0100 to keep your listings."
+
+  it("never shows ?message=, or any words in the query", async () => {
+    for (const outcome of ["saved", "refused", "invalid", "error"]) {
+      const html = await render({ error: PHISHING, form: "add", message: PHISHING, notice: PHISHING, outcome })
+      expect(html, outcome).not.toContain("541-555-0100")
+    }
+  })
+
+  it("says what was saved from the notice code alone", async () => {
+    expect(textOf(await render({ form: "add", notice: "added", outcome: "saved" }))).toContain("Added to your trucks.")
+    expect(textOf(await render({ confirmed: "3", form: "confirm", notice: "confirmed", outcome: "saved" }))).toContain("Confirmed 3 truck types as shown, dated today.")
+    expect(textOf(await render({ confirmed: "3 trucks; call 555", form: "confirm", notice: "confirmed", outcome: "saved" }))).not.toContain("Confirmed")
+  })
+
+  it("names a failed save's reference", async () => {
+    expect(textOf(await render({ form: "add", outcome: "error", ref: "0123456789ab" }))).toContain("We couldn't save that. Try again in a moment; what you entered is still in the form. Reference: 0123456789ab.")
+  })
+
+  it("answers a saved form with its notice code", async () => {
+    mocks.addHaulerEquipment.mockResolvedValue(undefined)
+    const url = await redirected(addHaulerEquipmentAction(post({ count: "2", otherTrailer: "", trailer: "pole_trailer", truckCode: "log_truck" })))
+
+    expect(url.searchParams.get("outcome")).toBe("saved")
+    expect(url.searchParams.get("notice")).toBe("added")
+    expect(url.searchParams.has("error")).toBe(false)
+  })
+
+  it("logs a store fault and answers with its reference only", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    mocks.addHaulerEquipment.mockRejectedValue(new TypeError("Cannot read properties of undefined (reading 'maya@northpine.example')"))
+    const url = await redirected(addHaulerEquipmentAction(post({ count: "2", otherTrailer: "", trailer: "pole_trailer", truckCode: "log_truck" })))
+
+    expect(url.searchParams.get("outcome")).toBe("error")
+    expect(url.searchParams.get("error")).toBe("unexpected")
+    expect(url.searchParams.get("ref")).toMatch(/^[0-9a-f]{12}$/)
+    expect(url.search).not.toContain("maya")
+    expect(logged).toHaveBeenCalledOnce()
+    logged.mockRestore()
   })
 })

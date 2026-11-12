@@ -389,3 +389,26 @@ describe("the interest sheet (UX-08, #131)", () => {
     expect(textOf(await renderJob({ sent: "1" }))).not.toContain("Update availability?")
   })
 })
+
+describe("a link cannot write into the page (#279, C2)", () => {
+  const PHISHING = "Your account is locked. Call 541-555-0100 to keep your listings."
+
+  it.each([
+    ["free text", PHISHING],
+    ["markup", `<img src=x onerror="alert(1)">`],
+    ["an unknown code", "account_locked"]
+  ])("shows the generic copy for %s in ?error=, and none of its text", async (_label, value) => {
+    const html = await renderJob({ error: value })
+
+    expect(html).toMatch(/role="alert"[^>]*>Something went wrong on our side\. Try again in a moment\.</)
+    expect(html).not.toContain("541-555-0100")
+    expect(html).not.toContain("onerror")
+    expect(html).not.toContain("account_locked")
+  })
+
+  it("shows a known code's fixed copy, and the reference it was logged under", async () => {
+    expect(await renderJob({ error: "job_closed" })).toMatch(/role="alert"[^>]*>This job is no longer accepting interest\. Nothing was sent\.</)
+    expect(textOf(await renderJob({ error: "unexpected", ref: "0123456789ab" }))).toContain("Try again in a moment. Reference: 0123456789ab.")
+    expect(textOf(await renderJob({ error: "unexpected", ref: PHISHING }))).not.toContain("Reference")
+  })
+})
