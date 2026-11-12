@@ -125,7 +125,7 @@ describe.skipIf(!SEEDED)("normalized adapter on the seeded store", () => {
   // -------------------------------------------------------------------------------------------------------------
   it("was deployed and seeded by the owner tool: the full ledger, and the seed marker", async () => {
     const [ledger] = await admin.unsafe("select string_agg(version, ',' order by applied_at, version) as versions from marketplace.schema_migrations")
-    expect(ledger?.versions).toBe("06,11,12,16,18,23,26,29,31,33")
+    expect(ledger?.versions).toBe("06,11,12,16,18,23,26,29,31,33,35")
 
     const [seed] = await admin.unsafe("select count(*)::int as n from marketplace.audit_events where action = 'seed.pilot_demo_loaded'")
     expect(seed?.n).toBe(1)

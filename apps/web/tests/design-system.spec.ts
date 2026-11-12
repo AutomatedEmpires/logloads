@@ -572,8 +572,12 @@ test.describe("the express-interest form (New River Hauling)", () => {
     await expect(page.getByRole("link", { name: "See similar jobs" })).toHaveAttribute("href", "#similar")
 
     // A retry of the same request (an answer lost on the way back) is the same inquiry: the action answers as before.
+    // The replay sends the browser's own Cookie header (#368). Under `next start` the session cookie is Secure, and an
+    // API request sends a Secure cookie only to https or localhost, never to http://127.0.0.1 as Chromium does, so a
+    // replay without it was signed out and answered with a redirect to sign-in.
     const [post] = posts
-    const keep = ["accept", "content-type", "next-action", "next-router-state-tree", "origin"]
+    expect(post!.headers["cookie"] ?? "", "the browser's request carries its session").toContain("ll_session=")
+    const keep = ["accept", "content-type", "cookie", "next-action", "next-router-state-tree", "origin"]
     const retry = await page.request.post(new URL(jobPath, baseURL).toString(), {
       data: post!.body ?? undefined,
       headers: Object.fromEntries(Object.entries(post!.headers).filter(([name]) => keep.includes(name.toLowerCase()))),

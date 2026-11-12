@@ -1,10 +1,16 @@
 # FG05 Marketing: public pages in Figma
 
-**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#298), then for design audit 3 on 2026-11-11 (#334). Not approved. Key screens still need the founder's one-line approval (AE-Control `policy/designops.md`). The lead audits first.
+**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#298), then for design audit 3 on 2026-11-11 (#334). On 2026-11-12, #352 replaced the plan cards with 00 System PlanCard. Not approved. Key screens still need the founder's one-line approval (AE-Control `policy/designops.md`). The lead audits first.
 **Figma page:** [05 Marketing](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=59-2025) in the LogLoads file (jackson.cole's team).
-**Source:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md` §3.1 and §3.2, the lead ruling on [#108](https://github.com/AutomatedEmpires/logloads/issues/108) (2026-11-11, option B, restricted), and the lead's #334 decision that a share card shows a date. No UI code changed. No new text styles or variables. Components and variables come from page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2), plus one local component, `Plan tag / Not for sale yet` (`305:2117`), in the "Composed parts (gaps)" frame.
+**Source:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md` §3.1 and §3.2, the lead ruling on [#108](https://github.com/AutomatedEmpires/logloads/issues/108) (2026-11-11, option B, restricted), and the lead's #334 decision that a share card shows a date. No UI code changed. No new text styles or variables. Components and variables come from page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2). The local `Plan tag / Not for sale yet` (`305:2117`) was deleted in #352.
 
 The empty board stays honest. Example rows are labeled "Example. Not a live job." There are no fake live counts, testimonials, or review stars.
+
+## LL-D12 (#352)
+
+- **Plan cards.** The 12 Basic, Pro and Regional cards on Pricing (1440, 768, 390 and the 390 Dark copy) are 00 System PlanCard instances in the new not-for-sale state: the "Not for sale yet" tag with its info icon, the positioning line, the price in `type/pay` with its basis, the three facts with check icons and "Unlimited job posts, inquiries and replies." There is still no plan choice or payment control. The #108 strings are unchanged. The local tag `305:2117` had no instances left, so it is deleted.
+- **Changes that reach this page from 00 System.** The example JobResultRow (narrow) rows follow the decision order promoted from page 02, and their text is unchanged (Oak Landing, Near Sweet Home, OR, Starts Nov 10, 2026, About 22 days; the verification mark stays hidden). EmptyState's body now fills its card.
+- **Check** (read-only script over the four Pricing frames and the two Dark frames, 2026-11-12): no text under 14 px, no button under 48 px, no "Preview" text, no disabled control, nothing outside its frame. Pricing 1440 was checked by screenshot.
 
 ## Design audit 3 (#334)
 
@@ -96,11 +102,10 @@ These are drawn on this page because 00 System does not have them. They are not 
 | Public footer | The same buttons, `type/row-title`, and 16 px body. |
 | Marketing hero | `type/company-name` at 40 px (390) or 44 px (768 and 1440), 16 px body, `Button`, and `JobResultRow` (`20:1113`) as the picture. |
 | Story card | A surface card with `type/row-title` and 16 px body. Freshness, pay, and equipment examples use `AvailabilityStatus`, `PayFigure`, and `EquipmentRequirement` inside the card. |
-| Plan card | The same surface card, with the local `Plan tag / Not for sale yet` (`305:2117`) beside the name. 00 System PlanCard (#281) has a "Choose …" button in its available state and no not-for-sale state, so it does not fit the #108 ruling yet. `Marketing / Plan card (gap)` (`61:2359`) is not instanced. |
 | Shared job card | `PayFigure`, `EquipmentRequirement`, and `AvailabilityStatus` inside one card. |
 | Hero headline at 40 px | Plex Sans Condensed Bold 40 at 390 has no text style (`type/company-name` is 44). |
 
-Success and offline now use the 00 System Notice and Offline components (audit 3). `JobResultRow` uses the 00 System field-layer sizes from #281. This page did not edit 00 System.
+Success and offline now use the 00 System Notice and Offline components (audit 3). `JobResultRow` uses the 00 System field-layer sizes from #281. The plan cards are 00 System PlanCard (State=not for sale) since #352. `Marketing / Plan card (gap)` (`61:2359`) and the other gap components in "Composed parts (gaps)" have no instances. This page did not edit 00 System; #352 did.
 
 No library is subscribed to the file. Code Connect has no mappings for these screens.
 

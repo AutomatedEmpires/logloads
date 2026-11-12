@@ -587,7 +587,7 @@ describe("subscription activation and commercial scope", () => {
 
     const newAssignmentId = "69696969-6969-4969-8969-696969696961"
     addBlankAssignment(state, newAssignmentId)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -598,7 +598,13 @@ describe("subscription activation and commercial scope", () => {
         },
         AUTHORIZED_AT
       )
-    ).toThrow(/billing agreement is not active/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
+
 
     activateOrganizationSubscription(
       state,
@@ -622,7 +628,7 @@ describe("subscription activation and commercial scope", () => {
       },
       "2026-08-03T16:01:00.000Z"
     )
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -633,7 +639,13 @@ describe("subscription activation and commercial scope", () => {
         },
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
+
   })
 
   it("rejects non-USD legacy acceptance without blocking subscription work", () => {
@@ -679,13 +691,13 @@ describe("subscription activation and commercial scope", () => {
 
     paidAndOperating(state)
 
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         input,
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({ billingModel: "percentage_v1", platformFeeBps: null })
   })
 
   it("keeps a missing legacy frozen-pay snapshot as an invariant failure", () => {
@@ -1015,7 +1027,7 @@ describe("subscription activation and commercial scope", () => {
     const assignmentId = "79797979-7979-4979-8979-797979797971"
 
     addBlankAssignment(state, assignmentId)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -1026,7 +1038,12 @@ describe("subscription activation and commercial scope", () => {
         },
         "2026-08-04T16:00:00.000Z"
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
   })
 
   it("persists the exact accepted non-renewal boundary and makes exact retries idempotent", () => {
@@ -1466,7 +1483,7 @@ describe("subscription activation and commercial scope", () => {
 
     const assignmentId = "95959595-9595-4595-8595-959595959501"
     addBlankAssignment(state, assignmentId)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -1477,7 +1494,12 @@ describe("subscription activation and commercial scope", () => {
         },
         acceptedAt
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
   })
 })
 
@@ -1556,7 +1578,7 @@ describe("dunning and Pilot conversion boundaries", () => {
 
     const assignmentId = "71717171-7171-4171-8171-717171717171"
     addBlankAssignment(state, assignmentId)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         state,
         {
@@ -1567,7 +1589,12 @@ describe("dunning and Pilot conversion boundaries", () => {
         },
         "2027-08-03T16:00:01.000Z"
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toMatchObject({
+      billingModel: "percentage_v1",
+      planCode: null,
+      platformFeeBps: null,
+      subscriptionId: null
+    })
   })
 
   it("rejects a late automatic renewal boundary and does not roll pending or non-renewing terms", () => {
@@ -1931,7 +1958,7 @@ describe("dunning and Pilot conversion boundaries", () => {
       ).toISOString()
       addBlankAssignment(fixture.state, networkAssignmentId)
       addBlankAssignment(fixture.state, privateAssignmentId)
-      expect(() =>
+      expect(
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -1942,8 +1969,13 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           withinGrace
         )
-      ).toThrow(/Historical subscriptions no longer authorize new work/)
-      expect(() =>
+      ).toMatchObject({
+        billingModel: "percentage_v1",
+        planCode: null,
+        platformFeeBps: null,
+        subscriptionId: null
+      })
+      expect(
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -1954,7 +1986,12 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           withinGrace
         )
-      ).toThrow(/Historical subscriptions no longer authorize new work/)
+      ).toMatchObject({
+        billingModel: "percentage_v1",
+        planCode: null,
+        platformFeeBps: null,
+        subscriptionId: null
+      })
 
       planSubscriptionBillingRun(fixture.state, fixture.graceEndsAt)
       const blockedNetworkId =
@@ -1967,7 +2004,7 @@ describe("dunning and Pilot conversion boundaries", () => {
           : "93939393-9393-4393-8393-939393939308"
       addBlankAssignment(fixture.state, blockedNetworkId)
       addBlankAssignment(fixture.state, blockedPrivateId)
-      expect(() =>
+      expect(
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -1978,8 +2015,13 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           fixture.graceEndsAt
         )
-      ).toThrow(/Historical subscriptions no longer authorize new work/)
-      expect(() =>
+      ).toMatchObject({
+        billingModel: "percentage_v1",
+        planCode: null,
+        platformFeeBps: null,
+        subscriptionId: null
+      })
+      expect(
         resolveAssignmentBillingCommitment(
           fixture.state,
           {
@@ -1990,7 +2032,12 @@ describe("dunning and Pilot conversion boundaries", () => {
           },
           fixture.graceEndsAt
         )
-      ).toThrow(/Historical subscriptions no longer authorize new work/)
+      ).toMatchObject({
+        billingModel: "percentage_v1",
+        planCode: null,
+        platformFeeBps: null,
+        subscriptionId: null
+      })
     }
   })
 
@@ -4602,7 +4649,7 @@ describe("legacy cockpit approval without a percentage agreement", () => {
     ).toBe(true)
   })
 
-  it("keeps legacy and subscription agreements on their old behavior", () => {
+  it("gives legacy, inactive and historical agreements the no-fee commitment", () => {
     const legacyState = freshState()
     const legacyAccount = legacyState.organizationBillingAccounts.find(
       (candidate) => candidate.organizationId === HOST
@@ -4643,30 +4690,26 @@ describe("legacy cockpit approval without a percentage agreement", () => {
       platformFeeBps: PLATFORM_FEE_BPS,
       platformFeeCurrency: LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY
     })
-    // After it, the legacy account is still refused, not turned into no-fee.
-    expect(() =>
+    // After it, no fee-bearing agreement applies: no-fee, resolved purely.
+    expect(
       resolveAssignmentBillingCommitment(
         legacyState,
         legacyInput,
         PERCENTAGE_V1_CUTOVER_AT
       )
-    ).toThrow(DomainRefusalError)
-    expect(() =>
-      resolveAssignmentBillingCommitment(
-        legacyState,
-        legacyInput,
-        PERCENTAGE_V1_CUTOVER_AT
-      )
-    ).toThrow(/Legacy percentage terms cover only work committed before/)
+    ).toEqual({
+      ...noFeeCommitment("logloads_network"),
+      committedAt: PERCENTAGE_V1_CUTOVER_AT
+    })
     expect(legacyState).toEqual(legacyBefore)
 
-    // A configured subscription that never went live is still not active.
+    // A configured subscription that never went live commits no-fee work.
     const darkState = freshState()
     configured(darkState)
     const darkAssignmentId = "35935935-9359-4359-8359-359359359312"
     addBlankAssignment(darkState, darkAssignmentId)
     const darkBefore = structuredClone(darkState)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         darkState,
         {
@@ -4677,16 +4720,16 @@ describe("legacy cockpit approval without a percentage agreement", () => {
         },
         AUTHORIZED_AT
       )
-    ).toThrow(/billing agreement is not active/)
+    ).toEqual({ ...noFeeCommitment("logloads_network"), committedAt: AUTHORIZED_AT })
     expect(darkState).toEqual(darkBefore)
 
-    // A historical subscription still authorizes no new work.
+    // A historical subscription commits no-fee work, never its old terms.
     const subscriptionState = freshState()
     paidAndOperating(subscriptionState)
     const subscriptionAssignmentId = "35935935-9359-4359-8359-359359359313"
     addBlankAssignment(subscriptionState, subscriptionAssignmentId)
     const subscriptionBefore = structuredClone(subscriptionState)
-    expect(() =>
+    expect(
       resolveAssignmentBillingCommitment(
         subscriptionState,
         {
@@ -4697,8 +4740,89 @@ describe("legacy cockpit approval without a percentage agreement", () => {
         },
         NO_FEE_COMMITTED_AT
       )
-    ).toThrow(/Historical subscriptions no longer authorize new work/)
+    ).toEqual(noFeeCommitment("logloads_network"))
     expect(subscriptionState).toEqual(subscriptionBefore)
+  })
+
+  it("still refuses corrupted legacy and subscription records", () => {
+    const legacyState = freshState()
+    const account = legacyState.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!account) throw new Error("Seed billing account missing")
+    account.activationState = "legacy"
+    account.billingModel = "percentage_v1"
+    account.effectiveAt = "2026-07-30T00:00:00.000Z"
+    const assignmentId = "35935935-9359-4359-8359-359359359321"
+    addBlankAssignment(legacyState, assignmentId)
+    const input = {
+      acceptanceSource: "host_approval" as const,
+      assignmentId,
+      haulerOrganizationId: UNRELATED_HAULER,
+      hostOrganizationId: HOST
+    }
+    const before = structuredClone(legacyState)
+    expect(() =>
+      resolveAssignmentBillingCommitment(
+        legacyState,
+        input,
+        PERCENTAGE_V1_CUTOVER_AT
+      )
+    ).toThrow(/invalid legacy billing account/)
+    expect(legacyState).toEqual(before)
+
+    const subscriptionState = freshState()
+    paidAndOperating(subscriptionState)
+    const subscriptionAccount = subscriptionState.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!subscriptionAccount) throw new Error("Seed billing account missing")
+    subscriptionAccount.subscriptionId = null
+    addBlankAssignment(subscriptionState, assignmentId)
+    const subscriptionBefore = structuredClone(subscriptionState)
+    expect(() =>
+      resolveAssignmentBillingCommitment(
+        subscriptionState,
+        input,
+        NO_FEE_COMMITTED_AT
+      )
+    ).toThrow(/no active subscription agreement/)
+    expect(subscriptionState).toEqual(subscriptionBefore)
+  })
+
+  it("approves, accrues nothing and stays idempotent for a legacy host after the cutover", () => {
+    const services = hostServices("seeded agreement")
+    const account = services.state.organizationBillingAccounts.find(
+      (candidate) => candidate.organizationId === HOST
+    )
+    if (!account) throw new Error("Seed billing account missing")
+    account.activationState = "legacy"
+    account.billingModel = "legacy_percentage"
+    account.effectiveAt = "2026-07-30T00:00:00.000Z"
+    account.percentageTermsSnapshot = null
+    const requested = requestHaul(services)
+    const before = commercialRecords(services.state)
+
+    const { assignment, trip } = approve(services, requested.id)
+
+    expect(assignment).toMatchObject({
+      billingModel: "percentage_v1",
+      billingPlanCodeAtCommitment: null,
+      billingSubscriptionIdAtCommitment: null,
+      status: "accepted"
+    })
+    expect(assignment.termsSnapshot.hostFee).toEqual(NO_FEE_HOST_FEE)
+    expect(commercialRecords(services.state)).toEqual(before)
+
+    const settled = completeHaul(services, trip.id)
+    expect(settled.platformFeeOutcome).toBe("retired")
+    expect(commercialRecords(services.state)).toEqual(before)
+
+    const afterCompletion = structuredClone(services.state)
+    expect(() => approve(services, requested.id)).toThrow(
+      /Only a requested or offered assignment can be approved/
+    )
+    expect(services.state).toEqual(afterCompletion)
   })
 
   it("stays idempotent when the approval is repeated", () => {

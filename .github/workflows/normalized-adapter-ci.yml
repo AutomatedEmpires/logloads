@@ -1,7 +1,7 @@
 name: Normalized V2 Adapter Contract CI
 
 # Contract tests of the normalized MarketplaceV2Port adapter (apps/web/lib/marketplace-v2/normalized-*.ts, #139)
-# against the real architecture/normalized-v2 schema. The migration chain 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 -> 29 -> 31 -> 33
+# against the real architecture/normalized-v2 schema. The migration chain 01 -> 02 -> 03 -> 06 -> 11 -> 12 -> 16 -> 18 -> 23 -> 26 -> 29 -> 31 -> 33 -> 35
 # is applied to a disposable PostgreSQL 17 + PostGIS service container created inside the job, behind the same
 # fail-closed guard as the Normalized V2 Database CI (tools/normalized-v2-ci/guard.sh). Then the adapter runs over a
 # restricted NOINHERIT login role, exactly as a deployment would connect. No hosted database, Supabase project,
@@ -160,6 +160,10 @@ jobs:
       - name: "Stage 33: 33_v2_port_v3_functions.sql"
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 33
+
+      - name: "Stage 35: 35_v2_day14_direct_reads_unsubscribe_keys.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 35
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -333,7 +337,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
-          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33)" "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35)" "$RUNNER_TEMP/schema-again.log"
           grep -q "keep logloads_marketplace_adapter and its password" "$RUNNER_TEMP/schema-again.log"
 
       - name: "Owner tool: seed dry run, then --apply"
@@ -486,7 +490,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
-          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33)" "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35)" "$RUNNER_TEMP/schema-again.log"
 
       # The staging order (docs/INTEGRATIONS.md §15.1): the normalized store first, so PostGIS lives in `extensions`,
       # then the pilot migrations on the same database, each in one transaction as the migration role, and their own

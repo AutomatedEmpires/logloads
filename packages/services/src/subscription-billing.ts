@@ -1279,14 +1279,14 @@ export function resolveAssignmentBillingCommitment(
   }
 
   if (account.activationState === "legacy") {
-    assertDomainCondition(
-      Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
-      "Legacy percentage terms cover only work committed before the August 1, 2026 cutover. The completed-load percentage fee is retired and cannot be accepted for new work."
-    )
     assertCondition(
       account.billingModel === "legacy_percentage",
       `Organization ${input.hostOrganizationId} has an invalid legacy billing account`
     )
+    if (Date.parse(at) >= Date.parse(PERCENTAGE_V1_CUTOVER_AT)) {
+      // The legacy fee is retired: no current fee-bearing agreement applies.
+      return noFeeAssignmentCommitment(capacitySource, at)
+    }
     const frozenDriverPay = assertFound(
       readFrozenDriverPay(assignment.termsSnapshot) ?? undefined,
       "Legacy percentage billing requires frozen driver pay and currency at acceptance"
@@ -1313,17 +1313,13 @@ export function resolveAssignmentBillingCommitment(
     }
   }
 
-  assertCondition(
-    account.activationState !== "configured_dark",
-    `Organization ${input.hostOrganizationId}'s billing agreement is not active`
-  )
+  if (account.activationState === "configured_dark") {
+    // Configured but never activated: no current fee-bearing agreement applies.
+    return noFeeAssignmentCommitment(capacitySource, at)
+  }
   assertCondition(
     account.activationState === "active" || account.activationState === "suspended",
     `Organization ${input.hostOrganizationId}'s subscription billing is not configured`
-  )
-  assertDomainCondition(
-    Date.parse(at) < Date.parse(PERCENTAGE_V1_CUTOVER_AT),
-    "Historical subscriptions no longer authorize new work. The completed-load percentage fee is retired and cannot be accepted instead."
   )
   const subscriptionId = assertFound(
     account.subscriptionId ?? undefined,
@@ -1339,6 +1335,10 @@ export function resolveAssignmentBillingCommitment(
     subscription.billingModel === account.billingModel,
     `Subscription ${subscription.id} does not match its billing account model`
   )
+  if (Date.parse(at) >= Date.parse(PERCENTAGE_V1_CUTOVER_AT)) {
+    // A historical subscription no longer applies once the fee model retired.
+    return noFeeAssignmentCommitment(capacitySource, at)
+  }
   assertCondition(
     Boolean(subscription.operationalActivatedAt),
     `Subscription ${subscription.id} has not reached explicit operational activation`
