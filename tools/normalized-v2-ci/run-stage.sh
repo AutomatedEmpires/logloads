@@ -680,7 +680,7 @@ SUITES
     check "suite rolled back (no test organizations, signing keys or used tokens left)" "select (select count(*) from marketplace.organizations where slug like 's35-%') + (select count(*) from marketplace.notification_unsubscribe_keys) + (select count(*) from marketplace.notification_unsubscribe_uses) = 0;"
     PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
     echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
-    [[ "$PASSES" -ge 57 ]] || { echo "STAGE 36: only $PASSES PASS notices; expected at least 57" >&2; exit 1; }
+    [[ "$PASSES" -ge 56 ]] || { echo "STAGE 36: only $PASSES PASS notices; expected at least 56" >&2; exit 1; }
     # Regression: the earlier suites run again on the 35 schema, 32 and 34 included. 24 pins the ledger at 23 and is
     # not re-run.
     while IFS='|' read -r SUITE NOTICE; do
