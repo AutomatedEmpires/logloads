@@ -85,7 +85,7 @@
   font-weight: var(--ll-weight-semibold);
 }
 
-/* One reason: a native radio in a 44 px label row. */
+/* One reason: a native radio in a 48 px label row. */
 .reason {
   display: flex;
   align-items: center;
@@ -110,6 +110,16 @@
 }
 
 .submit { justify-self: start; }
+
+/* Below bp-lg the bottom tabs cover the last ~58 px of the viewport. Scroll-into-view keeps a report
+   control above that bar, and the tools keep enough room that the last control can rest above it. */
+@container ll-app (max-width: 959px) {
+  .toolBody :where(button, input, textarea, select, label) {
+    scroll-margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tools { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+}
 
 .ack {
   margin: 0;
