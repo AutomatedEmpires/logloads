@@ -165,6 +165,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 35
 
+      - name: "Stage 38: 38_v2_basins.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 38
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -193,6 +197,7 @@ jobs:
           # The files share one database (each with its own issuer, login role and slugs), so they run one at a time.
           pnpm --filter @logloads/web exec vitest run lib/marketplace-v2/normalized-adapter.contract.test.ts \
             lib/marketplace-v2/normalized-hauler.contract.test.ts \
+            lib/marketplace-v2/basins/basins.contract.test.ts \
             --no-file-parallelism --testTimeout=60000 --reporter=verbose 2>&1 | tee "$RUNNER_TEMP/normalized-v2-ci/logs/adapter-contract.log"
           {
             echo "### Normalized adapter contract tests"
@@ -337,7 +342,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
-          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35)" "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38)" "$RUNNER_TEMP/schema-again.log"
           grep -q "keep logloads_marketplace_adapter and its password" "$RUNNER_TEMP/schema-again.log"
 
       - name: "Owner tool: seed dry run, then --apply"
@@ -490,7 +495,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
-          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35)" "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38)" "$RUNNER_TEMP/schema-again.log"
 
       # The staging order (docs/INTEGRATIONS.md §15.1): the normalized store first, so PostGIS lives in `extensions`,
       # then the pilot migrations on the same database, each in one transaction as the migration role, and their own

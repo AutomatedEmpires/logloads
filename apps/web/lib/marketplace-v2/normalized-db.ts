@@ -77,7 +77,7 @@ interface FunctionSpec {
 
 /**
  * The closed list of database functions the adapter may call. Names, argument names and argument types match the SQL
- * exactly (architecture/normalized-v2, stages 01-35; 35 adds no callable function).
+ * exactly (architecture/normalized-v2, stages 01-38; 38 adds the basin staff calls and the public area notice).
  *
  * Every function here is SECURITY DEFINER with a pinned `search_path`, is granted EXECUTE to `authenticated` (and to
  * `anon` only where `anonymous` is true) and never to `service_role`; `normalized-adapter.contract.test.ts` proves
@@ -383,7 +383,33 @@ export const MARKETPLACE_FUNCTIONS = {
   // Role: moderator (33, #255). `p_status` is reviewing, actioned or dismissed; actioned and dismissed need a note of
   // 5 to 1000 characters in `p_reason`, which becomes the report's resolution note. A resolved report keeps its
   // outcome (23514); an unknown report is "Report not found" (P0002). Audited.
-  admin_resolve_report: { anonymous: false, args: { p_reason: "text", p_report_id: "uuid", p_status: "text" }, returns: "void" }
+  admin_resolve_report: { anonymous: false, args: { p_reason: "text", p_report_id: "uuid", p_status: "text" }, returns: "void" },
+  // Anonymous and authenticated (38, #324). Null, or exactly "not in your area yet". An unknown job id is null, the
+  // same as a launched one. Stable, so anon's only volatile function stays unsubscribe_with_token.
+  public_area_notice: {
+    anonymous: true,
+    args: { p_county: "text", p_job_id: "uuid", p_lat: "numeric", p_lng: "numeric", p_state_code: "text" },
+    returns: "value"
+  },
+  // Authenticated (38, #324). Any active platform admin. The basin starts closed. Reason 5-500, audited
+  // (basin.created). A duplicate name in the state is 22023. Returns the basin id.
+  create_basin: {
+    anonymous: false,
+    args: { p_boundary_wkt: "text", p_counties: "text[]", p_name: "text", p_reason: "text", p_state_code: "text" },
+    returns: "value"
+  },
+  // Authenticated (38, #324). Any active platform admin. closed, pilot or open. The same status is a no-op and is
+  // not audited again. Unknown basin is P0002. Audited (basin.status_set).
+  set_basin_status: {
+    anonymous: false,
+    args: { p_basin_id: "uuid", p_reason: "text", p_status: "text" },
+    returns: "void"
+  },
+  // Authenticated (38, #324). Any active platform admin. Anyone else is 42501. No audit: it only reads.
+  list_basins: { anonymous: false, args: {}, returns: "rows" },
+  // Authenticated (38, #324). Any active platform admin. Verified landings, active jobs, and haulers whose
+  // availability was confirmed in the last 14 days. Unknown basin is P0002.
+  basin_readiness: { anonymous: false, args: { p_basin_id: "uuid" }, returns: "rows" }
 } as const satisfies Record<string, FunctionSpec>
 
 export type MarketplaceFunctionName = keyof typeof MARKETPLACE_FUNCTIONS
