@@ -33,35 +33,40 @@ LogLoads publishes hauling opportunities and lets the parties talk. It does not 
 
 The November 2026 market-research note is not on this branch. This deck states no market size, no audience count, and no "haulers near you" number unless the screen is showing a count the system actually measured.
 
-## Pricing wording: decision #108, options A and B
+## Pricing wording: decision #108, option B restricted
 
-Founder decision [#108](https://github.com/AutomatedEmpires/logloads/issues/108) is still open. Wherever a price, plan name, or boost fee would appear, both wordings are side by side. Pick one. Do not mix them on one screen.
+Lead ruling on [#108](https://github.com/AutomatedEmpires/logloads/issues/108#issuecomment-6785833334), 2026-11-11. Option A is withdrawn. Public pages use option B with the restrictions below. This is not a checkout, and it does not change `/terms`.
 
-**Option A — interim, no prices.** The sentence proposed on #108, unchanged:
+Say "$499 per month, plus applicable taxes", never "$499/mo". Prices are read from `LANDING_PLANS` through `landingPlanCards()`. Do not type a dollar amount into a page. In the same card or band as the not-for-sale statement, also say "Prices and plan features can change before plans go on sale." and "Plan features are planned and are not all available yet."
 
-> Haulers and fleets are free. Paid landing memberships are planned and not yet available; LogLoads charges no per-load or percentage fees.
+Where a public page used to say "free forever", say "Free for haulers and fleets. Finding work, listing your trucks and messaging landings will not cost you anything." The hauler and fleet cards on `/pricing` still say "Free".
 
-No dollar amounts. No plan cards. No boost checkout. No founding discount. The Terms notice about the closed pilot stays a legal decision, not a line in this deck.
+The `/pricing` body keeps "LogLoads charges no per-load, percentage or transaction fees, and takes nothing from driver pay." That is the #108 ruling. It is a present-tense claim, and LEG-2 (whether any account was charged under the retired percentage program) is still open, so it is flagged rather than treated as cleared for every historical account. New percentage fees are retired (#319) and are not described as current.
 
-**Option B — the adopted commercial language, still not a live checkout.** Prices are the locked November 1, 2026 blueprint. Say "$499 per month", never "$499/mo". Memberships are not purchasable until a separate billing activation. Buttons that would take money stay disabled, with the status line under the table.
+Restrictions on every public page:
 
-| Surface | Option A | Option B |
-|---|---|---|
-| Home, price band | Haulers and fleets are free. Paid landing memberships are planned and not yet available; LogLoads charges no per-load or percentage fees. | Haulers and fleets are free. Landing plans, when billing is open: Basic $149 per month, Pro $299 per month, Regional $499 per month. |
-| Plan cards | Omit the cards. One link: "Read how landing plans will work." | Three cards. Copy is in Marketing, below. |
-| Boosts | "Sponsored placement is not offered yet." | 7 days $99, 14 days $149, 28 days $199. Copy is in Boosts, below. |
-| Billing page title | Billing | Billing |
-| Billing status | Paid landing memberships are planned and not yet available. LogLoads charges no per-load or percentage fees. | Status line: "Billing is not open. Nothing on this page charges you." Then the plan, allowances, and renewal terms. |
-| First-run, landing path | "Create the business profile. A paid landing membership is not available yet." | "Create the business profile. You will choose Basic, Pro, or Regional when billing is open." |
-| Hauler upsell | None. Haulers and fleets stay free. | None. Haulers and fleets stay free. |
-| Button that would charge | Do not show it. | Label the future button "Continue to payment". Until activation, the control is disabled and reads "Payment is not open". |
+- No payment control, including a disabled "Payment is not open" or "Choose plan" button. The status line says it.
+- No boost prices. Sponsored placement is not offered yet.
+- No founding offer.
+- No "nationwide" and no "launched state".
+- Every dollar amount sits in the same card or band as a not-for-sale statement.
+
+| Surface | Copy |
+|---|---|
+| Home, price band | Haulers and fleets are free. Landing plans, not for sale yet: Basic $149 per month, plus applicable taxes, Pro $299 per month, plus applicable taxes, Regional $499 per month, plus applicable taxes. Prices and plan features can change before plans go on sale. Plan features are planned and are not all available yet. |
+| `/pricing` title | Haulers and fleets are free. |
+| `/pricing` body | Landing plans are Basic $149 per month, plus applicable taxes, Pro $299 per month, plus applicable taxes and Regional $499 per month, plus applicable taxes. They are not for sale yet. Prices and plan features can change before plans go on sale. Plan features are planned and are not all available yet. LogLoads charges no per-load, percentage or transaction fees, and takes nothing from driver pay. |
+| Status line | Billing is not open. Nothing on this page charges you, and creating an account does not start a charge. Plan terms will be published before any plan is sold. |
+| `/for-landings` | Plan names and allowances only. No prices. Link to `/pricing`. |
+| Hauler and fleet | Free. No upsell. |
+| Button that would charge | Do not show it. |
 
 Option B plan facts, for the cards and the billing page. Source: blueprint §3.1 and §7.1, UX spec §2.3.
 
 | | Basic | Pro | Regional |
 |---|---|---|---|
-| Price | $149 per month | $299 per month | $499 per month |
-| Active landings | 1 | 3 | Unlimited authentic landings |
+| Price | $149 per month, plus applicable taxes | $299 per month, plus applicable taxes | $499 per month, plus applicable taxes |
+| Active landings | 1 | 3 | Unlimited active landings |
 | Team members, owner included | 2 | 5 | 10 |
 | Targeted invitations each billing cycle | 3 | 10 | 30 |
 | Unused invitations | They expire at the reset. They do not roll over. | Same | Same |
@@ -71,15 +76,13 @@ Option B plan facts, for the cards and the billing page. Source: blueprint §3.1
 | Multi-landing inbox | Not on Basic | Included | Included |
 | Regional capacity view and multi-site team tools | Not on Basic or Pro | Not on Pro | Included |
 | Support | Standard | Standard | Priority |
-| Boosts | Optional, one job at a time | Same | Same |
+| Boosts | Not offered on public pages | Same | Same |
 
 "Unlimited" means no numerical cap on genuine posts, inquiries, replies, and trucks requested at allowed active landings. It does not allow duplicate spam, fake landings, or harassment.
 
-Founding offer, Option B only, and only after a launched state is defined. Issue #114 still owns that definition, so this sentence is not ready to publish:
+The founding offer and boost prices stay off public pages. Issue #114 still owns any future launched-state definition, and counsel owns the offer terms. Do not publish either.
 
-> The first 10 qualifying landing organizations in each state LogLoads has opened get 50% off the plan they choose for the first 6 billing cycles. One offer per verified organization. Boosts stay at full price. The next invoice after the 6th cycle is the full plan price: Basic $149 per month, Pro $299 per month, or Regional $499 per month.
-
-Hauler recognition, Option B, with no price:
+Hauler recognition, with no price, also stays off public pages until that review:
 
 > Hauling businesses are free. The first 1,000 qualifying hauling businesses may be marked Founding hauler. That mark is recognition. It is not a check of insurance, safety, or equipment.
 
@@ -148,7 +151,9 @@ Account menu: Sign in. Switch business. Sign out. Current context reads "{organi
 
 **Proof band:** If the system has published jobs, the heading is "Recent jobs" and each card uses the Find work card strings. If it has none: "No jobs are published right now." Button: "Get an alert when jobs are posted in your area." Do not invent a listing, a review, a star rating, or a count of trucks.
 
-**Price band:** Option A or Option B from the pricing table. No third sentence.
+**Price band:** Haulers and fleets are free. Landing plans, not for sale yet: Basic $149 per month, plus applicable taxes, Pro $299 per month, plus applicable taxes, Regional $499 per month, plus applicable taxes. Prices and plan features can change before plans go on sale. Plan features are planned and are not all available yet.
+
+**Hauler promise:** Free for haulers and fleets. Finding work, listing your trucks and messaging landings will not cost you anything.
 
 **Footer links:** For haulers, For landing operators, Trust, Help, Terms, Privacy.
 
@@ -176,20 +181,16 @@ Account menu: Sign in. Switch business. Sign out. Current context reads "{organi
 
 **Body:** Publish genuine hauling jobs, keep landings on file, and reply to every inquiry. Targeted invitations and Sponsored placement are optional tools for a landing plan. They do not hire a truck.
 
-**Primary button:** Option A: "Create a landing profile". Option B: "See landing plans".
+**Primary button:** Create a landing profile
 **Secondary button:** Find work
 
-**Option A body addition:** the #108 sentence, and nothing about dollars.
+Name Basic, Pro, and Regional with their allowances. Do not put a price on this page. Link to `/pricing`.
 
-**Option B cards.** Each card's button is "Choose {plan}" when billing is open, and "Payment is not open" while it is not.
+- Basic. One active landing. Two team members, including you. Three targeted invitations each billing cycle. Unlimited job posts, inquiries and replies.
+- Pro. Three active landings. Five team members, including you. Ten targeted invitations each billing cycle. Unlimited job posts, inquiries and replies.
+- Regional. Unlimited active landings. Ten team members, including you. Thirty targeted invitations each billing cycle. Unlimited job posts, inquiries and replies.
 
-- Basic. $149 per month. One active landing. Two team members, including you. Three targeted invitations each billing cycle. Unlimited genuine job posts and inquiries.
-- Pro. $299 per month. Three active landings. Five team members. Ten targeted invitations. Saved searches, availability alerts, and job templates.
-- Regional. $499 per month. Unlimited authentic active landings. Ten team members. Thirty targeted invitations. A regional view of self-reported capacity.
-
-Under the cards: "Invitations that you do not send expire at the reset. They do not roll over. A boost is a separate purchase for one job: $99 for 7 days, $149 for 14 days, or $199 for 28 days. A boost does not add invitations, and it does not promise inquiries."
-
-Founding sentence: the Option B founding paragraph. Hide it until #114 defines a launched state.
+No plan button. No founding sentence. No boost price. Sponsored placement is not offered yet.
 
 ### Trust
 
@@ -295,8 +296,7 @@ Sign-in and the verification email come from the identity provider. This deck co
 ### Landing setup
 
 **Title:** Set up your landing business
-**Body, Option A:** Create the business profile. A paid landing membership is not available yet. You can still record the business name and the landing.
-**Body, Option B:** Create the business profile. You will choose Basic, Pro, or Regional when billing is open.
+**Body:** Create the business profile. Landing plans are not for sale yet. You can still record the business name and the landing.
 
 **Fields**
 
@@ -306,11 +306,11 @@ Sign-in and the verification email come from the identity provider. This deck co
 | Your name | The owner of this landing organization. | Enter your name. |
 | Landing name | The name your crew uses for this place. | Enter a landing name. |
 | Public area | Town or area haulers may see. Not the gate location. | Enter the public area. |
-| State | Used later for a founding offer, once a launched state is defined. | Choose a state. |
+| State | The state in the public area. | Choose a state. |
 
 **Primary button:** Save landing profile
 **Secondary button:** I'll finish this later
-**Checklist after save:** "Add the public description." "Post a job." "Invite a teammate." Option B adds "Choose a plan when billing is open."
+**Checklist after save:** "Add the public description." "Post a job." "Invite a teammate."
 
 ### No organization yet
 
@@ -341,8 +341,8 @@ Sign-in and the verification email come from the identity provider. This deck co
 **Job:** See what needs attention in this landing organization.
 
 **Title:** {organization}
-**Eyebrow, Option A:** Landing workspace
-**Eyebrow, Option B:** {Basic, Pro, or Regional} · {role}
+**Eyebrow, while billing is closed:** Landing workspace
+**Eyebrow, when a plan is active:** {Basic, Pro, or Regional} · {role}
 
 **Primary button:** Post a job
 **Secondary buttons:** Review inquiries, Find trucks
@@ -352,7 +352,7 @@ Sign-in and the verification email come from the identity provider. This deck co
 - Active landings: "{n} of {allowance}" or, on Regional, "{n} active". Help: "Only landings that are recruiting count. Saved and archived landings do not."
 - Published jobs: "{n}"
 - New inquiries: "{n}"
-- Invitations left: "{n} of {allowance}". Help: "Resets {date}. Unused invitations do not roll over." Option A, before a plan exists: hide the invitation metric and show "Targeted invitations are part of a landing membership, which is not available yet."
+- Invitations left: "{n} of {allowance}". Help: "Resets {date}. Unused invitations do not roll over." While no plan is active, hide the invitation metric and show "Targeted invitations are part of a landing plan, which is not for sale yet."
 
 **Attention chips:** "Draft not published", "Job not confirmed since {date}", "Inquiry waiting", "Landing paused".
 
@@ -375,7 +375,7 @@ Sign-in and the verification email come from the identity provider. This deck co
 
 **Row actions:** Edit landing, Activate landing, Pause recruiting, Archive landing, Assign staff
 
-**Activate confirm:** Title: "Activate {landing name}?" Body, Option B: "This uses 1 of your {allowance} active landings. Jobs at this landing can be published." Body, at the cap: "Your plan has {allowance} active landings, and all of them are in use. Pause another landing, or change plan when billing is open." Buttons: "Activate landing" and "Cancel". Option A: "Activating a landing will count toward a membership that is not available yet. You can save the landing now."
+**Activate confirm:** Title: "Activate {landing name}?" While billing is closed: "You can save the landing now. Landing plans are not for sale yet." When a plan is active: "This uses 1 of your {allowance} active landings. Jobs at this landing can be published." At the cap: "Your plan has {allowance} active landings, and all of them are in use. Pause another landing." Buttons: "Activate landing" and "Cancel". No payment control.
 
 **Archive confirm:** Title: "Archive {landing name}?" Body: "Archived landings do not count as active. Published jobs at this landing come off Find work. The record stays." Buttons: "Archive landing" and "Keep it active". If jobs are published, add: "Pause or archive {n} published jobs with the landing."
 
@@ -477,7 +477,7 @@ Sign-in and the verification email come from the identity provider. This deck co
 
 **Summary headings:** Public card, Public job, Private to your team.
 **Confirm line:** "Publishing makes the public card and the public job visible on Find work."
-**Publish blocked, Option A, if a paid entitlement is required to publish:** "Publishing a recruiting job needs a landing membership. That membership is not available yet. Your draft is saved."
+**Publish blocked, while billing is closed, if a paid plan is required to publish:** "Publishing a recruiting job needs a landing plan. That plan is not for sale yet. Your draft is saved."
 **Publish blocked, inactive landing:** "Activate {landing name} before you publish."
 **Publish blocked, missing fields:** "Add {field} before you publish." The field error also sits on the field.
 **Success:** "Job posted. Haulers can find it now." Button: "View job".
@@ -499,7 +499,7 @@ Sign-in and the verification email come from the identity provider. This deck co
 **Material change confirm:** Title: "Tell haulers the terms changed?" Body: "Pay, dates, or equipment changed. Haulers with an open inquiry can be emailed." Buttons: "Save and notify haulers" and "Save without notifying".
 
 **Inquiries tab empty:** "No expressions of interest yet."
-**Promotion tab, no boost:** Option A: "Sponsored placement is not offered yet." Option B: "This job is not sponsored." Button: "Promote this job".
+**Promotion tab:** "Sponsored placement is not offered yet." No price and no payment control.
 **Expired boost:** "The Sponsored period ended {date}. The job stays published."
 **Paused while sponsored:** "A paused job is not sponsored. Promote it again after you publish it."
 **Failed purchase:** "Payment didn't complete. The job is unchanged and it is not sponsored."
@@ -593,7 +593,7 @@ Presented as a sheet over the job. The job summary stays visible.
 
 **Search label:** Search by business or area
 **Filters:** Equipment, Public area, Availability updated within
-**Option B, Pro and Regional:** button "Save this search". Option B, Basic, and all of Option A: "Saved searches are on Pro and Regional." Do not show a broken control. Show the sentence and no disabled mystery button.
+**Pro and Regional:** button "Save this search". **Basic, and while no plan is active:** "Saved searches are on Pro and Regional." Do not show a broken control. Show the sentence and no disabled mystery button.
 
 **Card:** "{business} · {service area} · {equipment} · {n} trucks, self-reported · S10 or S11 · {Business identity verified or Not verified}"
 
@@ -611,8 +611,8 @@ Presented as a sheet over the job. The job summary stays visible.
 **Title:** Send a targeted invitation
 **Steps:** Choose job, Eligible haulers, Recipients, Preview, Confirm
 
-**Allowance bar, Option B:** "{n} of {allowance} invitations left. Resets {date}. Unused invitations do not roll over."
-**Allowance bar, Option A:** "Targeted invitations are part of a landing membership, which is not available yet." Primary action is absent.
+**Allowance bar, when a plan is active:** "{n} of {allowance} invitations left. Resets {date}. Unused invitations do not roll over."
+**Allowance bar, while billing is closed:** "Targeted invitations are part of a landing plan, which is not for sale yet." Primary action is absent.
 
 **Step 1.** Label: "Job". Help: "Only a published job at an active landing." Validation: "Choose a published job."
 
@@ -649,13 +649,13 @@ Presented as a sheet over the job. The job summary stays visible.
 
 ## Boosts
 
-### Option A
+### Public, and while billing is closed
 
 **Title:** Sponsored jobs
 **Body:** "Sponsored placement is not offered yet."
-No prices, no checkout, no countdown.
+No prices, no checkout, no countdown, no payment control.
 
-### Option B
+### Not public until a later billing activation
 
 **Title:** Promote {job title}
 **Body:** "A boost sponsors one published job for a fixed number of days, about 100 straight-line miles from the public landing area. It is labeled Sponsored. It does not add invitations, and it does not promise views, inquiries, or trucks."
@@ -670,8 +670,8 @@ No prices, no checkout, no countdown.
 **Audience line, when a real count exists:** "{n} hauling businesses in this area updated a profile in the last {period}."
 **Low audience:** "Sponsored placement is turned off for this area. There isn't a large enough audience to promote this job honestly." Hide the price buttons.
 **Already sponsored:** "{job title} is sponsored through {date}."
-**Primary, billing closed:** "Payment is not open"
-**Primary, billing open:** "Continue to payment"
+**While billing is closed:** do not show a payment control.
+**When billing is open:** "Continue to payment"
 **Refund line:** "If you pause or withdraw the job, promotion stops. Refunds follow the terms published at checkout. Those terms are not written yet."
 **Success:** "{job title} is Sponsored through {date}."
 **Failure:** "Payment didn't complete. The job is not sponsored."
@@ -682,8 +682,8 @@ The public card always shows S8, "Sponsored", as text, not color alone.
 ## Team
 
 **Title:** Team
-**Body, Option B:** "{n} of {allowance} seats, including the owner."
-**Body, Option A:** "Teammates you add will count toward a landing membership that is not available yet."
+**Body, when a plan is active:** "{n} of {allowance} seats, including the owner."
+**Body, while billing is closed:** "Teammates you add will count toward a landing plan, which is not for sale yet."
 
 **Primary button:** Invite a teammate
 
@@ -720,15 +720,15 @@ Permissions to name in the form: "Update equipment and availability" and "Reply 
 **Title:** Billing
 **Who sees it:** The landing owner. Everyone else gets "Billing is managed by the owner of {organization}."
 
-### Option A
+### While billing is closed
 
-**Status:** "Paid landing memberships are planned and not yet available. LogLoads charges no per-load or percentage fees."
+**Status:** "Billing is not open. Nothing on this page charges you, and creating an account does not start a charge. Plan terms will be published before any plan is sold."
 **Hauler who opens the URL:** "Hauling businesses are free. There is no plan to buy."
-No card form. No invoices for a new plan. If historical pilot invoices exist, the heading is "Older billing records" and the row is "{date} · {document name} · View". Do not describe them as a current percentage fee.
+No card form. No payment control, including a disabled one. No invoices for a new plan. If historical pilot invoices exist, the heading is "Older billing records" and the row is "{date} · {document name} · View". Do not describe them as a current percentage fee.
 
-### Option B
+### When a plan can be sold
 
-**Status while billing is closed:** "Billing isn't active yet. You can set up landings and draft jobs." Nothing on this page charges the business. With no plan, the allowance lines read "0 active landings", "1 member", and "No targeted invitations". Change plan, update payment method, and purchase a boost stay disabled. This matches the settings frames on `docs/product/figma/FG04-settings/README.md`.
+**Status while billing is closed:** do not use a second status. The closed status above is the only one until counsel and activation. With no plan, the allowance lines read "0 active landings", "1 member", and "No targeted invitations". Do not show Change plan, Update payment method, or Purchase a boost. This replaces the disabled controls in `docs/product/figma/FG04-settings/README.md`.
 **When a subscription is active:** "{plan} · ${price} per month · Renews {date}."
 **Usage:** "Active landings {n} of {allowance}." "Seats {n} of {allowance}." "Invitations {n} of {allowance} left · resets {date}."
 **Founding, when granted:** "Founding rate ${intro} per month through {end date}. Then ${full} per month."
@@ -1182,7 +1182,7 @@ Payment completed. {job title} is labeled Sponsored through {date}, about 100 st
 
 Button: View promotion
 
-Do not send this email under Option A.
+Do not send this email while billing is closed.
 
 ### Payment failed, Option B only, owner, no unsubscribe
 
@@ -1243,8 +1243,8 @@ Destructive buttons use the danger style. The confirm button repeats the verb in
 
 ## Open points for the founder
 
-1. Pick Option A or Option B on #108. Until then, prices do not ship.
-2. Define a launched state on #114 before any founding sentence is public.
+1. Public pricing follows option B restricted ([#108](https://github.com/AutomatedEmpires/logloads/issues/108#issuecomment-6785833334)), plus the three gate A lines from the November 2026 legal review (§10 question 1). Option A is withdrawn. `/terms` stays unchanged. The no-percentage sentence stays flagged for LEG-2.
+2. Define a launched state on #114 before any founding sentence is public. Do not put that sentence on a public page before then.
 3. Write boost refund and early-cancellation terms before the Option B checkout lines are public. This deck refuses to invent them.
 4. Write the downgrade rule for extra landings and seats in the published billing policy. This deck only says the owner chooses what to keep and that history stays.
 5. Give the postal address required on commercial email, if counsel wants one. It is not in the product spec, so it is not invented here.
@@ -1256,7 +1256,7 @@ Destructive buttons use the danger style. The confirm button repeats the verb in
 - Blueprint `docs/product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md` §3.1, §3.2, §6, §7, §8. Same commit.
 - Settings frames: `docs/product/figma/FG04-settings/README.md` at the same commit. Example person Sam Carter is taken from that page and from FG00.
 - Quality bar v1, rule U3: [issue 235 comment 6783016152](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6783016152).
-- Pricing options A and B: [issue 108](https://github.com/AutomatedEmpires/logloads/issues/108).
+- Public pricing, option B restricted: [issue 108, comment 6785833334](https://github.com/AutomatedEmpires/logloads/issues/108#issuecomment-6785833334).
 - Launched state still open: issue #114, as recorded in `AGENTS.md` §1.6.
 - Sender defaults: `apps/web/lib/notify.ts` at the same commit.
 - The November 2026 market-research note is absent on this branch, so no research statistics are cited.

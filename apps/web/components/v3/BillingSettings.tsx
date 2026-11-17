@@ -711,13 +711,13 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
       <section className="settings-panel" aria-label="Retired host fee">
           <SectionHeader
             eyebrow="Retired host fee"
-            title={`${fee.rateLabel} of stated driver pay, added on top`}
+            title="Not charged on new loads"
           />
           {percentageAgreement.state === "active" ? (
             <p className="fee-alert" role="status">
               <Icon aria-hidden name="status.assigned" size={16} />
               <span>
-                Current percentage agreement active
+                Historical percentage agreement on record
                 {percentageAgreement.acceptedOnLabel
                   ? ` · accepted ${percentageAgreement.acceptedOnLabel}`
                   : ""}

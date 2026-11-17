@@ -1,0 +1,17 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ll-space-5);
+}
+
+.copy {
+  margin: 0;
+  max-width: 65ch;
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-lg);
+  line-height: var(--ll-leading-normal);
+}
+
+.wide {
+  width: 100%;
+}

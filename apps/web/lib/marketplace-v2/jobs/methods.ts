@@ -1,5 +1,7 @@
 import "server-only"
 
+import { AsyncLocalStorage } from "node:async_hooks"
+
 import {
   marketplaceJobPublicationIssues,
   marketplaceJobStopStatusSchema,
@@ -25,7 +27,7 @@ import {
   planJobTermsEdit
 } from "@logloads/services"
 
-import { jobReconfirmedProperties, jobStoppedProperties, recordProductEvent } from "../../analytics/server"
+import { jobReconfirmedProperties, jobStoppedProperties, recordProductEvent } from "@/lib/analytics/server"
 import type { NormalizedFeatureContext } from "../normalized-adapter"
 import { isUuid } from "../normalized-mapping"
 import { MarketplaceRefusalError, type MarketplaceJobsPort, type MarketplaceV2Viewer } from "../port"
@@ -98,21 +100,37 @@ export interface JobLifecycleEvents {
 
 /**
  * The product events `job_stopped` and `job_reconfirmed` (`resumed: true`), sent after the response. These methods
- * act for the signed-in poster on the job desk, so `via` is `in_app`; the one-tap links of P0-6 (#292) report their
- * own route.
+ * act for the signed-in poster on the job desk, so `via` is `in_app`. A one-tap link (#292) records the same change
+ * itself, with `via: "one_tap_link"`, and silences this copy so the change is not counted twice.
  */
+const jobLifecycleSilence = new AsyncLocalStorage<true>()
+
+/** Runs `run` so a committed pause, fill, close or resume inside it sends no desk lifecycle event. */
+export function withoutJobLifecycleEvents<T>(run: () => Promise<T>): Promise<T> {
+  return jobLifecycleSilence.run(true, run)
+}
+
+function deskLifecycleEvent(send: () => Promise<void>): Promise<void> {
+  if (jobLifecycleSilence.getStore()) return Promise.resolve()
+  return send()
+}
+
 export const JOB_LIFECYCLE_PRODUCT_EVENTS: JobLifecycleEvents = {
   resumed: (viewer, before, now) =>
-    recordProductEvent(
-      "job_reconfirmed",
-      () => jobReconfirmedProperties({ job: before, now: now.toISOString(), organizationId: viewer.organizationId, resumed: true, via: "in_app" }),
-      { actor: viewer }
+    deskLifecycleEvent(() =>
+      recordProductEvent(
+        "job_reconfirmed",
+        () => jobReconfirmedProperties({ job: before, now: now.toISOString(), organizationId: viewer.organizationId, resumed: true, via: "in_app" }),
+        { actor: viewer }
+      )
     ),
   stopped: (viewer, before, status, now) =>
-    recordProductEvent(
-      "job_stopped",
-      () => jobStoppedProperties({ job: before, now: now.toISOString(), organizationId: viewer.organizationId, status, via: "in_app" }),
-      { actor: viewer }
+    deskLifecycleEvent(() =>
+      recordProductEvent(
+        "job_stopped",
+        () => jobStoppedProperties({ job: before, now: now.toISOString(), organizationId: viewer.organizationId, status, via: "in_app" }),
+        { actor: viewer }
+      )
     )
 }
 

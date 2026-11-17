@@ -41,12 +41,12 @@ async function expectHealthyPage(page: Page, clientErrors: string[]) {
   expect(clientErrors, "the rendered page emitted browser errors").toEqual([])
 }
 
-// The retired 5% completed-load host fee (and any price at all) must not
-// appear on public pages until new pricing and terms are approved (#108).
-const RETIRED_OR_UNAPPROVED_PRICE_CLAIM =
-  /\d\s?%|per completed load|completed-load fee|\$\s?\d/i
+// Retired fee language stays off public pages. A dollar amount is allowed only
+// in the same card or band as a not-for-sale statement (#108 comment 6785833334).
+const RETIRED_FEE_CLAIM =
+  /\d\s?%|per completed load|completed-load fee|\bDispatch Pro\b|\bnationwide\b|launched state|\bfounding\b|\$\d+\s*\/\s*mo/i
 
-test("public pricing makes no price claim for landing organizations", async ({
+test("public pricing shows landing plan prices as not for sale", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -55,49 +55,97 @@ test("public pricing makes no price claim for landing organizations", async ({
   await page.waitForLoadState("domcontentloaded")
 
   await expect(
-    page.getByRole("heading", {
-      name: "Pricing for landing organizations is not published yet."
-    })
+    page.getByRole("heading", { name: "Haulers and fleets are free." })
   ).toBeVisible()
-  await expect(
-    page.getByRole("heading", {
-      name: "Three ways to use the load board."
-    })
-  ).toBeVisible()
-  await expect(page.getByText("Nothing is for sale yet.")).toBeVisible()
-
-  const cards = page.locator(".pricing-card")
-  await expect(cards).toHaveCount(3)
-
-  await expect(pricingCard(page, "Driver")).toContainText("Free forever")
-
-  const fleet = pricingCard(page, "Fleet Free")
-  await expect(fleet).toContainText("Free")
-  await expect(fleet).toContainText("No subscription, trial clock, or LogLoads truck limit")
-  await expect(fleet).toContainText("Private partner work")
-  await expect(
-    fleet.getByRole("link", { name: "Create fleet workspace" })
-  ).toHaveAttribute("href", "/sign-up?path=fleet")
-
-  const host = pricingCard(page, "Host")
-  await expect(host).toContainText("Not yet published")
-  await expect(host).toContainText(
-    "Pricing for landing organizations will be published before any paid feature is offered."
-  )
-  await expect(
-    host.getByRole("link", { name: "Create host workspace" })
-  ).toHaveAttribute("href", "/sign-up?path=host")
-
+  await expect(page.getByText("Billing is not open.", { exact: true })).toBeVisible()
   await expect(
     page.getByText(
-      "Prices and terms for landing organizations will be published before any paid feature is offered.",
+      "Nothing on this page charges you, and creating an account does not start a charge. Plan terms will be published before any plan is sold.",
+      { exact: true }
+    )
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      "LogLoads charges no per-load, percentage or transaction fees, and takes nothing from driver pay.",
       { exact: false }
     )
   ).toBeVisible()
-  await expect(page.locator("body")).not.toContainText(
-    RETIRED_OR_UNAPPROVED_PRICE_CLAIM
+  await expect(page.locator(".page-intro")).toContainText("plus applicable taxes")
+  await expect(page.locator(".page-intro")).toContainText(
+    "Prices and plan features can change before plans go on sale."
   )
-  await expect(page.locator("body")).not.toContainText(/platform fee/i)
+  await expect(page.locator(".page-intro")).toContainText(
+    "Plan features are planned and are not all available yet."
+  )
+  await expect(page.locator(".pricing-availability")).toContainText(
+    "Prices and plan features can change before plans go on sale."
+  )
+  await expect(page.locator(".pricing-availability")).toContainText(
+    "Plan features are planned and are not all available yet."
+  )
+  await expect(
+    page.getByText(
+      "Invitations you do not send expire at the reset. They do not roll over. Sponsored placement is not offered yet.",
+      { exact: true }
+    )
+  ).toBeVisible()
+
+  const cards = page.locator(".pricing-card")
+  await expect(cards).toHaveCount(5)
+
+  const hauler = pricingCard(page, "Hauler")
+  await expect(hauler).toContainText("Free")
+  await expect(hauler).toContainText(
+    "Find hauling work, list your trucks and availability, and message landings. No card and no paywall."
+  )
+  await expect(hauler).not.toContainText("free forever")
+  await expect(
+    hauler.getByRole("link", { name: "Create hauler profile" })
+  ).toHaveAttribute("href", "/sign-up?path=driver")
+
+  const fleet = pricingCard(page, "Fleet")
+  await expect(fleet).toContainText("Free")
+  await expect(fleet).toContainText(
+    "The same tools for a hauling business with more than one truck. No subscription and no truck limit."
+  )
+  await expect(
+    fleet.getByRole("link", { name: "Create fleet profile" })
+  ).toHaveAttribute("href", "/sign-up?path=fleet")
+
+  for (const plan of [
+    { facts: ["1 active landing", "2 team members, including you", "3 targeted invitations per billing cycle"], name: "Basic", positioning: "Advertise your work." },
+    { facts: ["3 active landings", "5 team members, including you", "10 targeted invitations per billing cycle"], name: "Pro", positioning: "Find trucks faster." },
+    { facts: ["Unlimited active landings", "10 team members, including you", "30 targeted invitations per billing cycle"], name: "Regional", positioning: "Recruit across your operation." }
+  ]) {
+    const card = pricingCard(page, plan.name)
+    await expect(card).toContainText(plan.positioning)
+    await expect(card).toContainText("Not for sale yet")
+    await expect(card).toContainText("per month, plus applicable taxes")
+    await expect(card).toContainText("Prices and plan features can change before plans go on sale.")
+    await expect(card).toContainText("Plan features are planned and are not all available yet.")
+    await expect(card).toContainText("Unlimited job posts, inquiries and replies.")
+    for (const fact of plan.facts) {
+      await expect(card).toContainText(fact)
+    }
+    await expect(card.getByRole("link")).toHaveCount(0)
+    await expect(card.getByRole("button")).toHaveCount(0)
+    const text = await card.innerText()
+    expect(text).toMatch(/\$\d/)
+    expect(text.toLowerCase()).toContain("not for sale")
+  }
+
+  await expect(
+    page.getByRole("link", { name: "Create a landing profile" })
+  ).toHaveCount(1)
+  await expect(
+    page.getByRole("link", { name: "Create a landing profile" })
+  ).toHaveAttribute("href", "/sign-up?path=host")
+  await expect(page.getByRole("button", { name: /payment|choose plan|subscribe|checkout/i })).toHaveCount(0)
+  await expect(page.locator("button:disabled")).toHaveCount(0)
+  await expect(page.locator("body")).not.toContainText(/free forever/i)
+  await expect(page.locator("body")).not.toContainText(RETIRED_FEE_CLAIM)
+  await expect(page.locator("body")).not.toContainText(/\$99|\$199/)
+  await expect(page.locator('a[href*="subscription-checkout"]')).toHaveCount(0)
 
   for (const retiredPlan of [
     "Dispatch Pro",
@@ -109,16 +157,54 @@ test("public pricing makes no price claim for landing organizations", async ({
   ]) {
     await expect(pricingCard(page, retiredPlan)).toHaveCount(0)
   }
-  await expect(
-    page.locator('a[href*="subscription-checkout"]')
-  ).toHaveCount(0)
-  await expect(page).toHaveTitle(/Pricing.*Free for drivers and fleets.*LogLoads/)
+
+  await expect(page).toHaveTitle(/Pricing.*Haulers and fleets are free.*LogLoads/)
+  const description = await page.locator('meta[name="description"]').getAttribute("content")
+  expect(description ?? "").toMatch(
+    /Basic \$149 per month, plus applicable taxes, Pro \$299 per month, plus applicable taxes and Regional \$499 per month, plus applicable taxes/
+  )
+  expect(description?.toLowerCase()).toContain("not for sale yet")
+  expect(description).toContain("Prices and plan features can change before plans go on sale.")
+  expect(description).toContain("Plan features are planned and are not all available yet.")
+
+  const intro = await page.locator(".page-intro").innerText()
+  expect(intro).toMatch(/\$\d/)
+  expect(intro.toLowerCase()).toContain("not for sale")
+
+  await expectHealthyPage(page, clientErrors)
+})
+
+test("home and for-landings follow the pricing ruling", async ({ page }) => {
+  const clientErrors = captureClientErrors(page)
+
+  await page.goto("/")
+  await page.waitForLoadState("domcontentloaded")
+  await expect(page.getByText("Free for haulers and fleets.", { exact: true }).first()).toBeVisible()
   await expect(
     page.getByText(
-      "LogLoads is a timber-hauling load board that connects businesses needing log trucks with hauling businesses.",
+      "Finding work, listing your trucks and messaging landings will not cost you anything.",
       { exact: false }
-    )
+    ).first()
   ).toBeVisible()
+  await expect(page.locator("body")).not.toContainText(/free forever/i)
+  const homeBand = page.getByText(
+    /Haulers and fleets are free\. Landing plans, not for sale yet: Basic \$149 per month, plus applicable taxes, Pro \$299 per month, plus applicable taxes, Regional \$499 per month, plus applicable taxes\./
+  )
+  await expect(homeBand).toBeVisible()
+  await expect(homeBand).toContainText("Prices and plan features can change before plans go on sale.")
+  await expect(homeBand).toContainText("Plan features are planned and are not all available yet.")
+  await expect(page.locator("body")).not.toContainText(/has not been published|Not yet published|nationwide|launched state/i)
+
+  await page.goto("/for-landings")
+  await page.waitForLoadState("domcontentloaded")
+  await expect(page.getByRole("heading", { exact: true, name: "Basic" })).toBeVisible()
+  await expect(page.getByRole("heading", { exact: true, name: "Pro" })).toBeVisible()
+  await expect(page.getByRole("heading", { exact: true, name: "Regional" })).toBeVisible()
+  await expect(page.getByText("1 active landing")).toBeVisible()
+  await expect(page.getByText("Unlimited active landings")).toBeVisible()
+  await expect(page.getByRole("link", { name: "See pricing" })).toHaveAttribute("href", "/pricing")
+  await expect(page.locator("body")).not.toContainText(/\$\s?\d/)
+  await expect(page.getByText("separate pilot approval", { exact: false })).toBeVisible()
 
   await expectHealthyPage(page, clientErrors)
 })
@@ -147,7 +233,7 @@ test("public terms no longer describe the retired 5% host fee", async ({
     ).toHaveCount(0)
   }
   await expect(page.locator("body")).not.toContainText(
-    RETIRED_OR_UNAPPROVED_PRICE_CLAIM
+    /\d\s?%|per completed load|completed-load fee|\$\s?\d/i
   )
   await expect(page.locator("body")).not.toContainText(/monthly in arrears/i)
 
@@ -218,7 +304,7 @@ test("the August 3, 2026 Terms stay readable, unchanged, for agreements accepted
   await expectHealthyPage(page, clientErrors)
 })
 
-test("an active host sees percentage billing, direct driver pay, and no subscription checkout", async ({
+test("an active host sees the retired percentage record, direct driver pay, and no subscription checkout", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -232,12 +318,17 @@ test("an active host sees percentage billing, direct driver pay, and no subscrip
   ).toBeVisible()
   await expect(
     page.getByRole("heading", {
-      name: "5% of stated driver pay, added on top"
+      name: "Not charged on new loads"
     })
   ).toBeVisible()
   await expect(
-    page.getByText("Current percentage agreement active", { exact: false })
+    page.getByRole("heading", { name: "5% of stated driver pay, added on top" })
+  ).toHaveCount(0)
+  await expect(page.getByText("This fee is retired.", { exact: false })).toBeVisible()
+  await expect(
+    page.getByText("Historical percentage agreement on record", { exact: false })
   ).toBeVisible()
+  await expect(page.getByText("Current percentage agreement active")).toHaveCount(0)
   await expect(page.getByText("You state the driver is paid", { exact: true })).toBeVisible()
   await expect(page.getByText("LogLoads fee, on top")).toBeVisible()
   await expect(page.getByText("Your total cost")).toBeVisible()
@@ -314,7 +405,7 @@ test("a fleet sees included Fleet Free access with no paid-plan residue", async 
   await expectHealthyPage(page, clientErrors)
 })
 
-test("admin billing is percentage-first and subscription writes stay closed", async ({
+test("admin billing shows the retired percentage fee and subscription writes stay closed", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -343,7 +434,7 @@ test("admin billing is percentage-first and subscription writes stay closed", as
   await expect(page.getByText("Percentage organizations").first()).toBeVisible()
   await expect(
     page.getByText(
-      "Current host revenue is the 5% platform fee added on top of stated driver pay for completed loads.",
+      "The 5% platform fee is retired and is not current host revenue.",
       { exact: false }
     )
   ).toBeVisible()

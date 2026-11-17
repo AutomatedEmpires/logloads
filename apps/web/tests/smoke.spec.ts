@@ -298,7 +298,7 @@ test("admin command keeps commercial and operating exceptions truthful", async (
 
   await page.goto("/admin/billing")
   await expect(page.getByRole("heading", { name: "Percentage fee attention" })).toBeVisible()
-  await expect(page.getByText(/Current host revenue is the 5% platform fee/)).toBeVisible()
+  await expect(page.getByText(/The 5% platform fee is retired and is not current host revenue/)).toBeVisible()
 
   await page.goto("/admin/reports")
   await expect(page.getByRole("heading", { name: "Feedback" })).toBeVisible()
