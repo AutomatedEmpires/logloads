@@ -27,6 +27,10 @@
  *                     name, criteria and alerts_enabled
  *   notification_preferences  the person's own consents in the business (notification_preferences_self)
  *   app_users         the person's own id only, to mint an unsubscribe link; never an address
+ *   organization_memberships, membership_landing_scopes, app_users, landings
+ *                     the team page (#249). read: an owner of the business (`has_org_role` owner). Display names of
+ *                     teammates the owner may already see; no email address. Landing scope is the limit rows, or none
+ *                     for every landing. Removed memberships are left out
  *
  * Every statement also names the active business explicitly (`$1`) and checks the person's membership of it, so a
  * person who belongs to several businesses only ever reads or changes the one they are acting for. Values are bound
@@ -553,6 +557,36 @@ select to_jsonb(u) as row from (
   where a.id = marketplace.current_user_id()
     and marketplace.has_org_role($1::text::uuid, ${MEMBER_ROLES})
 ) as u`
+  },
+
+  /**
+   * The people on one business, for its owners (#249). `$1` is the active business. Email stays off this row:
+   * addresses are on invitations (`list_team_invitations`) and on the person's own contact, not on the member list.
+   * A landing scope with no rows means every landing. Row-level security still applies to names and landings.
+   */
+  team_members: {
+    args: ["uuid"],
+    text: `
+select to_jsonb(p) as row from (
+  select m.id as membership_id,
+         m.user_id,
+         u.display_name as name,
+         m.role,
+         m.landing_workspace_seat,
+         m.status,
+         coalesce(m.accepted_at, m.created_at) as joined_at,
+         coalesce((
+           select jsonb_agg(jsonb_build_object('id', l.id, 'name', l.name) order by l.name)
+           from marketplace.membership_landing_scopes s
+           join marketplace.landings l on l.id = s.landing_id and l.org_id = s.org_id
+           where s.membership_id = m.id and s.org_id = m.org_id
+         ), '[]'::jsonb) as landing_scope
+  from marketplace.organization_memberships m
+  join marketplace.app_users u on u.id = m.user_id
+  where m.org_id = $1::text::uuid
+    and m.status <> 'removed'
+    and marketplace.has_org_role($1::text::uuid, array['owner']::text[])
+) as p`
   }
 } as const satisfies Record<string, QuerySpec>
 

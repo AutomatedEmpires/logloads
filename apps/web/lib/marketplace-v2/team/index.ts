@@ -1,21 +1,47 @@
 import "server-only"
 
 import type { NormalizedFeature } from "../normalized-adapter"
-import { unavailableMarketplaceV2Feature } from "../port"
+import { MARKETPLACE_FUNCTIONS } from "../normalized-db"
+import { MARKETPLACE_QUERIES } from "../normalized-queries"
+import { unavailableMarketplaceV2Feature, type MarketplaceTeamPort } from "../port"
+import { teamMethods } from "./methods"
 
 /**
  * team (#249): seats and seat invitations, over the normalized store.
  *
- * To map: `invite_team_member`, `resend_team_invitation`, `revoke_team_invitation`, `accept_team_invitation`,
- * `decline_team_invitation`, `list_team_invitations`, `list_my_team_invitations` and `set_membership_landing_scope`
- * (26-A, 26-B). No stage 01–26 function removes a membership.
- *
- * Port v3 (#244) entry module, already wired into `normalized-adapter.ts`. Until #249 lands, every method refuses
- * with `MarketplaceFeatureUnavailableError` and reaches no store. The task replaces `methods` with its mapping
- * (built in this folder), adds its functions to `MARKETPLACE_FUNCTIONS` with the security review that catalogue's
- * test asks for, and sets `supported` once every method works.
+ * Members are `team_members` (normalized-queries.ts): owners only, no email addresses. Invitations, invites, resends,
+ * revokes, acceptance, decline, landing scope and removal are the catalogued functions, including stage 33
+ * `remove_team_member`. `supported` is true once those names are in the catalogues.
  */
-export const normalizedTeam: NormalizedFeature<"team"> = {
-  methods: () => unavailableMarketplaceV2Feature("team"),
-  supported: false
+
+/** What each port method runs. The store checks the same rules again. */
+export const TEAM_METHOD_NEEDS: Readonly<Record<keyof MarketplaceTeamPort, { functions: readonly string[]; statements: readonly string[] }>> = {
+  acceptTeamInvitation: { functions: ["accept_team_invitation", "list_my_team_invitations"], statements: [] },
+  declineTeamInvitation: { functions: ["decline_team_invitation"], statements: [] },
+  inviteTeamMember: { functions: ["get_org_entitlement_state", "get_viewer_marketplace_access", "invite_team_member", "list_team_invitations"], statements: ["team_members"] },
+  receivedTeamInvitations: { functions: ["list_my_team_invitations"], statements: [] },
+  removeTeamMember: { functions: ["get_viewer_marketplace_access", "remove_team_member"], statements: ["team_members"] },
+  resendTeamInvitation: { functions: ["get_viewer_marketplace_access", "list_team_invitations", "resend_team_invitation"], statements: [] },
+  revokeTeamInvitation: { functions: ["get_viewer_marketplace_access", "revoke_team_invitation"], statements: [] },
+  setMemberLandingScope: { functions: ["get_viewer_marketplace_access", "set_membership_landing_scope"], statements: ["team_members"] },
+  team: { functions: ["get_viewer_marketplace_access", "list_team_invitations"], statements: ["team_members"] }
 }
+
+/** True once every function and statement the team methods call is catalogued. */
+export function teamCatalogueReady(
+  functions: ReadonlySet<string> = new Set(Object.keys(MARKETPLACE_FUNCTIONS)),
+  statements: ReadonlySet<string> = new Set(Object.keys(MARKETPLACE_QUERIES))
+): boolean {
+  return Object.values(TEAM_METHOD_NEEDS).every((needs) =>
+    needs.functions.every((name) => functions.has(name)) && needs.statements.every((name) => statements.has(name))
+  )
+}
+
+const ready = teamCatalogueReady()
+
+export const normalizedTeam: NormalizedFeature<"team"> = {
+  methods: (context) => (ready ? teamMethods(context) : unavailableMarketplaceV2Feature("team")),
+  supported: ready
+}
+
+export { teamMethods } from "./methods"
