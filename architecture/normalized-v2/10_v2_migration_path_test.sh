@@ -30,7 +30,7 @@
 #   35  changes no stored row either (it adds four functions, two restrictive policies, a column that is null on every
 #       existing key and an index, and redefines two functions); on the existing data, anon then reads directly
 #       exactly the jobs that take new interest (job_takes_new_interest).
-#   38  changes no stored row either (it adds the empty basins table and eight functions, and redefines two). With no
+#   38  changes no stored row either (it adds the empty basins table and nine functions, and redefines two). With no
 #       basin recorded, anon still reads exactly the jobs that take new interest.
 # =============================================================================
 set -euo pipefail

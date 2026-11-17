@@ -19,7 +19,7 @@
 -- does not, so search_job_postings gains the same predicate. No new row-level policy: the anon policies already
 -- call job_is_publicly_visible.
 --
--- 38 adds one table and eight functions, and redefines two (CREATE OR REPLACE keeps each ACL). It changes no stored
+-- 38 adds one table and nine functions, and redefines two (CREATE OR REPLACE keeps each ACL). It changes no stored
 -- row. Stage 38 in CI checks this exact set.
 -- =============================================================================
 
@@ -72,6 +72,19 @@ begin
 end
 $$;
 
+-- A check constraint cannot hold a subquery, so the county-length rule is a function.
+create function marketplace.basin_counties_valid(p_counties text[])
+returns boolean
+language sql
+immutable
+as $$
+  select p_counties is not null
+     and not exists (
+       select 1 from unnest(p_counties) as c
+       where c is null or char_length(btrim(c)) not between 1 and 80
+     )
+$$;
+
 -- -----------------------------------------------------------------------------
 -- Table. No policy and no grant: staff functions are the only writers and readers.
 -- The owner bypasses row-level security; it is not forced.
@@ -87,10 +100,7 @@ create table marketplace.basins (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
   check (boundary is not null or cardinality(counties) > 0),
-  check (not exists (
-    select 1 from unnest(counties) c
-    where c is null or char_length(btrim(c)) not between 1 and 80
-  ))
+  check (marketplace.basin_counties_valid(counties))
 );
 
 create unique index basins_state_name_uq on marketplace.basins (state_code, lower(name));
@@ -570,6 +580,7 @@ $$;
 -- not a second volatile function for anon (unsubscribe_with_token stays the only one).
 -- -----------------------------------------------------------------------------
 revoke all on function
+  marketplace.basin_counties_valid(text[]),
   marketplace.basin_for_point(extensions.geography, text, text),
   marketplace.basin_for_landing(uuid),
   marketplace.landing_basin_launched(uuid),
@@ -593,6 +604,7 @@ grant execute on function
 
 -- The migration role calls the internals from the security-definer functions it owns.
 grant execute on function
+  marketplace.basin_counties_valid(text[]),
   marketplace.basin_for_point(extensions.geography, text, text),
   marketplace.basin_for_landing(uuid),
   marketplace.landing_basin_launched(uuid)

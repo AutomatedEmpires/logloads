@@ -299,6 +299,8 @@ begin
                      and not has_function_privilege('anon', 'marketplace.create_basin(text, text, text[], text, text)', 'EXECUTE')
                      and has_function_privilege('authenticated', 'marketplace.create_basin(text, text, text[], text, text)', 'EXECUTE')
                      and not has_function_privilege('service_role', 'marketplace.set_basin_status(uuid, text, text)', 'EXECUTE')
+                     and not has_function_privilege('anon', 'marketplace.basin_counties_valid(text[])', 'EXECUTE')
+                     and not has_function_privilege('authenticated', 'marketplace.basin_counties_valid(text[])', 'EXECUTE')
                      and not has_function_privilege('anon', 'marketplace.basin_for_point(extensions.geography, text, text)', 'EXECUTE')
                      and not has_function_privilege('authenticated', 'marketplace.landing_basin_launched(uuid)', 'EXECUTE')
                      and (select p.provolatile = 's' from pg_proc p where p.oid = 'marketplace.public_area_notice(uuid, numeric, numeric, text, text)'::regprocedure)

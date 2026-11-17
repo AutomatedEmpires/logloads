@@ -100,6 +100,7 @@ const NEVER_CATALOGUED = [
   "hmac_sha256",
   "interest_queue",
   "issue_unsubscribe_token",
+  "basin_counties_valid",
   "basin_for_landing",
   "basin_for_point",
   "job_confirmation_current",

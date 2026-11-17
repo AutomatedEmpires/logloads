@@ -202,10 +202,10 @@ begin
   -- list_marketplace_interests by one with more arguments);
   -- + 35 125 (job_day14_visible, job_day14_visible_by_id, rotate_unsubscribe_key, prune_unsubscribe_tokens; it
   -- redefines two);
-  -- + 38 133 (basin_for_point, basin_for_landing, landing_basin_launched, create_basin, set_basin_status,
-  -- list_basins, basin_readiness, public_area_notice; it redefines two).
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage38() then 133 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
-    format('expected %s functions in marketplace, found %s', case when pg_temp.stage38() then 133 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- + 38 134 (basin_counties_valid, basin_for_point, basin_for_landing, landing_basin_launched, create_basin,
+  -- set_basin_status, list_basins, basin_readiness, public_area_notice; it redefines two).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec

@@ -718,7 +718,7 @@ SUITES
     { echo "### Stage 37 unsubscribe link, invitation answer and key rotation concurrency (one token used twice, two answers, a rotation while minting)"; echo '```'; grep -E "^\[|ok:|overlap" "$LOG" || true; echo '```'; } >> "$SUMMARY"
     ;;
   38)
-    # What 38 changes: one table, eight functions, and two redefined functions. No new policy. No stored row.
+    # What 38 changes: one table, nine functions, and two redefined functions. No new policy. No stored row.
     FN_SRC_SQL="select p.oid::regprocedure::text || '|' || md5(p.prosrc) from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
     FN_ACL_SQL="select p.oid::regprocedure::text || '|' || coalesce(array_to_string(p.proacl, ','), '') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace order by 1;"
     TABLES_SQL="select c.relname from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p') order by 1;"
@@ -737,9 +737,9 @@ SUITES
     check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23,26,29,31,33,35,38' from marketplace.schema_migrations;"
     REMOVED="$(LC_ALL=C comm -23 <(cut -d'|' -f1 "$LOG_DIR/stage38-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage38-src-after.txt") | sed 's/(.*//' | paste -sd, -)"
     ADDED="$(LC_ALL=C comm -13 <(cut -d'|' -f1 "$LOG_DIR/stage38-src-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage38-src-after.txt") | sed 's/(.*//' | LC_ALL=C sort | paste -sd, -)"
-    EXPECTED_ADDED="marketplace.basin_for_landing,marketplace.basin_for_point,marketplace.basin_readiness,marketplace.create_basin,marketplace.landing_basin_launched,marketplace.list_basins,marketplace.public_area_notice,marketplace.set_basin_status"
+    EXPECTED_ADDED="marketplace.basin_counties_valid,marketplace.basin_for_landing,marketplace.basin_for_point,marketplace.basin_readiness,marketplace.create_basin,marketplace.landing_basin_launched,marketplace.list_basins,marketplace.public_area_notice,marketplace.set_basin_status"
     [[ -z "$REMOVED" && "$ADDED" == "$EXPECTED_ADDED" ]] || { echo "POST-STAGE CHECK FAILED: 38 dropped [$REMOVED] and added [$ADDED]; expected none dropped and [$EXPECTED_ADDED] added" | tee -a "$LOG" >&2; exit 1; }
-    echo "  check ok: 38 adds the eight basin functions and drops none" | tee -a "$LOG"
+    echo "  check ok: 38 adds the nine basin functions and drops none" | tee -a "$LOG"
     CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage38-src-before.txt" "$LOG_DIR/stage38-src-after.txt" | awk -F'|' '$2 != $3 {print $1}' | sed 's/(.*//' | paste -sd, -)"
     [[ "$CHANGED" == "marketplace.job_is_publicly_visible,marketplace.search_job_postings" ]] || { echo "POST-STAGE CHECK FAILED: 38 changed [$CHANGED], expected job_is_publicly_visible and search_job_postings" | tee -a "$LOG" >&2; exit 1; }
     echo "  check ok: 38 redefines exactly job_is_publicly_visible and search_job_postings" | tee -a "$LOG"
