@@ -173,13 +173,12 @@ export interface OverviewChecklistStep {
  * and says so.
  *
  * "Post a job" is done when anything shows the business has posted before:
- * - one of its own listings in `jobs`;
+ * - one of its own jobs in `jobs`, in any status, including paused, filled, closed and expired;
  * - an inquiry on one of its jobs, in any status;
  * - an active job counted on one of its landings, which includes a listing that expired.
- * `jobs` comes from discovery, which shows only listings the public can see. The other two are read as the business,
- * so a business whose listings are all expired or have inquiries still counts as having posted (#209 review). A
- * business whose jobs are all paused or closed and never drew an inquiry still sees the step. Telling that apart
- * needs a signed-in read of the business's own jobs, which the job lifecycle work adds.
+ * `jobs` is the desk's own read (`readOwnJobs`), so a paused or closed job counts even when the public list omits it
+ * and it never drew an inquiry (#320). The inquiry and landing counts still cover a public-only read, where expired
+ * listings and inquiries remain visible to the business (#209 review).
  */
 export function overviewChecklist(input: {
   landings: readonly MarketplaceLandingView[] | null

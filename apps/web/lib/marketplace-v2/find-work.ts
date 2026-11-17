@@ -3,6 +3,7 @@ import {
   MARKETPLACE_JOB_SORTS,
   MARKETPLACE_PAY_UNIT_LABELS,
   MARKETPLACE_PRODUCTS,
+  NOT_IN_YOUR_AREA_YET,
   marketplaceEquipmentLabel,
   marketplacePayUnitSchema,
   type MarketplaceJobFilters,
@@ -224,8 +225,17 @@ export interface EmptyAction { label: string; href: string }
 export function findWorkEmptyState(
   search: FindWorkSearch,
   context: FindWorkContext,
-  { complete = true }: { complete?: boolean } = {}
+  { areaNotice = null, complete = true }: { areaNotice?: string | null; complete?: boolean } = {}
 ): { title: string; body: string; actions: EmptyAction[] } {
+  // A closed basin is not an empty search: widening or clearing a filter would imply jobs are there (#324).
+  if (areaNotice === NOT_IN_YOUR_AREA_YET) {
+    return {
+      actions: [],
+      body: "LogLoads opens each area when landings and haulers there are both ready. This area is not open yet.",
+      title: "Not in your area yet"
+    }
+  }
+
   const href = (overrides: Partial<FindWorkSearch>) => findWorkHref({ ...search, after: null, jobId: null }, context, overrides)
   const found = search.place.status === "found" ? search.place.place : null
   const actions: EmptyAction[] = []

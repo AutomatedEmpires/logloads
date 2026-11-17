@@ -774,7 +774,7 @@ begin
   -- Ledger
   -- -------------------------------------------------------------------------
   perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations)
-                       in ('06,11,12,16,18,23,26,29,31', '06,11,12,16,18,23,26,29,31,33', '06,11,12,16,18,23,26,29,31,33,35'),
+                       in ('06,11,12,16,18,23,26,29,31', '06,11,12,16,18,23,26,29,31,33', '06,11,12,16,18,23,26,29,31,33,35', '06,11,12,16,18,23,26,29,31,33,35,38'),
     'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31 in order (and 33 and 35 after them, when stages 34 and 36 run this suite again)');
 
   raise notice 'ALL REPLY GATE, RECONFIRMATION, UNSUBSCRIBE, FOUNDING OFFER AND NOT-FOUND (31-P1, 31-R, 31-U, 31-F, 31-O) TESTS PASSED.';

@@ -32,6 +32,7 @@ import {
   type FindWorkContext,
   type FindWorkSearch
 } from "@/lib/marketplace-v2/find-work"
+import { findWorkAreaNotice } from "@/lib/marketplace-v2/basins/notice"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { haulerChecklistFor } from "@/lib/marketplace-v2/hauler-setup"
 import { jobMapPoints } from "@/lib/marketplace-v2/job-map"
@@ -114,8 +115,9 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
   const sort = effectiveSort(search)
   const bases = marketplaceComparablePayUnits(jobs)
   const firstHref = href({ after: null, jobId: null })
+  const areaNotice = page.total.count === 0 ? await findWorkAreaNotice(search) : null
   const empty = page.total.count === 0
-    ? findWorkEmptyState(search, context, { complete: page.total.exact })
+    ? findWorkEmptyState(search, context, { areaNotice, complete: page.total.exact })
     : rows.length === 0
       // A cursor past the last job: the jobs after it closed or changed since the link was made.
       ? { actions: [{ href: firstHref, label: "Back to the first jobs" }], body: "The jobs that came after this point have closed or changed.", title: "No more jobs in this list" }
