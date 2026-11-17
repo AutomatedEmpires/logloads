@@ -12,12 +12,12 @@ function renderReadiness(overrides: Partial<ReadinessProps> = {}): string {
   vi.stubGlobal("React", React)
 
   const props: ReadinessProps = {
-    activationState: "percentage_active",
-    billingModel: "percentage_v1",
+    activationState: "unenrolled",
+    billingModel: null,
     billingProfileStatus: "none",
     canManageLandings: true,
     canPublish: true,
-    currentPercentageAgreementActive: true,
+    currentPercentageAgreementActive: false,
     facts: {
       activeLandingCount: 1,
       activeRouteCount: 1,
@@ -43,52 +43,51 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("Host first-run billing readiness", () => {
-  it("keeps an accepted agreement with no card in Billing", () => {
+/**
+ * The completed-load percentage fee is retired. A host's first run must never
+ * send it to Billing to accept an agreement or attach a card before publishing:
+ * neither is needed, and the acceptance would be refused.
+ */
+describe("Host first-run publication readiness", () => {
+  it("routes a new host with no agreement and no card straight to Command", () => {
     const markup = renderReadiness()
-
-    expect(markup).toContain('href="/host/billing"')
-    expect(markup).toContain("Review host billing")
-    expect(markup).toContain(
-      "The current 5% completed-load agreement is active. Attach a working payment method in Billing before publishing live work."
-    )
-    expect(markup).toContain("Pilot")
-    expect(markup).not.toContain("Open command center")
-    expect(markup).not.toContain("Billing activation is complete for this workspace.")
-  })
-
-  it("routes to Command only when the current agreement and card are ready", () => {
-    const markup = renderReadiness({ billingProfileStatus: "attached" })
 
     expect(markup).toContain('href="/host/command"')
     expect(markup).toContain("Open command center")
-    expect(markup).toContain("Billing activation is complete for this workspace.")
+    expect(markup).toContain("Live publication is open for this workspace.")
     expect(markup).toContain(
-      "The current 5% completed-load agreement is active and a working payment method is attached."
+      "Publishing needs no agreement or card. The completed-load percentage fee is retired, and posting work is free."
     )
     expect(markup).not.toContain("Review host billing")
   })
 
-  it("keeps a failed card out of the ready state", () => {
-    const markup = renderReadiness({ billingProfileStatus: "failed" })
+  it.each([
+    { activationState: "percentage_active", billingModel: "percentage_v1", billingProfileStatus: "none" },
+    { activationState: "percentage_active", billingModel: "percentage_v1", billingProfileStatus: "failed" },
+    { activationState: "legacy", billingModel: "legacy_percentage", billingProfileStatus: "attached" },
+    { activationState: "suspended", billingModel: "subscription_v1", billingProfileStatus: "attached" }
+  ] as const)(
+    "never asks a $activationState host with a $billingProfileStatus card to accept or attach anything",
+    (overrides) => {
+      const markup = renderReadiness(overrides)
 
-    expect(markup).toContain("the payment method failed")
-    expect(markup).toContain("Replace it in Billing before publishing live work.")
-    expect(markup).not.toContain("Open command center")
-  })
+      expect(markup).toContain("Live publication is open for this workspace.")
+      expect(markup).not.toMatch(/accept the current|attach a working payment method|5%/i)
+      expect(markup).not.toContain("Review host billing")
+    }
+  )
 
-  it("reports a suspension before suggesting payment-method work", () => {
-    const markup = renderReadiness({
-      activationState: "suspended",
-      billingProfileStatus: "attached",
-      currentPercentageAgreementActive: true
-    })
+  it("holds publication only when a subscription account cannot be resolved", () => {
+    const markup = renderReadiness({ activationState: "active", billingModel: null })
 
+    expect(markup).toContain('href="/host/billing"')
+    expect(markup).toContain("Review host billing")
     expect(markup).toContain(
-      "Activation is suspended. Contact LogLoads to resolve the operating hold before publication resumes."
+      "This workspace&#x27;s billing record could not be verified, so live publication is held."
     )
-    expect(markup).not.toContain("Attach a working payment method")
+    expect(markup).toContain("Held")
     expect(markup).not.toContain("Open command center")
+    expect(markup).not.toMatch(/accept the current|5%/i)
   })
 
   it("describes an invitation as joining the existing workspace", () => {
@@ -96,18 +95,20 @@ describe("Host first-run billing readiness", () => {
 
     expect(markup).toContain("Workspace joined")
     expect(markup).toContain("Summit Ridge Timber is now your active host workspace.")
+    expect(markup).toContain("Finish the operating record to put your first movement live.")
     expect(markup).not.toContain("Your host workspace is created")
   })
 
-  it("keeps the joined workspace identity when billing is already ready", () => {
+  it("keeps the joined workspace identity while publication is held", () => {
     const markup = renderReadiness({
-      billingProfileStatus: "attached",
+      activationState: "active",
+      billingModel: null,
       welcomeSource: "invited"
     })
 
     expect(markup).toContain("Workspace joined")
     expect(markup).toContain("Summit Ridge Timber is now your active host workspace.")
-    expect(markup).toContain("The agreement and payment method are ready.")
+    expect(markup).toContain("live publication stays off until LogLoads support verifies the billing record.")
     expect(markup).not.toContain("Your host workspace is created")
   })
 
@@ -115,7 +116,7 @@ describe("Host first-run billing readiness", () => {
     const markup = renderReadiness({ welcomeSource: undefined })
 
     expect(markup).toContain("Workspace ready")
-    expect(markup).toContain("This host workspace is ready for setup.")
+    expect(markup).toContain("This host workspace is ready.")
     expect(markup).not.toContain("Workspace created")
     expect(markup).not.toContain("Workspace joined")
   })

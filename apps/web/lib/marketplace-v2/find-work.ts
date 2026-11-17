@@ -68,7 +68,18 @@ export interface FindWorkSearch {
   view: "list" | "map"
   /** The job selected for the detail panel; only honoured when it is in the results. */
   jobId: string | null
+  /**
+   * The page to show (`?after=`, #280): the cursor "Show more jobs" links to. The port uses it only for the same
+   * search, so changing any filter starts again from the first jobs.
+   */
+  after: string | null
 }
+
+/** Jobs per Find work page (#280). Small enough for a phone on a weak signal; the rest is one "Show more" away. */
+export const FIND_WORK_PAGE_SIZE = 25
+
+/** A cursor as it may appear in the URL: base64url text of a bounded length (`keyset-pages.ts`). */
+const CURSOR_PARAM = /^[A-Za-z0-9_-]{1,1024}$/
 
 export interface FindWorkContext {
   /** The signed-in hauler has listed equipment, so "My trucks" exists and is the default (UX 02 §A6). */
@@ -99,8 +110,10 @@ export function parseFindWorkSearch(params: Params, context: FindWorkContext): F
       : equipmentParam === "mine" ? (context.hasSetups ? "mine" : "any")
         : pick(EQUIPMENT_CODES, equipmentParam) ?? defaultEquipment(context)
   const jobId = one(params.job)
+  const after = one(params.after)
 
   return {
+    after: CURSOR_PARAM.test(after) ? after : null,
     equipment,
     includeClosed: one(params.all) === "1",
     jobId: /^[\w-]{1,80}$/.test(jobId) ? jobId : null,
@@ -163,6 +176,7 @@ export function findWorkHref(search: FindWorkSearch, context: FindWorkContext, o
   if (next.query) params.set("q", next.query)
   if (next.sort !== "newest") params.set("sort", next.sort)
   if (next.view === "map") params.set("view", "map")
+  if (next.after) params.set("after", next.after)
   if (next.jobId) params.set("job", next.jobId)
 
   const query = params.toString()
@@ -204,10 +218,15 @@ export interface EmptyAction { label: string; href: string }
 
 /**
  * The empty result (spec §3.4, UX 02 §A6): it names the active constraints and offers one-tap changes, each a plain
- * link to the same search with one constraint relaxed. It never suggests that unlisted jobs exist.
+ * link to the same search with one constraint relaxed, from the first page. It never suggests that unlisted jobs
+ * exist, and never claims none exist when the store stopped reading at its limit (`complete: false`, #280).
  */
-export function findWorkEmptyState(search: FindWorkSearch, context: FindWorkContext): { title: string; body: string; actions: EmptyAction[] } {
-  const href = (overrides: Partial<FindWorkSearch>) => findWorkHref({ ...search, jobId: null }, context, overrides)
+export function findWorkEmptyState(
+  search: FindWorkSearch,
+  context: FindWorkContext,
+  { complete = true }: { complete?: boolean } = {}
+): { title: string; body: string; actions: EmptyAction[] } {
+  const href = (overrides: Partial<FindWorkSearch>) => findWorkHref({ ...search, after: null, jobId: null }, context, overrides)
   const found = search.place.status === "found" ? search.place.place : null
   const actions: EmptyAction[] = []
 
@@ -225,11 +244,33 @@ export function findWorkEmptyState(search: FindWorkSearch, context: FindWorkCont
     : ""
   const constraints = [...filterTexts(search), search.includeClosed ? null : "Accepting interest only"].filter(Boolean).join(" · ")
 
+  if (!complete) {
+    return {
+      actions,
+      body: `Your search: ${constraints}. LogLoads read the most recent listings and none of them match, but older ones might. Add keywords to narrow the search, or change one of these.`,
+      title: `No recent jobs${where} match your search`
+    }
+  }
+
   return {
     actions,
     body: `Your search: ${constraints}. LogLoads lists only real postings from landing operators, so nothing is shown that doesn't match. Change one of these, or check back later.`,
     title: `No jobs${where} match your search`
   }
+}
+
+/**
+ * The list heading (#280): the true number of matching jobs, or "200+ jobs" when the store stopped reading at its limit,
+ * so a cut list is never shown as the total.
+ */
+export function findWorkCountText(total: { count: number; exact: boolean }): string {
+  if (!total.exact) return total.count > 0 ? `${total.count}+ jobs` : "No recent jobs"
+  return `${total.count} job${total.count === 1 ? "" : "s"}`
+}
+
+/** "Jobs 26 to 50 of 137" (or "of 200+"), for a list longer than one page. */
+export function findWorkRangeText(start: number, shown: number, total: { count: number; exact: boolean }): string {
+  return `Jobs ${start + 1} to ${start + shown} of ${total.count}${total.exact ? "" : "+"}`
 }
 
 /** What the filter form shows and submits: plain strings, so the client sheet gets nothing but the search itself. */

@@ -2,7 +2,7 @@
 
 > **Status:** Written 2026-11-03 for the fresh start. Every earlier LogLoads provider project (Supabase, Clerk,
 > Stripe, Resend, PostHog, Sentry, Vercel) was deleted, so every key is new. The tools named here exist in the
-> repository and are unit-tested offline; none of them has been run against a provider yet.
+> repository and are unit-tested offline. The first provider run, the Supabase bring-up, is recorded in §2.7.
 >
 > This runbook authorizes nothing by itself. Steps marked **Owner:** are done by the founder in a provider
 > dashboard or with the founder's credentials. Production steps also need the founder's explicit
@@ -189,6 +189,48 @@ The seed is synthetic. Never present it as real activity. On production this ste
 - **Data API:** **Owner:** keep it enabled with the `public` schema exposed. The app reads `operating_state` and calls
   `consume_rate_limit` through it with the service-role key.
 - Confirm everything with `doppler run --project logloads --config stg -- pnpm supabase:post-provision check`.
+
+### 2.7 Bring-up record: project `logloads`, 2026-11-11 (#271)
+
+The founder keeps one key set per product in Doppler `prd` and rotates every key before launch (decision,
+2026-11-08). So LogLoads has one Supabase project, `logloads` in `us-east-1`, instead of the staging and production
+pair above. The lead created it on 2026-11-10 with `tools/provision-supabase-project.mjs` (§2.2), which wrote its
+settings, the database password and the generated secrets to `prd`. There is no tooling config, so `DATABASE_URL`,
+`SUPABASE_PROJECT_REF` and `SUPABASE_DB_PASSWORD` are in `prd` too. Each step below ran under
+`doppler run --project logloads --config prd`. The readiness check used `--target staging`, because nothing is live.
+Only names and verdicts are recorded.
+
+| Step | Command | Result |
+|---|---|---|
+| Migrations (§2.3, §15.2) | not run | **Deferred** (below). Nothing is applied: neither the normalized V2 schema nor `supabase/migrations`. |
+| Bucket (§2.4) | `supabase:post-provision bucket --apply` | Pass: created `logloads-private-media`, private, 10,000,000 bytes, JPEG, PNG and WebP. |
+| Post-provision (§2.6) | `supabase:post-provision check` | Fail, as expected before the migrations: the `operating_state` table and the `consume_rate_limit` RPC are missing. The bucket matches the contract. |
+| Readiness (§0) | `pnpm integrations:check --target staging` | NOT READY: 12 ready, 0 not ready, 2 invalid, 3 off. |
+
+Readiness in detail:
+
+- **Ready:** environment, session, supabase-api, supabase-storage, rate-limit, clerk, billing-gates, cron, resend,
+  posthog, sentry and maps.
+- **Off:** app (`NEXT_PUBLIC_APP_URL` is unset), platform-admin (no founder scope yet) and anthropic (no key).
+- **Invalid, supabase-db:** "`SUPABASE_ACCESS_TOKEN` must be unset for target staging". This is expected, and it is
+  documented rather than fixed. The check flags this management token on every hosted target, because §2.1 keeps it
+  in the unsynced `dev` config. Every key lives in `prd` by founder decision, so the token is there too. The app never
+  reads it. Remove it from `prd` before `prd` syncs to any deployment, and revoke it at launch with the other keys.
+- **Invalid, stripe:** "`LOGLOADS_STRIPE_EXPECTED_LIVEMODE` must be test for target staging". The provisioning tool
+  writes `live` into `prd` (§1). No Stripe credential is set, so billing stays dark. The value is a live-mode setting,
+  so it stays as it is until the founder decides.
+- **Warning, environment:** the injected Doppler config is `prd`, not `stg`. This follows from the same decision.
+- The pinned pnpm 10.12.4 warned that Node 26.13.0 is outside `engines` (24.x). The check itself ran normally.
+
+**Hosted schema deferred until V2 production approval; the migration order will be V2 first.** `logloads` is the only
+LogLoads project and the planned home of the normalized V2 store. On a fresh project, §0 and §15.1 put the V2 schema
+before the pilot migrations; otherwise PostGIS lands in `public`, and V2 then needs an owner decision. `pnpm
+normalized:store` refuses a `prd` config, and that refusal stays. So this project gets the V2 schema, then the
+pilot migrations, only through a reviewed production approval. CI already proves the V2 schema on a disposable
+Supabase local stack. Until then, the `check` failures above are expected, and so is a `503` from `/api/health`.
+
+Still open: the migrations (V2 first, after that approval); the canonical-state bootstrap (§2.5, after the first
+deployment); the **Owner** dashboard settings (§2.6); Clerk third-party auth and the real-token harness (#112).
 
 ## 3. Clerk
 

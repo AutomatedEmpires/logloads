@@ -232,7 +232,10 @@ begin
   perform pg_temp.fails(format('select marketplace.reactivate_job_posting(%L, false)', j_a), '23514', 'attestation',
     'F3: re-activation with attestation = false is refused');
   perform pg_temp.as_jwt('authenticated', 'p3_drv');
-  perform pg_temp.fails(format('select marketplace.reactivate_job_posting(%L, true)', j_a), '42501', '',
+  -- From 31 (31-O) another business's job reads exactly as a job that does not exist; stage 32 runs this suite again.
+  perform pg_temp.fails(format('select marketplace.reactivate_job_posting(%L, true)', j_a),
+    case when to_regprocedure('marketplace.job_confirmation_current(timestamptz)') is null then '42501' else 'P0002' end,
+    case when to_regprocedure('marketplace.job_confirmation_current(timestamptz)') is null then '' else '^Job not found$' end,
     'F3: a hauling driver cannot re-activate a landing''s job');
   perform pg_temp.as_jwt('harness');
   perform pg_temp.ok((select j.status = 'paused' and j.last_confirmed_at = v_ts and a.confirmation_seq = v_seq

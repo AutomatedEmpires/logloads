@@ -160,15 +160,33 @@ describe("Terms of Service archived for agreements accepted under them (LE-13)",
     )
   })
 
-  it("links the in-app percentage-v1-2026-08-03 agreement to the archived Terms", () => {
+  it("offers no in-app acceptance and links a historical agreement to the archived Terms", () => {
     const hostBilling = buildHostBillingView(
-      { hostBillingProfiles: [], hostInvoices: [], loadPostings: [], platformFeeEvents: [] },
+      {
+        hostBillingProfiles: [],
+        hostInvoices: [],
+        loadPostings: [],
+        organizationBillingAccounts: [
+          {
+            activationState: "percentage_active",
+            billingModel: "percentage_v1",
+            organizationId: "33333333-3333-4333-8333-333333333331",
+            percentageTermsSnapshot: {
+              acceptedAt: "2026-08-03T00:00:00.000Z",
+              acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION
+            },
+            subscriptionId: null
+          }
+        ],
+        platformFeeEvents: []
+      },
       "33333333-3333-4333-8333-333333333331",
       "2026-07-15T12:00:00.000Z",
-      { canManageBilling: true, percentageEnrollmentAllowed: true }
+      { canManageBilling: true }
     )
 
-    expect(hostBilling.percentageAgreement.canAccept).toBe(true)
+    // The percentage fee is retired: the view has no acceptance control at all.
+    expect(hostBilling.percentageAgreement).not.toHaveProperty("canAccept")
 
     const html = renderToStaticMarkup(
       <BillingPage
@@ -181,8 +199,12 @@ describe("Terms of Service archived for agreements accepted under them (LE-13)",
       />
     )
 
+    expect(html).not.toContain("I am authorized to accept")
+    expect(html).not.toContain("Accept 5% host agreement")
+    // The agreement this host accepted still links the Terms that version
+    // accepted, archived at a stable URL, not whatever /terms says today (LE-13).
     expect(html).toContain(
-      'I am authorized to accept the <a href="/terms/2026-08-03">LogLoads Terms effective August 3, 2026</a>.'
+      'kept as a record under the <a href="/terms/2026-08-03">LogLoads Terms effective August 3, 2026</a>'
     )
     expect(html).not.toContain('href="/terms"')
   })

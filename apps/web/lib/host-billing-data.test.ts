@@ -398,7 +398,7 @@ describe("nothing has accrued yet", () => {
 })
 
 describe("the card on file, and what its state costs the host", () => {
-  it("blocks publishing when there is no billing profile at all", () => {
+  it("does not block publishing when there is no billing profile at all", () => {
     const view = buildHostBillingView(
       source({ hostBillingProfiles: [] }),
       HOST,
@@ -407,15 +407,16 @@ describe("the card on file, and what its state costs the host", () => {
     )
 
     expect(view.paymentMethod.status).toBe("none")
-    expect(view.paymentMethod.blocksPublishing).toBe(true)
+    expect(view.paymentMethod).not.toHaveProperty("blocksPublishing")
     expect(view.paymentMethod.cardLine).toBeNull()
-    expect(view.paymentMethod.consequence).toMatch(/cannot publish/i)
-    expect(view.paymentMethod.nextStep).toMatch(/attach a card/i)
-    // A host with no card is not charged for having no card.
-    expect(view.paymentMethod.consequence).toMatch(/no monthly fee/i)
+    expect(view.paymentMethod.consequence).toMatch(/publishing does not need one/i)
+    expect(view.paymentMethod.consequence).not.toMatch(/cannot publish/i)
+    // The preserved legacy agreement can still be serviced, so the step is
+    // offered only for a bill that is still owed.
+    expect(view.paymentMethod.nextStep).toMatch(/still owes a LogLoads fee bill/i)
   })
 
-  it("blocks publishing on a declined card and shows what the processor said", () => {
+  it("shows what the processor said about a declined card without blocking publishing", () => {
     const view = buildHostBillingView(
       source({
         hostBillingProfiles: [
@@ -431,8 +432,8 @@ describe("the card on file, and what its state costs the host", () => {
     )
 
     expect(view.paymentMethod.status).toBe("failed")
-    expect(view.paymentMethod.blocksPublishing).toBe(true)
-    expect(view.paymentMethod.consequence).toMatch(/cannot publish/i)
+    expect(view.paymentMethod.consequence).toMatch(/publishing is not affected/i)
+    expect(view.paymentMethod.consequence).not.toMatch(/cannot publish/i)
     expect(view.paymentMethod.failureLine).toBe("Declined Jul 3, 2026: card_declined: insufficient funds")
     // A declined card does not touch work already on the network, and never
     // touches what a driver is owed.
@@ -440,11 +441,11 @@ describe("the card on file, and what its state costs the host", () => {
     expect(view.paymentMethod.consequence).toMatch(/paid by you/i)
   })
 
-  it("lets an attached card publish, and names the card without storing one", () => {
+  it("names an attached card without storing one", () => {
     const view = buildHostBillingView(source(), HOST, NOW)
 
     expect(view.paymentMethod.status).toBe("attached")
-    expect(view.paymentMethod.blocksPublishing).toBe(false)
+    expect(view.paymentMethod.consequence).toMatch(/publishing does not need it/i)
     expect(view.paymentMethod.nextStep).toBeNull()
     expect(view.paymentMethod.cardLine).toBe("visa ending 4242")
     expect(view.paymentMethod.failureLine).toBeNull()
@@ -463,9 +464,9 @@ describe("the card on file, and what its state costs the host", () => {
     )
 
     expect(view.paymentMethod.status).toBe("none")
-    expect(view.paymentMethod.blocksPublishing).toBe(false)
-    expect(view.paymentMethod.consequence).toMatch(/creating a workspace or draft does not require one/i)
-    expect(view.paymentMethod.consequence).toMatch(/approved percentage agreement/i)
+    expect(view.paymentMethod.consequence).toMatch(/a draft or live work does not require one/i)
+    expect(view.paymentMethod.consequence).toMatch(/preserved obligation still requires collection/i)
+    expect(view.paymentMethod.consequence).not.toMatch(/percentage agreement/i)
     expect(view.paymentMethod.setupAllowed).toBe(false)
     expect(view.paymentMethod.nextStep).toBeNull()
   })
@@ -491,27 +492,21 @@ describe("the card on file, and what its state costs the host", () => {
     expect(viewer.paymentMethod.setupUnavailableReason).toMatch(/owner, administrator, or billing manager/i)
     expect(unenrolledManager.paymentMethod.setupAllowed).toBe(false)
     expect(unenrolledManager.paymentMethod.setupUnavailableReason).toMatch(
-      /approved for percentage billing/i
+      /percentage fee is retired/i
     )
   })
 
-  it("covers every card state the schema allows, and exactly one of them publishes", () => {
+  it("covers every card state the schema allows, and none of them blocks publishing", () => {
     expect(Object.keys(PAYMENT_STATE_PRESENTATION).sort()).toEqual(
       [...COVERED_BILLING_STATUSES.paymentMethod].sort()
     )
 
-    // The negative control on the gate itself: if a future state defaulted to
-    // "publishing is fine", this count changes and this test fails.
-    const publishable = Object.entries(PAYMENT_STATE_PRESENTATION).filter(
-      ([, presentation]) => !presentation.blocksPublishing
-    )
-    expect(publishable.map(([status]) => status)).toEqual(["attached"])
-
-    // A blocked state has to tell the host what to do about it.
+    // The percentage fee is retired, so a card is never a condition of
+    // publication and no state may tell a host otherwise.
     for (const [status, presentation] of Object.entries(PAYMENT_STATE_PRESENTATION)) {
-      if (presentation.blocksPublishing) {
-        expect(presentation.nextStep, `${status} must name a next step`).toBeTruthy()
-      }
+      expect(presentation, status).not.toHaveProperty("blocksPublishing")
+      expect(presentation.consequence, status).not.toMatch(/cannot publish|before publishing|then publish/i)
+      expect(presentation.nextStep ?? "", status).not.toMatch(/publish/i)
     }
   })
 })
@@ -698,28 +693,29 @@ describe("tenancy", () => {
     expect(view.currentPeriod.totals.platformFeeCents).toBe(0)
     expect(view.invoices).toEqual([])
     expect(view.hasBillingHistory).toBe(false)
-    // The other host's card must not become this host's licence to publish.
+    // The other host's card is not this host's card.
     expect(view.paymentMethod.status).toBe("none")
-    expect(view.paymentMethod.blocksPublishing).toBe(true)
   })
 })
 
-describe("what exactly the host is charged", () => {
-  it("explains the fee with a worked example produced by the billing arithmetic", () => {
+describe("what the host is charged now", () => {
+  it("says the fee is retired and explains historical rows with the frozen arithmetic", () => {
     const view = buildHostBillingView(source(), HOST, NOW)
 
+    // The retired rate, kept to read historical lines. Not a current price.
     expect(view.fee.rateLabel).toBe("5%")
     expect(view.fee.example).toEqual({
       driverPayLabel: "$500.00",
       hostTotalLabel: "$525.00",
       platformFeeLabel: "$25.00"
     })
-    expect(view.fee.headline).toMatch(/on top/i)
-    expect(view.fee.headline).toMatch(/completed/i)
+    expect(view.fee.headline).toMatch(/retired/i)
+    expect(view.fee.headline).toMatch(/adds no fee to new loads/i)
+    expect(view.fee.headline).toMatch(/publishing needs no agreement or card/i)
 
     const points = view.fee.points.join(" ")
-    // The four claims a host must not have to ask about.
     expect(points).toMatch(/no monthly fee/i)
+    expect(points).toMatch(/exactly as they were recorded/i)
     expect(points).toMatch(/nothing is deducted from driver pay/i)
     expect(points).toMatch(/holds no funds and settles no freight/i)
     expect(points).toMatch(/drivers pay nothing/i)
@@ -735,187 +731,96 @@ describe("what exactly the host is charged", () => {
 })
 
 describe("percentage agreement state", () => {
-  it("presents an accepted percentage_v1 agreement as active and immutable", () => {
+  const historicalAgreement = {
+    activationState: "percentage_active",
+    billingModel: "percentage_v1",
+    organizationId: HOST,
+    percentageTermsSnapshot: {
+      acceptedAt: "2026-08-03T00:00:00.000Z",
+      acceptedTermsVersion: "percentage-v1-2026-08-03"
+    }
+  }
+  const terminalSubscription = {
+    id: "20202020-2020-4020-8020-202020202020",
+    organizationId: HOST,
+    status: "cancelled"
+  }
+
+  it("reads an agreement accepted before the retirement exactly as recorded", () => {
     const view = buildHostBillingView(
-      source({
-        organizationBillingAccounts: [
-          {
-            activationState: "percentage_active",
-            billingModel: "percentage_v1",
-            organizationId: HOST,
-            percentageTermsSnapshot: {
-              acceptedAt: "2026-08-03T00:00:00.000Z",
-              acceptedTermsVersion: "percentage-v1-2026-08-03"
-            }
-          }
-        ]
-      }),
+      source({ organizationBillingAccounts: [historicalAgreement] }),
       HOST,
-      NOW
+      NOW,
+      { canManageBilling: true }
     )
 
     expect(view.percentageAgreement).toEqual({
       acceptedOnLabel: "Aug 3, 2026",
-      canAccept: false,
       state: "active",
       termsVersion: "percentage-v1-2026-08-03"
     })
   })
 
-  it("offers current terms to an allowlisted legacy account without rewriting its history", () => {
-    const view = buildHostBillingView(source(), HOST, NOW, {
-      canManageBilling: true,
-      percentageEnrollmentAllowed: true
-    })
+  it("never offers an acceptance, whatever the account or the viewer", () => {
+    const accounts: Array<HostBillingSource["organizationBillingAccounts"]> = [
+      [],
+      undefined,
+      [
+        {
+          activationState: "active",
+          billingModel: "subscription_v1",
+          organizationId: HOST,
+          subscriptionId: terminalSubscription.id
+        }
+      ],
+      [historicalAgreement]
+    ]
 
-    expect(view.percentageAgreement).toEqual({
-      acceptedOnLabel: null,
-      canAccept: true,
-      state: "legacy",
-      termsVersion: null
-    })
+    for (const organizationBillingAccounts of accounts) {
+      for (const canManageBilling of [true, false]) {
+        const view = buildHostBillingView(
+          source({
+            ...(organizationBillingAccounts ? { organizationBillingAccounts } : {}),
+            organizationSubscriptions: [terminalSubscription]
+          }),
+          HOST,
+          NOW,
+          { canManageBilling }
+        )
+
+        expect(view.percentageAgreement).not.toHaveProperty("canAccept")
+      }
+    }
   })
 
-  it("does not self-convert a historical subscription record", () => {
-    const view = buildHostBillingView(
-      source({
-        organizationBillingAccounts: [
-          {
-            activationState: "subscription_active",
-            billingModel: "subscription_v1",
-            organizationId: HOST
-          }
-        ]
-      }),
-      HOST,
-      NOW,
-      { canManageBilling: true, percentageEnrollmentAllowed: true }
-    )
+  it("names the states it reads", () => {
+    const states = [
+      buildHostBillingView(source({ organizationBillingAccounts: [] }), HOST, NOW),
+      buildHostBillingView(source(), HOST, NOW),
+      buildHostBillingView(
+        source({
+          organizationBillingAccounts: [
+            { activationState: "active", billingModel: "subscription_v1", organizationId: HOST }
+          ]
+        }),
+        HOST,
+        NOW
+      ),
+      buildHostBillingView(source({ organizationBillingAccounts: [historicalAgreement] }), HOST, NOW)
+    ].map((view) => view.percentageAgreement.state)
 
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: false,
-      state: "historical_subscription"
-    })
-  })
-
-  it("offers percentage_v1 acceptance once the linked subscription is terminal", () => {
-    const view = buildHostBillingView(
-      source({
-        organizationBillingAccounts: [
-          {
-            activationState: "active",
-            billingModel: "subscription_v1",
-            organizationId: HOST,
-            subscriptionId: "20202020-2020-4020-8020-202020202020"
-          }
-        ],
-        organizationSubscriptions: [
-          {
-            id: "20202020-2020-4020-8020-202020202020",
-            organizationId: HOST,
-            status: "cancelled"
-          }
-        ]
-      }),
-      HOST,
-      NOW,
-      { canManageBilling: true, percentageEnrollmentAllowed: true }
-    )
-
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: true,
-      state: "historical_subscription"
-    })
-  })
-
-  it("keeps acceptance hidden until every commercial subscription is terminal", () => {
-    const view = buildHostBillingView(
-      source({
-        organizationBillingAccounts: [
-          {
-            activationState: "active",
-            billingModel: "subscription_v1",
-            organizationId: HOST,
-            subscriptionId: "20202020-2020-4020-8020-202020202020"
-          }
-        ],
-        organizationSubscriptions: [
-          {
-            id: "20202020-2020-4020-8020-202020202020",
-            organizationId: HOST,
-            status: "cancelled"
-          },
-          {
-            id: "30303030-3030-4030-8030-303030303030",
-            organizationId: HOST,
-            status: "past_due"
-          }
-        ]
-      }),
-      HOST,
-      NOW,
-      { canManageBilling: true, percentageEnrollmentAllowed: true }
-    )
-
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: false,
-      state: "historical_subscription"
-    })
-  })
-
-  it("does not let an internal billing test block commercial acceptance", () => {
-    const view = buildHostBillingView(
-      source({
-        organizationSubscriptions: [
-          {
-            id: "30303030-3030-4030-8030-303030303030",
-            internalBillingTest: true,
-            organizationId: HOST,
-            status: "active"
-          }
-        ]
-      }),
-      HOST,
-      NOW,
-      { canManageBilling: true, percentageEnrollmentAllowed: true }
-    )
-
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: true,
-      state: "legacy"
-    })
-  })
-
-  it("keeps the agreement control hidden when this host is outside the rollout", () => {
-    const view = buildHostBillingView(source(), HOST, NOW, { canManageBilling: true })
-
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: false,
-      state: "legacy"
-    })
-  })
-
-  it("keeps the agreement control hidden from a member without billing permission", () => {
-    const view = buildHostBillingView(source(), HOST, NOW, {
-      percentageEnrollmentAllowed: true
-    })
-
-    expect(view.percentageAgreement).toMatchObject({
-      canAccept: false,
-      state: "legacy"
-    })
+    expect(states).toEqual(["none", "legacy", "historical_subscription", "active"])
   })
 })
 
 describe("the live wiring", () => {
   it("reads the real operating state for a seeded host: card attached, ledger empty", () => {
-    // The seeded bench gives every host that posts a load an attached card, since
-    // publishing requires one. Nothing has ever been billed, so this is also the
+    // The seeded bench gives every host that posts a load an attached card from
+    // before the retirement. Nothing has ever been billed, so this is also the
     // proof that the empty ledger is presented as empty rather than as unknown.
     const view = getHostBillingView("33333333-3333-4333-8333-333333333332")
 
     expect(view.paymentMethod.status).toBe("attached")
-    expect(view.paymentMethod.blocksPublishing).toBe(false)
     expect(view.paymentMethod.cardLine).toMatch(/ending \d{4}$/)
     expect(view.hasBillingHistory).toBe(false)
     expect(view.currentPeriod.totals.platformFeeCents).toBe(0)

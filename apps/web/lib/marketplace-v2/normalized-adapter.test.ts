@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { validateMarketplaceJobDraft } from "@logloads/contracts"
+import { MARKETPLACE_JOB_UNCONFIRMED_LABEL, validateMarketplaceJobDraft } from "@logloads/contracts"
 
 import { createNormalizedMarketplaceV2 } from "./normalized-adapter"
 import type {
@@ -42,11 +42,12 @@ const haulerViewer: MarketplaceV2Viewer = { organizationId: HAUL, userId: USER }
 
 interface Recorded { session: "anon" | "user"; principal?: MarketplacePrincipal; readOnly?: boolean; fn: string; args: Record<string, unknown> }
 
+/** A listed job, confirmed an hour before NOW, so the day-14 rule (#321) keeps it on Find Work. */
 function jobRow(overrides: Record<string, unknown> = {}) {
   return {
     accepting_interest: true, destination_label: null, ends_on: null, equipment_codes: ["log_truck"], est_one_way_miles: null,
     estimated_daily_loads: null, estimated_loads_per_truck_per_day: null, estimated_tons_per_load: null, expires_at: null,
-    job_id: JOB, last_confirmed_at: null, last_modified_at: "2026-11-03T11:00:00+00:00", origin_label: "Near Vida, OR",
+    job_id: JOB, last_confirmed_at: "2026-11-03T11:00:00+00:00", last_modified_at: "2026-11-03T11:00:00+00:00", origin_label: "Near Vida, OR",
     origin_lat: 44.2, origin_lng: -122.5, origin_state_code: "OR", pay_amount_cents: 9100, pay_note: null, pay_unit: "per_ton",
     poster_name: "Adapter Timber", poster_organization_id: LAND, poster_verified: false, product: "Saw logs",
     public_access_requirements: [], public_road_notes: null, schedule_note: null, slug: JOB, sponsored: false,
@@ -234,6 +235,211 @@ describe("normalized adapter: identity and discovery", () => {
   })
 })
 
+describe("normalized adapter: Find work pages (#280)", () => {
+  const jobId = (index: number) => `11111111-aaaa-4aaa-8aaa-${String(index).padStart(12, "0")}`
+  const board = (count: number) => Array.from({ length: count }, (_, index) => jobRow({
+    job_id: jobId(index),
+    last_confirmed_at: new Date(Date.UTC(2026, 10, 3, 0, count - index)).toISOString(),
+    last_modified_at: new Date(Date.UTC(2026, 10, 3, 0, count - index)).toISOString(),
+    public_road_notes: "Gravel for the last 2 mi",
+    slug: jobId(index)
+  }))
+
+  it("reads a page with ONE anonymous call, each job with its public detail, never one call per job", async () => {
+    responses.list_marketplace_jobs = board(60)
+
+    const first = await adapter().listJobPage({}, { limit: 25 })
+    expect(first.items).toHaveLength(25)
+    expect(first.items[0]).toMatchObject({ id: jobId(0), publicAccessRequirements: [], publicRoadNotes: "Gravel for the last 2 mi" })
+    expect(recorded).toEqual([
+      { args: { p_accepting_only: true, p_equipment: null, p_limit: 200, p_org_id: null, p_pay_unit: null, p_query: null }, fn: "list_marketplace_jobs", session: "anon" }
+    ])
+
+    const second = await adapter().listJobPage({}, { after: first.nextCursor, limit: 25 })
+    expect(second.start).toBe(25)
+    expect(second.items.map((job) => job.id)).toEqual(Array.from({ length: 25 }, (_, index) => jobId(index + 25)))
+    expect(storeCalls()).toEqual(["list_marketplace_jobs", "list_marketplace_jobs"])
+    expect(principal).not.toHaveBeenCalled()
+  })
+
+  it("counts exactly below the function's row limit, and as a floor once the function filled it", async () => {
+    responses.list_marketplace_jobs = board(199)
+    expect((await adapter().listJobPage({})).total).toEqual({ count: 199, exact: true })
+
+    responses.list_marketplace_jobs = board(200)
+    expect((await adapter().listJobPage({})).total).toEqual({ count: 200, exact: false })
+
+    // The filters the function cannot take yet are applied to its rows before counting: a floor, still never a total.
+    expect((await adapter().listJobPage({ product: "Pulpwood" })).total).toEqual({ count: 0, exact: false })
+  })
+
+  it("asks nothing for filters that can match nothing", async () => {
+    expect(await adapter().listJobPage({ posterOrganizationId: "not-a-business" })).toMatchObject({ items: [], total: { count: 0, exact: true } })
+    expect(recorded).toEqual([])
+  })
+})
+
+/*
+ * The day-14 rule (#308, #321): from exactly 14 x 24 hours after its last confirmation, and when it was never confirmed
+ * (a legacy import), a job still on the marketplace is off Find Work and takes no new interest. It stays active, is
+ * still read by id, and reconfirming restores it. Stage 31 enforces it in the store. These rows play a store that
+ * still returned such a job (another version, or a clock a moment behind), to prove the adapter applies the same
+ * shared rule, `jobTakesNewInterest`, itself.
+ */
+describe("normalized adapter: the day-14 reconfirmation rule (#308, #321)", () => {
+  const DAY_MS = 86_400_000
+  const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString()
+  const job = (n: number) => `11111111-aaaa-4aaa-8aaa-00000000000${n}`
+  const row = (n: number, overrides: Record<string, unknown>) => jobRow({ job_id: job(n), slug: job(n), title: `Job ${n}`, ...overrides })
+  const ids = (jobs: ReadonlyArray<{ id: string }>) => jobs.map((candidate) => candidate.id)
+
+  const FRESH = row(1, { last_confirmed_at: ago(14 * DAY_MS - 1) })
+  const STALE = row(2, { last_confirmed_at: ago(14 * DAY_MS) })
+  const LEGACY = row(3, { last_confirmed_at: null })
+  const RECONFIRMED = row(4, { last_confirmed_at: NOW.toISOString(), last_modified_at: ago(30 * DAY_MS) })
+  const PAUSED = row(5, { accepting_interest: false, last_confirmed_at: ago(40 * DAY_MS), status: "paused" })
+
+  it("leaves a job off Find Work from exactly 14 x 24 hours after its last confirmation, and a legacy job never confirmed", async () => {
+    responses.list_marketplace_jobs = [FRESH, STALE, LEGACY, RECONFIRMED]
+
+    expect(ids(await adapter().listJobs({}))).toEqual([job(4), job(1)])
+    // "Include filled, paused and closed" does not bring it back: it is none of those.
+    expect(ids(await adapter().listJobs({ acceptingOnly: false }))).toEqual([job(4), job(1)])
+
+    const page = await adapter().listJobPage({}, { limit: 25 })
+    expect(ids(page.items)).toEqual([job(4), job(1)])
+    expect(page.total).toEqual({ count: 2, exact: true })
+  })
+
+  it("keeps a stopped job in the all-statuses list: the rule hides only a job still on the marketplace", async () => {
+    responses.list_marketplace_jobs = [PAUSED, STALE]
+
+    expect(await adapter().listJobs({ acceptingOnly: false })).toEqual([expect.objectContaining({ acceptingInterest: false, id: job(5), status: "paused" })])
+    expect(await adapter().listJobs({})).toEqual([])
+  })
+
+  it("still reads the job by id, as active and not taking new interest, never as expired or paused", async () => {
+    for (const stale of [STALE, LEGACY]) {
+      responses.get_marketplace_job = [stale]
+
+      for (const view of [await adapter().getJob(stale.job_id), await adapter().getJob(stale.job_id, haulerViewer)]) {
+        expect(view).toMatchObject({ acceptingInterest: false, id: stale.job_id, lastConfirmedAt: stale.last_confirmed_at, status: "active" })
+      }
+    }
+
+    responses.get_marketplace_job = [FRESH]
+    expect(await adapter().getJob(job(1))).toMatchObject({ acceptingInterest: true, status: "active" })
+  })
+
+  it("brings a job straight back once its poster reconfirms it", async () => {
+    responses.list_marketplace_jobs = [STALE]
+    expect(await adapter().listJobs({})).toEqual([])
+
+    responses.list_marketplace_jobs = [{ ...STALE, last_confirmed_at: NOW.toISOString() }]
+    responses.get_marketplace_job = [{ ...STALE, last_confirmed_at: NOW.toISOString() }]
+    expect(ids(await adapter().listJobs({}))).toEqual([job(2)])
+    expect(await adapter().getJob(job(2))).toMatchObject({ acceptingInterest: true, status: "active" })
+  })
+
+  it("refuses new interest with 'Waiting for the poster to confirm' before the store writes anything", async () => {
+    for (const stale of [STALE, LEGACY]) {
+      for (const standing of [[], [interestRow({ job_id: stale.job_id, status: "withdrawn" })]]) {
+        recorded = []
+        responses.get_marketplace_job = [stale]
+        responses.list_marketplace_interests = standing
+
+        const refusal = await adapter().expressInterest(haulerViewer, { loadPostingId: stale.job_id, trucksOffered: "2" }).catch((error: unknown) => error)
+
+        expect(refusal).toBeInstanceOf(MarketplaceRefusalError)
+        expect(refusal).toMatchObject({ code: "23514", message: MARKETPLACE_JOB_UNCONFIRMED_LABEL })
+        expect((refusal as Error).message).not.toMatch(/expire|pause|close/i)
+        expect(storeCalls()).toEqual(["get_marketplace_job", "list_marketplace_interests"])
+        expect(recorded.every((call) => call.session === "user" && call.readOnly === false)).toBe(true)
+      }
+    }
+  })
+
+  it("lets the hauler change an inquiry already sent on such a job: that is not new interest", async () => {
+    responses.get_marketplace_job = [STALE]
+    responses.list_marketplace_interests = [interestRow({ id: INTEREST, job_id: job(2), status: "replied" })]
+    responses.submit_expression_of_interest = [{ created: false, interest_id: INTEREST }]
+
+    expect((await adapter().expressInterest(haulerViewer, { loadPostingId: job(2), trucksOffered: "3" })).id).toBe(INTEREST)
+    expect(storeCalls()).toEqual(["get_marketplace_job", "list_marketplace_interests", "submit_expression_of_interest", "list_marketplace_interests"])
+  })
+
+  it("sends interest on a confirmed job as before, reading the job first in the same transaction", async () => {
+    responses.get_marketplace_job = [FRESH]
+    responses.list_marketplace_interests = [interestRow({ job_id: job(1) })]
+    responses.submit_expression_of_interest = [{ created: true, interest_id: INTEREST }]
+
+    expect((await adapter().expressInterest(haulerViewer, { loadPostingId: job(1), trucksOffered: "2" })).id).toBe(INTEREST)
+    expect(storeCalls()).toEqual(["get_marketplace_job", "submit_expression_of_interest", "list_marketplace_interests"])
+    expect(recorded[0]).toMatchObject({ args: { p_job_id: job(1) }, readOnly: false, session: "user" })
+  })
+
+  it("leaves a job the person cannot read, or one that stopped, to the store's own refusal", async () => {
+    responses.submit_expression_of_interest = [{ created: true, interest_id: INTEREST }]
+    responses.list_marketplace_interests = [interestRow()]
+
+    for (const visible of [[], [PAUSED]]) {
+      recorded = []
+      responses.get_marketplace_job = visible
+
+      await adapter().expressInterest(haulerViewer, { loadPostingId: JOB, trucksOffered: "2" })
+      expect(storeCalls()).toEqual(["get_marketplace_job", "submit_expression_of_interest", "list_marketplace_interests"])
+    }
+  })
+})
+
+describe("normalized adapter: inquiry pages (#280, audit K1)", () => {
+  const LATER = "66666666-eeee-4eee-8eee-eeeeeeeeeee2"
+
+  it("reads the active business's inquiries once, as the person and read-only, on the side asked for", async () => {
+    responses.list_marketplace_interests = [interestRow(), interestRow({ id: LATER, updated_at: "2026-11-03T11:30:00+00:00" })]
+
+    const page = await adapter().listInterestPage(haulerViewer, "hauler", { limit: 1 })
+    expect(page.items.map((interest) => interest.id)).toEqual([LATER])
+    expect(page.total).toEqual({ count: 2, exact: true })
+    expect(recorded).toEqual([
+      { args: { p_org_id: HAUL, p_side: "hauler" }, fn: "list_marketplace_interests", principal: PRINCIPAL, readOnly: true, session: "user" }
+    ])
+
+    const next = await adapter().listInterestPage(haulerViewer, "hauler", { after: page.nextCursor, limit: 1 })
+    expect(next.items.map((interest) => interest.id)).toEqual([INTEREST])
+    expect(next.nextCursor).toBeNull()
+  })
+
+  it("never returns or counts another business's inquiry, even if the store did", async () => {
+    responses.list_marketplace_interests = [interestRow(), interestRow({ hauler_org_id: OTHER, id: LATER, landing_org_id: OTHER })]
+
+    const hauler = await adapter().listInterestPage(haulerViewer, "hauler")
+    expect(hauler.items.map((interest) => interest.haulerOrganization.id)).toEqual([HAUL])
+    expect(hauler.total.count).toBe(1)
+
+    const landing = await adapter().listInterestPage(landingViewer, "landing")
+    expect(landing.items.map((interest) => interest.landingOrganization.id)).toEqual([LAND])
+    expect(recorded.at(-1)?.args).toEqual({ p_org_id: LAND, p_side: "landing" })
+  })
+
+  it("does not use one business's cursor for another business", async () => {
+    responses.list_marketplace_interests = [interestRow(), interestRow({ id: LATER, updated_at: "2026-11-03T11:30:00+00:00" })]
+    const mine = await adapter().listInterestPage(haulerViewer, "hauler", { limit: 1 })
+
+    responses.list_marketplace_interests = [interestRow({ hauler_org_id: OTHER }), interestRow({ hauler_org_id: OTHER, id: LATER, updated_at: "2026-11-03T11:30:00+00:00" })]
+    const theirs = await adapter().listInterestPage({ organizationId: OTHER, userId: USER }, "hauler", { after: mine.nextCursor, limit: 1 })
+    expect(theirs).toMatchObject({ restarted: true, start: 0 })
+    expect(theirs.items.map((interest) => interest.id)).toEqual([LATER])
+  })
+
+  it("refuses an unknown side and a malformed business before reaching the store", async () => {
+    await expect(adapter().listInterestPage(haulerViewer, "both" as never)).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    await expect(adapter().listInterestPage({ organizationId: "x'; --", userId: USER }, "hauler")).rejects.toBeInstanceOf(MarketplaceRefusalError)
+    expect(recorded).toEqual([])
+    expect(principal).not.toHaveBeenCalled()
+  })
+})
+
 describe("normalized adapter: inquiries stay inside the active business", () => {
   it("returns the stored inquiry after submitting it for the viewer's own hauling business", async () => {
     responses.submit_expression_of_interest = [{ created: true, interest_id: INTEREST }]
@@ -242,8 +448,9 @@ describe("normalized adapter: inquiries stay inside the active business", () => 
     const view = await adapter().expressInterest(haulerViewer, { loadPostingId: JOB, trucksOffered: "2" })
 
     expect(view.id).toBe(INTEREST)
-    expect(recorded[0]).toMatchObject({ args: { p_hauler_org_id: HAUL, p_job_id: JOB, p_trucks_offered: 2 }, readOnly: false })
-    expect(recorded[1]).toMatchObject({ args: { p_job_id: JOB, p_org_id: HAUL, p_side: "hauler" }, fn: "list_marketplace_interests" })
+    const submitted = recorded.findIndex((call) => call.fn === "submit_expression_of_interest")
+    expect(recorded[submitted]).toMatchObject({ args: { p_hauler_org_id: HAUL, p_job_id: JOB, p_trucks_offered: 2 }, readOnly: false })
+    expect(recorded[submitted + 1]).toMatchObject({ args: { p_job_id: JOB, p_org_id: HAUL, p_side: "hauler" }, fn: "list_marketplace_interests" })
   })
 
   it("refuses to withdraw or reply to an inquiry of another business, even one the person also belongs to", async () => {
@@ -601,13 +808,25 @@ describe("normalized adapter: reporting a listing (#130)", () => {
   })
 })
 
+/**
+ * The shared rules the adapter core may import from `@logloads/services`, by name: the pure job lifecycle rules both
+ * adapters apply (packages/services/src/v2/jobs). Nothing else from that package, which also holds the pilot services.
+ */
+const SHARED_RULES: ReadonlySet<string> = new Set(["jobTakesNewInterest", "unconfirmedJobNotice"])
+
 describe("normalized adapter: no path to the pilot store", () => {
   it("imports nothing that reads or writes operating_state, loads, slots or the pilot services", () => {
     for (const file of ["normalized-adapter.ts", "normalized-db.ts", "normalized-mapping.ts"]) {
       const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8")
       const imports = [...source.matchAll(/from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g)].map((match) => match[1] ?? match[2])
+      const shared = [...source.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']@logloads\/services["']/g)]
 
-      expect(imports.filter((target) => /services|@logloads\/db|pilot-adapter|\.\/mapping$|network|session/.test(target ?? ""))).toEqual([])
+      expect(imports.filter((target) => target !== "@logloads/services" && /services|@logloads\/db|pilot-adapter|\.\/mapping$|network|session/.test(target ?? ""))).toEqual([])
+      // Every import of the package is one named list of shared rules, never a namespace, a default or a dynamic import.
+      expect(shared).toHaveLength(imports.filter((target) => target === "@logloads/services").length)
+      for (const [, names = ""] of shared) {
+        expect(names.split(",").map((name) => name.trim()).filter(Boolean).filter((name) => !SHARED_RULES.has(name)), file).toEqual([])
+      }
     }
   })
 })

@@ -17,26 +17,29 @@ import {
 } from "@logloads/contracts"
 import type { BadgeProps } from "@logloads/ui"
 
-import { percentageEnrollmentAllowed as currentPercentageEnrollmentAllowed } from "./percentage-enrollment"
 import { hostCardSetupEligibility, type HostCardSetupEligibility } from "./host-card-eligibility"
 import { formatBillingDay as formatDay, formatBillingMoney as money } from "./billing-format"
 import { services } from "./services"
 
 /**
- * Percentage-billing read model. This is the current host commercial surface
- * and also remains able to reconcile assignments frozen under the earlier
- * `legacy_percentage` discriminator.
+ * The historical percentage-billing read model.
+ *
+ * THE FEE IS RETIRED. LogLoads records no new completed-load fee and offers no
+ * percentage agreement (docs/DECISIONS.md, 2026-11-01). This view reads the fee
+ * rows, invoices and agreements recorded before the retirement, exactly as
+ * they were written, including assignments frozen under the earlier
+ * `legacy_percentage` discriminator. It never offers a new acceptance.
  *
  * It answers four questions about those historical obligations:
  *
- *   1. Is a card attached, and does its state stop me publishing?
- *   2. What has accrued this month, and from which loads?
+ *   1. Is a card attached for a bill that is still owed?
+ *   2. What was recorded this month, and from which loads?
  *   3. What was I last billed, was it paid, and what did it cover?
- *   4. What exactly am I charged, and is any of it taken out of driver pay?
+ *   4. Is any new fee charged, and is any of it taken out of driver pay? (No.)
  *
- * CURRENT CHARGE. A host states what one load pays the driver. LogLoads charges
- * the host a frozen percentage on top after completion. The driver receives the
- * full stated amount directly from the host.
+ * WHAT WAS CHARGED. A host stated what one load paid the driver, and LogLoads
+ * charged the host a frozen percentage on top after completion. The driver
+ * received the full stated amount directly from the host.
  *
  * WHAT LOGLOADS DOES NOT DO. It never holds, escrows, routes or pays out driver
  * money. Driver pay moves host → driver directly, off-platform. Nothing in this
@@ -78,8 +81,11 @@ export function feeRateLabel(feeBps: number): string {
   return `${Number((feeBps / BPS_PER_PERCENT).toFixed(2))}%`
 }
 
-/** The current rate, worded once so no string on these surfaces hand-types it. */
-const CURRENT_RATE_LABEL = feeRateLabel(PLATFORM_FEE_BPS)
+/**
+ * The retired rate, worded once so no string on these surfaces hand-types it.
+ * It labels history only; no new work is charged at it.
+ */
+const RETIRED_RATE_LABEL = feeRateLabel(PLATFORM_FEE_BPS)
 
 function formatMonth(instant: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -188,12 +194,6 @@ function totalsFor(events: readonly PlatformFeeEvent[], lines: readonly HostFeeL
 // ── Whether this host can be billed at all ────────────────────────────────────
 
 interface PaymentStatePresentation {
-  /**
-   * Whether this state stops the host publishing work. Enforced in
-   * `assertHostCanPublish`; stated here so the host reads the same rule on the
-   * billing page that the publish attempt would tell them.
-   */
-  blocksPublishing: boolean
   consequence: string
   /** What the host does about it. Null when there is nothing to do. */
   nextStep: string | null
@@ -202,39 +202,34 @@ interface PaymentStatePresentation {
 }
 
 /**
- * What each card state means while frozen legacy obligations still require
- * percentage collection, exhaustively.
+ * What each card state means for a host with percentage history, exhaustively.
  *
- * A `Record` over the schema's own status union, not an if-chain with a fallback:
- * adding a state to `hostBillingProfileStatusSchema` will not compile until
- * somebody decides whether a host in it can publish. A fallback would answer
- * "you can publish" for a state nobody has thought about yet, and the publish
- * attempt would then refuse work this page had just promised.
+ * A `Record` over the schema's own status union, not an if-chain with a
+ * fallback: adding a state to `hostBillingProfileStatusSchema` will not compile
+ * until somebody decides what it tells the host. No state blocks publishing —
+ * the percentage fee is retired, and `assertHostCanPublish` needs no card.
  */
 export const PAYMENT_STATE_PRESENTATION: Record<HostBillingProfileStatus, PaymentStatePresentation> = {
   attached: {
-    blocksPublishing: false,
     consequence:
-      "You can publish after the current host agreement is active. This card is charged only for LogLoads platform-fee invoices—never for driver or carrier compensation.",
+      "This card pays only LogLoads fee bills recorded before the percentage fee was retired. It is never charged for driver or carrier compensation, and publishing does not need it.",
     nextStep: null,
     statusLabel: "Card on file",
     tone: "success"
   },
   failed: {
-    blocksPublishing: true,
     consequence:
-      "The last LogLoads fee charge did not go through, so you cannot publish new work until a working card is on file. Work already on the network is unaffected, and your drivers are still paid by you exactly as agreed.",
-    nextStep: "Replace the card on this workspace's billing profile, then publish.",
+      "The last charge for a LogLoads fee bill did not go through. Publishing is not affected, work already on the network is unaffected, and your drivers are still paid by you exactly as agreed.",
+    nextStep: "Replace the card on this workspace's billing profile if a LogLoads fee bill is still owed.",
     statusLabel: "Card declined",
     tone: "critical"
   },
   none: {
-    blocksPublishing: true,
     consequence:
-      "You cannot publish live work until a card is on file. There is no monthly fee and posting itself is not billed; the card supports only LogLoads fees on completed loads.",
-    nextStep: "Attach a card to this workspace's billing profile, then publish.",
+      "No card is on file, and publishing does not need one. A card is needed only to pay a LogLoads fee bill recorded before the percentage fee was retired.",
+    nextStep: "Attach a card if this workspace still owes a LogLoads fee bill.",
     statusLabel: "No card on file",
-    tone: "critical"
+    tone: "neutral"
   }
 }
 
@@ -243,7 +238,6 @@ export const SUBSCRIPTION_CARD_PRESENTATION: Record<
   PaymentStatePresentation
 > = {
   attached: {
-    blocksPublishing: false,
     consequence:
       "This card remains available only for a billing obligation already preserved in this workspace. Driver and carrier compensation never passes through it.",
     nextStep: null,
@@ -251,7 +245,6 @@ export const SUBSCRIPTION_CARD_PRESENTATION: Record<
     tone: "success"
   },
   failed: {
-    blocksPublishing: false,
     consequence:
       "The last permitted LogLoads charge failed. Existing work remains unchanged; replace the card only when this panel confirms that the preserved obligation is eligible for collection.",
     nextStep: "Replace the card before the next permitted collection attempt.",
@@ -259,9 +252,8 @@ export const SUBSCRIPTION_CARD_PRESENTATION: Record<
     tone: "critical"
   },
   none: {
-    blocksPublishing: false,
     consequence:
-      "No card is attached. Creating a workspace or draft does not require one. Card setup opens only after an approved percentage agreement is in force or a preserved obligation requires collection.",
+      "No card is attached. Creating a workspace, a draft or live work does not require one. Card setup opens only when a preserved obligation still requires collection.",
     nextStep: "Attach a card only after this panel confirms that setup is available.",
     statusLabel: "No card on file",
     tone: "warning"
@@ -276,7 +268,6 @@ export interface HostPaymentMethodView {
   cardLine: string | null
   consequence: string
   nextStep: string | null
-  blocksPublishing: boolean
   /** Whether the server will permit a new Stripe SetupIntent for this host. */
   setupAllowed: boolean
   /** Plain-language reason shown instead of a decorative provider action. */
@@ -315,7 +306,6 @@ function paymentMethodView(
     : SUBSCRIPTION_CARD_PRESENTATION[status]
 
   return {
-    blocksPublishing: presentation.blocksPublishing,
     cardLine: cardLineFor(profile),
     consequence: presentation.consequence,
     failureLine:
@@ -333,16 +323,18 @@ function paymentMethodView(
   }
 }
 
-// ── What the fee is, in plain words ───────────────────────────────────────────
+// ── The retired fee, in plain words ───────────────────────────────────────────
 
 export interface HostFeeExplainerView {
+  /** The retired rate, for reading historical lines. Not a current price. */
   rateLabel: string
   headline: string
   /** Each fact a host would otherwise have to ask about. */
   points: string[]
   /**
-   * A worked example through the same function every real charge goes through, so
-   * the illustration cannot drift from the arithmetic.
+   * How a fee recorded before the retirement reads, worked through the same
+   * function every historical row went through, so the illustration cannot
+   * drift from the ledger. It is not a quote: no new fee is charged.
    */
   example: {
     driverPayLabel: string
@@ -363,15 +355,15 @@ function feeExplainerView(): HostFeeExplainerView {
       hostTotalLabel: money(example.hostTotalCents),
       platformFeeLabel: money(example.platformFeeCents)
     },
-    headline: `${CURRENT_RATE_LABEL} of the driver pay stated for each completed load, charged to the host on top.`,
+    headline:
+      "This fee is retired. It appears only on loads completed before the retirement; LogLoads adds no fee to new loads, and publishing needs no agreement or card.",
     points: [
       "There is no monthly fee, subscription, minimum, tier, allowance, overage rate, or charge to post work.",
-      `Nothing is deducted from driver pay. The driver is paid exactly what you stated; the ${CURRENT_RATE_LABEL} is added to what you owe LogLoads.`,
-      "You pay your driver directly. Driver money never passes through LogLoads, which holds no funds and settles no freight.",
-      "Drivers pay nothing to use LogLoads, ever.",
-      "The accepted agreement freezes the rate, currency, and monthly-in-arrears billing cadence before live work can be published."
+      `Fees recorded at the retired ${RETIRED_RATE_LABEL} rate stay on this page exactly as they were recorded.`,
+      "Nothing is deducted from driver pay. You pay your driver directly; driver money never passes through LogLoads, which holds no funds and settles no freight.",
+      "Drivers pay nothing to use LogLoads, ever."
     ],
-    rateLabel: CURRENT_RATE_LABEL
+    rateLabel: RETIRED_RATE_LABEL
   }
 }
 
@@ -430,7 +422,7 @@ export const INVOICE_STATE_PRESENTATION: Record<HostInvoiceStatus, InvoiceStateP
     tone: "success"
   },
   uncollectible: {
-    detail: "This bill could not be collected from the card on file. Publishing stays blocked until a working card is attached.",
+    detail: "This bill could not be collected from the card on file. It is still owed; publishing is not affected.",
     settled: false,
     statusLabel: "Payment failed",
     tone: "critical"
@@ -538,10 +530,13 @@ export interface HostBillingView {
   lastInvoice: HostInvoiceView | null
   /** False only when this host has never accrued a fee and never been billed. */
   hasBillingHistory: boolean
+  /**
+   * The agreement this host accepted before the retirement, read only. There is
+   * no acceptance control: a new percentage agreement cannot be accepted.
+   */
   percentageAgreement: {
     acceptedOnLabel: string | null
-    canAccept: boolean
-    state: "active" | "available" | "historical_subscription" | "legacy"
+    state: "active" | "historical_subscription" | "legacy" | "none"
     termsVersion: string | null
   }
 }
@@ -578,13 +573,8 @@ export interface HostBillingSource {
 }
 
 export interface HostBillingViewOptions {
-  /** Mirrors the mutation boundary: only billing managers can accept terms. */
+  /** Mirrors the mutation boundary: only billing managers can add a card. */
   canManageBilling?: boolean
-  /**
-   * Server-owned rollout decision for this exact organization. Defaults false
-   * so a new caller cannot accidentally expose commercial enrollment.
-   */
-  percentageEnrollmentAllowed?: boolean
 }
 
 export function buildHostBillingView(
@@ -602,24 +592,6 @@ export function buildHostBillingView(
   const billingAccount = source.organizationBillingAccounts?.find(
     (account) => account.organizationId === organizationId
   )
-  const linkedHistoricalSubscription = billingAccount?.subscriptionId
-    ? source.organizationSubscriptions?.find(
-        (subscription) =>
-          subscription.id === billingAccount.subscriptionId &&
-          subscription.organizationId === organizationId
-      )
-    : null
-  const historicalSubscriptionIsTerminal =
-    linkedHistoricalSubscription?.status === "cancelled" ||
-    linkedHistoricalSubscription?.status === "expired"
-  const hasNonterminalCommercialSubscription =
-    source.organizationSubscriptions?.some(
-      (subscription) =>
-        subscription.organizationId === organizationId &&
-        !subscription.internalBillingTest &&
-        subscription.status !== "cancelled" &&
-        subscription.status !== "expired"
-    ) ?? false
   const percentageCollectionRequired =
     billingAccount?.billingModel === "percentage_v1" ||
     billingAccount?.billingModel === "legacy_percentage" ||
@@ -632,11 +604,12 @@ export function buildHostBillingView(
         ? "legacy"
         : billingAccount?.billingModel
           ? "historical_subscription"
-          : "available"
+          : "none"
+  // No rollout decision is passed: enrollment no longer opens card setup.
   const policyCardSetupEligibility = hostCardSetupEligibility(
     source,
     organizationId,
-    options.percentageEnrollmentAllowed === true
+    false
   )
   const cardSetupEligibility: HostCardSetupEligibility =
     options.canManageBilling === true
@@ -699,14 +672,6 @@ export function buildHostBillingView(
       acceptedOnLabel: billingAccount?.percentageTermsSnapshot?.acceptedAt
         ? formatDay(billingAccount.percentageTermsSnapshot.acceptedAt)
         : null,
-      canAccept:
-        options.canManageBilling === true &&
-        options.percentageEnrollmentAllowed === true &&
-        !hasNonterminalCommercialSubscription &&
-        (percentageAgreementState === "available" ||
-          percentageAgreementState === "legacy" ||
-          (percentageAgreementState === "historical_subscription" &&
-            historicalSubscriptionIsTerminal)),
       state: percentageAgreementState,
       termsVersion:
         billingAccount?.percentageTermsSnapshot?.acceptedTermsVersion ?? null
@@ -725,19 +690,13 @@ export function buildHostBillingView(
  */
 export function getHostBillingView(
   organizationId: string,
-  options: Pick<HostBillingViewOptions, "canManageBilling"> = {}
+  options: HostBillingViewOptions = {}
 ): HostBillingView {
   return buildHostBillingView(
     services.state,
     organizationId,
     new Date().toISOString(),
-    {
-      canManageBilling: options.canManageBilling,
-      percentageEnrollmentAllowed: currentPercentageEnrollmentAllowed(
-        organizationId,
-        process.env
-      )
-    }
+    { canManageBilling: options.canManageBilling }
   )
 }
 

@@ -572,8 +572,12 @@ test.describe("the express-interest form (New River Hauling)", () => {
     await expect(page.getByRole("link", { name: "See similar jobs" })).toHaveAttribute("href", "#similar")
 
     // A retry of the same request (an answer lost on the way back) is the same inquiry: the action answers as before.
+    // The replay sends the browser's own Cookie header (#368). Under `next start` the session cookie is Secure, and an
+    // API request sends a Secure cookie only to https or localhost, never to http://127.0.0.1 as Chromium does, so a
+    // replay without it was signed out and answered with a redirect to sign-in.
     const [post] = posts
-    const keep = ["accept", "content-type", "next-action", "next-router-state-tree", "origin"]
+    expect(post!.headers["cookie"] ?? "", "the browser's request carries its session").toContain("ll_session=")
+    const keep = ["accept", "content-type", "cookie", "next-action", "next-router-state-tree", "origin"]
     const retry = await page.request.post(new URL(jobPath, baseURL).toString(), {
       data: post!.body ?? undefined,
       headers: Object.fromEntries(Object.entries(post!.headers).filter(([name]) => keep.includes(name.toLowerCase()))),
@@ -1490,7 +1494,8 @@ test.describe("equipment on a page: the interest sheet (#148 criterion 4)", () =
 
     // The server re-checks every count: one edited past the listing is refused, and no interest is sent.
     const [first] = GRANITE_CREEK.setups
-    const refusal = `Your profile lists ${first.units} x ${first.label}`
+    // The refusal comes back as a code with fixed copy (#279): the URL carries no words, not even the truck's label.
+    const refusal = "You offered more trucks than your business profile lists."
     await setups.filter({ hasText: first.label }).locator("input[type='hidden'][name='equipmentCount']").evaluate((input, count) => {
       (input as HTMLInputElement).value = String(count)
     }, first.units + 1)
@@ -1506,7 +1511,7 @@ test.describe("equipment on a page: the interest sheet (#148 criterion 4)", () =
     expect(redirect, "the action redirects back to the job").toBeTruthy()
     const target = new URL(redirect!, page.url())
     expect(target.pathname).toBe(jobPath)
-    expect(target.searchParams.get("error")).toContain(refusal)
+    expect(target.searchParams.get("error")).toBe("equipment_over_listed")
 
     await openV2(page, `${target.pathname}${target.search}`)
     await expect(page.getByRole("alert").filter({ hasText: refusal })).toBeVisible()

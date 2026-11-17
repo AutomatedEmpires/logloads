@@ -3,7 +3,7 @@
 import { MARKETPLACE_LISTING_REPORT_REASONS, reportListingInputSchema } from "@logloads/contracts"
 
 import { checkRateLimit } from "../rate-limit"
-import { serializeError } from "../services"
+import { v2FailureMessage } from "./error-log"
 import { marketplaceV2Enabled } from "./flag"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
 import { MarketplaceOperationUnavailableError } from "./port"
@@ -64,6 +64,7 @@ export async function reportListingAction(_previous: ReportListingState, formDat
       return { ...kept, status: "unavailable" }
     }
 
-    return { ...kept, message: serializeError(error).error.slice(0, 160), status: "error" }
+    // A store refusal keeps its words; anything else is logged and answered with fixed copy and a reference (#279).
+    return { ...kept, message: v2FailureMessage(error, "listing.report"), status: "error" }
   }
 }

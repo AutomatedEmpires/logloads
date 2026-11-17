@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest"
 import {
   effectiveSort,
   filterTexts,
+  findWorkCountText,
   findWorkEmptyState,
   findWorkFilters,
   findWorkFormValues,
   findWorkHiddenFields,
   findWorkHref,
+  findWorkRangeText,
   parseFindWorkSearch,
   whereText
 } from "./find-work"
@@ -167,5 +169,48 @@ describe("the empty state names the constraints and offers one-tap changes", () 
     expect(anywhere.title).toBe("No jobs match your search")
     expect(anywhere.actions).toEqual([])
     expect(anywhere.body).toContain("LogLoads lists only real postings")
+  })
+
+  it("never claims nothing matches when the store stopped reading at its limit (#280)", () => {
+    const empty = findWorkEmptyState(parseFindWorkSearch({ near: "Bend", product: "Chips" }, VISITOR), VISITOR, { complete: false })
+    expect(empty.title).toBe("No recent jobs within 100 mi of Bend, OR match your search")
+    expect(empty.body).toContain("none of them match, but older ones might")
+    expect(empty.body).not.toContain("nothing is shown that doesn't match")
+    expect(empty.actions.map((action) => action.label)).toContain("Any product")
+  })
+
+  it("starts each one-tap change from the first jobs, never from the page the empty result was on (#280)", () => {
+    const empty = findWorkEmptyState(parseFindWorkSearch({ after: "AbC-123_x", product: "Chips" }, VISITOR), VISITOR)
+    expect(empty.actions.length).toBeGreaterThan(0)
+    for (const action of empty.actions) expect(action.href).not.toContain("after=")
+  })
+})
+
+describe("pages of results (#280)", () => {
+  it("reads the page cursor from the URL only in its own alphabet and length, and writes it back", () => {
+    expect(parseFindWorkSearch({}, VISITOR).after).toBeNull()
+    expect(parseFindWorkSearch({ after: "eyJ2IjoxfQ-_" }, VISITOR).after).toBe("eyJ2IjoxfQ-_")
+    for (const bad of ["has space", "<script>", "a+b/c=", "x".repeat(1025)]) expect(parseFindWorkSearch({ after: bad }, VISITOR).after).toBeNull()
+
+    const search = parseFindWorkSearch({ after: "next", near: "Eugene", view: "map" }, VISITOR)
+    expect(findWorkHref(search, VISITOR)).toBe("/v2/work?near=Eugene%2C+OR&view=map&after=next")
+    expect(findWorkHref(search, VISITOR, { jobId: "job-1" })).toBe("/v2/work?near=Eugene%2C+OR&view=map&after=next&job=job-1")
+    expect(findWorkHref(search, VISITOR, { after: null })).toBe("/v2/work?near=Eugene%2C+OR&view=map")
+  })
+
+  it("leaves the page out of the filter and sort forms, so a changed search starts from its first jobs", () => {
+    const search = parseFindWorkSearch({ after: "next", pay: "per_load", sort: "pay" }, VISITOR)
+    expect(findWorkFormValues(search, 0).hidden).toEqual([{ name: "sort", value: "pay" }])
+    expect(findWorkHiddenFields(search, VISITOR, { after: null, jobId: null, sort: "newest" })).toEqual([{ name: "pay", value: "per_load" }])
+  })
+
+  it("states the true count, and a floor with '+' when the store stopped reading at its limit", () => {
+    expect(findWorkCountText({ count: 0, exact: true })).toBe("0 jobs")
+    expect(findWorkCountText({ count: 1, exact: true })).toBe("1 job")
+    expect(findWorkCountText({ count: 137, exact: true })).toBe("137 jobs")
+    expect(findWorkCountText({ count: 143, exact: false })).toBe("143+ jobs")
+    expect(findWorkCountText({ count: 0, exact: false })).toBe("No recent jobs")
+    expect(findWorkRangeText(25, 25, { count: 137, exact: true })).toBe("Jobs 26 to 50 of 137")
+    expect(findWorkRangeText(0, 25, { count: 143, exact: false })).toBe("Jobs 1 to 25 of 143+")
   })
 })

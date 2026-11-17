@@ -219,6 +219,8 @@ export function selectMarketplaceV2Port(
     haulerProfile: async (viewer) => current().haulerProfile(viewer),
     interestForJob: async (viewer, jobId) => current().interestForJob(viewer, jobId),
     listHaulerInterests: async (viewer) => current().listHaulerInterests(viewer),
+    listInterestPage: async (viewer, side, page) => current().listInterestPage(viewer, side, page),
+    listJobPage: async (filters, page) => current().listJobPage(filters, page),
     listJobs: async (filters) => current().listJobs(filters),
     listLandingInterests: async (viewer) => current().listLandingInterests(viewer),
     postHaulerReply: async (viewer, input) => current().postHaulerReply(viewer, input),

@@ -158,6 +158,24 @@
 
 .notes > p { margin: 0; }
 
+/* ------------------------------------------------------------------ Pages of results (#280) */
+
+/* Below the list: where this page sits, then "Show more jobs" and "Back to the first jobs" as plain links. */
+.more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ll-space-3);
+  padding: var(--ll-space-4) var(--ll-space-5) 0;
+}
+
+.moreText {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-base);
+}
+
 /* ------------------------------------------------------------------ Detail sheet */
 
 .sheetFoot {

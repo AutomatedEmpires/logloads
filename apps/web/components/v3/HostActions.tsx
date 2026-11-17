@@ -1,9 +1,7 @@
 "use client"
 
 import {
-  FEE_BPS_SCALE,
   OPERATIONAL_NOTICE_LIMITS,
-  PLATFORM_FEE_BPS,
   createMoney,
   formatMoney,
   type OpportunityVisibilityMode
@@ -49,10 +47,6 @@ const VISIBILITY_MODES: Array<[OpportunityVisibilityMode, string, string]> = [
   ["private_network", "Private — partners only", "Only your trusted partner organizations see it."],
   ["verified_network", "Verified carriers", "Limited to carriers building a verified track record."]
 ]
-
-const PERCENTAGE_FEE_PERCENT_LABEL = `${
-  (PLATFORM_FEE_BPS / FEE_BPS_SCALE) * 100
-}%`
 
 /**
  * Whole cents, as a host reads them. Goes through the contracts money helpers so
@@ -598,7 +592,7 @@ export function PublishDraftButton({
   if (liveVisibilityModes.length === 0) {
     return (
       <p className="host-builder-note">
-        This draft stays inside your workspace until assisted activation is complete.
+        This draft stays inside your workspace until LogLoads support verifies its billing record.
       </p>
     )
   }
@@ -796,15 +790,14 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
   // One parse, used for display and for the payload, so the host cannot be shown
   // one compensation figure and have another one published.
   const driverPayCents = parseDriverPayCents(driverPay)
-  const percentagePayQuote = driverPayQuote(driverPay)
-  const percentagePerDayOutlook =
-    percentagePayQuote &&
+  // Only the driver-pay figures are shown. The completed-load percentage fee is
+  // retired, so nothing is added on top of the pay the host states.
+  const payQuote = driverPayQuote(driverPay)
+  const perDayOutlook =
+    payQuote &&
     Number.isInteger(truckloadCount) &&
     truckloadCount > 0
-      ? payOutlookForTruckloads(
-          percentagePayQuote.driverPayCents,
-          truckloadCount
-        )
+      ? payOutlookForTruckloads(payQuote.driverPayCents, truckloadCount)
       : null
 
   const missingSetup = [
@@ -859,7 +852,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
     Boolean(landing && route && roadCondition),
     Number.isInteger(truckloadCount) && truckloadCount > 0 && scheduleReady,
     // Stated driver pay is required to leave Terms: it is what the driver is
-    // promised and the frozen basis for the host's 5% platform fee.
+    // promised and paid.
     Boolean(rate) && driverPayCents !== null,
     true,
     true
@@ -887,8 +880,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
         },
         dispatcherProfileId: dispatcher.id,
         // Per truckload. One assignment is one physical movement hauled by one
-        // driver. Compensation remains direct; the host's percentage terms are
-        // frozen separately when an assignment is committed.
+        // driver. Compensation remains direct, and no fee is added to it.
         driverPayCents,
         dropoffMillId: route.millId,
         equipmentRequirements: [...equipment],
@@ -1182,31 +1174,21 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             </p>
           </div>
 
-          {percentagePayQuote ? (
+          {payQuote ? (
             <div
               className="host-route-fact host-field--full"
-              aria-label="Host price for one completed truckload"
+              aria-label="Driver pay for one completed truckload"
             >
               <span>
-                Driver or carrier compensation{" "}
-                {money(percentagePayQuote.driverPayCents)} per truckload
-              </span>
-              <span>
-                LogLoads fee {PERCENTAGE_FEE_PERCENT_LABEL}, added on top:{" "}
-                {money(percentagePayQuote.platformFeeCents)}
-              </span>
-              <span>
                 <strong>
-                  Your total for a completed truckload:{" "}
-                  {money(percentagePayQuote.hostTotalCents)}
+                  Driver or carrier compensation{" "}
+                  {money(payQuote.driverPayCents)} per truckload
                 </strong>
               </span>
-              {percentagePerDayOutlook && percentagePerDayOutlook.truckloads > 1 ? (
+              {perDayOutlook && perDayOutlook.truckloads > 1 ? (
                 <span>
-                  If all {percentagePerDayOutlook.truckloads} truckloads run in one
-                  day: {money(percentagePerDayOutlook.driverPayCents)} direct
-                  compensation + {money(percentagePerDayOutlook.platformFeeCents)}{" "}
-                  LogLoads fee = {money(percentagePerDayOutlook.hostTotalCents)}
+                  If all {perDayOutlook.truckloads} truckloads run in one
+                  day: {money(perDayOutlook.driverPayCents)} direct compensation
                 </span>
               ) : null}
             </div>
@@ -1217,15 +1199,9 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           )}
 
           <p className="host-builder-note">
-            {options.billingModel === "subscription_v1" ||
-            options.billingModel === "dispatch_pro" ||
-            options.billingModel === "enterprise_custom"
-              ? "This workspace has a historical subscription record. New subscription work is closed; reconcile that record from Billing before publishing new work under the current percentage agreement."
-              : options.billingModel === "legacy_percentage"
-                ? "Existing legacy assignments keep their frozen fee terms. New live work requires approved activation of the current percentage agreement; check Billing for this workspace's status."
-                : options.billingActivationState === "percentage_active"
-                  ? `There is no charge to post, subscription, monthly minimum, tier, allowance, or overage. After a load completes, LogLoads bills you ${PERCENTAGE_FEE_PERCENT_LABEL} of the driver pay you stated, added on top and never deducted from transportation compensation.`
-                  : `Pilot activation is invitation-based. Once this workspace is approved, accepts the current agreement, and attaches a card, each completed load carries a separate ${PERCENTAGE_FEE_PERCENT_LABEL} LogLoads fee on top of stated driver pay.`}
+            Posting is free, and publishing needs no agreement or card. The
+            completed-load percentage fee is retired, so LogLoads adds nothing on
+            top of the pay you state.
           </p>
 
           <span className="req-label">Rate card for this lane</span>
@@ -1248,7 +1224,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           <p className="host-builder-note">
             Your standing price list, kept on the posting for your own records and for the lanes and
             older work that still reference it. The driver pay above is what a driver is shown and
-            remains the basis for the LogLoads host fee shown above.
+            paid.
           </p>
         </div>
       ) : null}
@@ -1279,8 +1255,9 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
             </>
           ) : (
             <p className="host-builder-note">
-              Live publication becomes available after assisted activation. You can
-              finish this operating record and save it as a draft now.
+              Live publication is held until LogLoads support verifies this
+              workspace&apos;s billing record. You can finish this operating record and
+              save it as a draft now.
             </p>
           )}
           <span className="req-label">
@@ -1371,19 +1348,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           <div>
             <dt>LogLoads billing</dt>
             <dd>
-              {percentagePayQuote
-                ? `${money(percentagePayQuote.platformFeeCents)} fee per completed truckload (${PERCENTAGE_FEE_PERCENT_LABEL} of stated compensation, added on top)`
-                : "Enter driver pay to calculate the fee. There is no charge to post."}
-            </dd>
-          </div>
-          <div>
-            <dt>Capacity source</dt>
-            <dd>
-              {options.billingModel === "percentage_v1"
-                ? "The current percentage agreement is active for new work."
-                : options.billingModel === "legacy_percentage"
-                  ? "Existing legacy assignments keep their frozen terms; accept the current percentage agreement from Billing for new work."
-                  : "Accept the current percentage agreement and attach a card from Billing before publishing live work."}
+              No fee. Posting is free, and the completed-load percentage fee is retired.
             </dd>
           </div>
           <div>

@@ -15,13 +15,16 @@ import {
   validateMarketplaceJobDraft,
   type MarketplaceAvailabilityAttestation,
   type MarketplaceCapability,
+  type MarketplaceJobDetailView,
   type MarketplaceJobDraft,
+  type MarketplaceJobFilters,
   type MarketplaceLandingAllowanceView,
   type MarketplaceLandingStatus,
   type MarketplaceLandingView,
   type MarketplaceMemberRole,
   type MarketplaceV2Feature
 } from "@logloads/contracts"
+import { jobTakesNewInterest, unconfirmedJobNotice } from "@logloads/services"
 
 import { normalizedAdmin } from "./admin"
 import { normalizedAlerts } from "./alerts"
@@ -29,6 +32,7 @@ import { normalizedBilling } from "./billing"
 import { normalizedBoosts } from "./boosts"
 import { normalizedInvites } from "./invites"
 import { normalizedJobs } from "./jobs"
+import { marketplaceInterestPage, marketplaceJobPage } from "./keyset-pages"
 import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./normalized-db"
 import { normalizedHaulerFleetMethods } from "./normalized-fleet"
 import { normalizedHaulerProfileMethods } from "./normalized-hauler"
@@ -165,6 +169,27 @@ function freshAttestation(
 
 const isMemberRole = (value: string): value is MarketplaceMemberRole => (MARKETPLACE_MEMBER_ROLES as readonly string[]).includes(value)
 
+/*
+ * The day-14 rule (#308, #321), as the job desk applies it (`jobTakesNewInterest`, packages/services/src/v2/jobs): a job
+ * still on the marketplace whose poster has not confirmed it for 14 x 24 hours, or never has (a legacy import), is off
+ * Find Work and takes no new interest until they reconfirm it. It keeps its status, so it never reads as expired or
+ * paused, and it is still read by id. The store enforces the same rule (stage 31). The adapter applies it to what the
+ * store returns as well, so a store a version or a moment behind can neither list such a job nor take new interest in it.
+ */
+function lifecycleOf(job: MarketplaceJobDetailView) {
+  return { expiresAt: job.expiresAt, lastConfirmedAt: job.lastConfirmedAt, moderationHold: null, status: job.status }
+}
+
+/** `null` for a job the rule leaves alone; otherwise the label that names the missing confirmation. */
+function waitingForConfirmation(job: MarketplaceJobDetailView, now: Date): { label: string; reason: string } | null {
+  return unconfirmedJobNotice(lifecycleOf(job), now)
+}
+
+/** The job as the store read it, except that it takes no new interest when the rule says so. */
+function withNewInterestRule(job: MarketplaceJobDetailView, now: Date): MarketplaceJobDetailView {
+  return job.acceptingInterest && !jobTakesNewInterest(lifecycleOf(job), now) ? { ...job, acceptingInterest: false } : job
+}
+
 /** The same publication rules the server action applies, re-checked at the store boundary. */
 function publishableDraft(draft: MarketplaceJobDraft): MarketplaceJobDraft {
   const validation = validateMarketplaceJobDraft(draft)
@@ -265,6 +290,24 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
     return value
   }
 
+  /**
+   * Public discovery in one anonymous read. `exact` is false when the function filled its row limit: more jobs may
+   * match than it returned, so a count of these is a floor, never the total (#280).
+   */
+  async function discover(filters: MarketplaceJobFilters): Promise<{ jobs: MarketplaceJobDetailView[]; exact: boolean }> {
+    const args = jobFilterArguments(filters)
+
+    if (!args) {
+      return { exact: true, jobs: [] }
+    }
+
+    const rows = await db.asAnon((calls) => calls.call("list_marketplace_jobs", args))
+    const at = now()
+    // The day-14 rule first, so "accepting only" and the count both see it.
+    const listed = rows.map(jobViewFromRow).filter((job) => waitingForConfirmation(job, at) === null).map((job) => withNewInterestRule(job, at))
+    return { exact: rows.length < args.p_limit, jobs: refineDiscovery(listed, filters) }
+  }
+
   return {
     // Port v3 (#244). Spread first, so no group can replace a method defined below.
     ...groups.jobs.methods(context),
@@ -298,6 +341,20 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
       const args = expressInterestArguments(viewer.organizationId, input)
 
       return asViewer(viewer, async (calls) => {
+        // The day-14 rule decides first (#321), in the same transaction, so a refused inquiry never reaches the store.
+        // Changing an inquiry already sent is not new interest; sending a withdrawn one again is. Every other refusal
+        // (a job that stopped, one the person cannot read, a declined inquiry) is the store's own.
+        const [jobRow] = await calls.call("get_marketplace_job", { p_job_id: args.p_job_id })
+        const waiting = jobRow ? waitingForConfirmation(jobViewFromRow(jobRow), now()) : null
+
+        if (waiting) {
+          const standing = await calls.call("list_marketplace_interests", { p_job_id: args.p_job_id, p_org_id: viewer.organizationId, p_side: "hauler" })
+
+          if (standing.map(interestViewFromRow).every((interest) => interest.status === "withdrawn")) {
+            throw new MarketplaceRefusalError(waiting.label, "23514")
+          }
+        }
+
         const [submitted] = await calls.call("submit_expression_of_interest", args)
         const id = submittedInterestId(submitted)
         const rows = await calls.call("list_marketplace_interests", { p_job_id: args.p_job_id, p_org_id: viewer.organizationId, p_side: "hauler" })
@@ -326,7 +383,8 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
           })
         : null
       const [row] = asPerson ?? (await db.asAnon((calls) => calls.call("get_marketplace_job", { p_job_id: jobId })))
-      return row ? jobViewFromRow(row) : null
+      // By id, a job the day-14 rule took off Find Work is still there: active, and not taking new interest.
+      return row ? withNewInterestRule(jobViewFromRow(row), now()) : null
     },
 
     // Listing reports (UX-07, #130)
@@ -375,20 +433,33 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
     },
 
     async listJobs(filters) {
-      const args = jobFilterArguments(filters ?? {})
+      return (await discover(filters ?? {})).jobs
+    },
 
-      if (!args) {
-        return []
-      }
-
-      const rows = await db.asAnon((calls) => calls.call("list_marketplace_jobs", args))
-      return refineDiscovery(rows.map(jobViewFromRow), filters ?? {})
+    // #280: one anonymous read per page, never one per job: `list_marketplace_jobs` already returns each job's public
+    // detail fields. Until stage 30 (#294) gives it a cursor, the page is cut from that one read.
+    async listJobPage(filters, page) {
+      const { exact, jobs } = await discover(filters ?? {})
+      return marketplaceJobPage(jobs, filters ?? {}, page, { exact })
     },
 
     async listLandingInterests(viewer) {
       const rows = await asViewer(viewer, (calls) =>
         calls.call("list_marketplace_interests", { p_org_id: viewer.organizationId, p_side: "landing" }), read)
       return rows.map(interestViewFromRow)
+    },
+
+    // #280 (audit K1): one read as the session's person, with the function's own side checks (interest.reply for the
+    // hauler, inquiry.respond for the landing). It has no limit yet, so every inquiry is read and the count is exact;
+    // stage 30 (#294) moves the limit and the cursor into SQL.
+    async listInterestPage(viewer, side, page) {
+      if (side !== "hauler" && side !== "landing") {
+        throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "22023")
+      }
+
+      const rows = await asViewer(viewer, (calls) =>
+        calls.call("list_marketplace_interests", { p_org_id: viewer.organizationId, p_side: side }), read)
+      return marketplaceInterestPage(rows.map(interestViewFromRow), { organizationId: viewer.organizationId, side }, page, { exact: true })
     },
 
     async postHaulerReply(viewer, input) {

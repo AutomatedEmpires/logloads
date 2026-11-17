@@ -1,9 +1,11 @@
 /**
- * alerts (#252): the port methods over the normalized store.
+ * alerts (#252, #316): the port methods over the normalized store.
  *
  * Every signed-in read and write goes through `asViewer`, so the session is the caller's, and the active business
  * is the only organization id that reaches a statement. Person ids in SQL are `current_user_id()`, never
- * `viewer.userId` (that value is the session subject, not the marketplace user id).
+ * `viewer.userId` (that value is the session subject, not the marketplace user id). Each statement is catalogued in
+ * `MARKETPLACE_QUERIES` and checks the person's membership of the active business itself; a write that answers no
+ * row is refused, never reported as saved.
  * Unsubscribe does not take a viewer. The token is the authorization, and the result does not name an address.
  */
 
@@ -29,11 +31,13 @@ import type { ZodError, ZodType, ZodTypeDef } from "zod"
 
 import type { NormalizedFeatureContext } from "../normalized-adapter"
 import { translateStoreError, type MarketplaceCalls } from "../normalized-db"
-import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceAlertsPort, type MarketplaceV2Viewer } from "../port"
-import { idFromRow, preferenceFromRow, savedJobFromRow, savedJobSearchFromRow } from "./mapping"
-import { alertStatement, type AlertStatementName } from "./statements"
+import { MarketplaceRefusalError, type MarketplaceAlertsPort, type MarketplaceV2Viewer } from "../port"
+import { changedFromRow, idFromRow, preferenceFromRow, savedJobFromRow, savedJobSearchFromRow } from "./mapping"
+import { alertUnsubscribeStatement } from "./statements"
 
 const NOT_FOUND_SEARCH = "That saved search was not found."
+/** The store's own wording for a refused person (`translateStoreError`, 42501). It does not say why. */
+const NOT_AVAILABLE = "This is not available to your account."
 
 const searchIdSchema = marketplaceSavedJobIdSchema
 
@@ -51,6 +55,15 @@ function parseInput<T>(schema: ZodType<T, ZodTypeDef, unknown>, input: unknown):
   return parsed.data
 }
 
+function notAvailable(): never {
+  throw new MarketplaceRefusalError(NOT_AVAILABLE, "42501")
+}
+
+/** A member's write answers one row; none means the person is not a member of the active business. */
+function requireMemberWrite(rows: readonly unknown[]): void {
+  if (changedFromRow(rows[0]) === null) notAvailable()
+}
+
 async function run<T>(
   context: NormalizedFeatureContext,
   viewer: MarketplaceV2Viewer,
@@ -64,18 +77,11 @@ async function run<T>(
   }
 }
 
-async function statement(calls: MarketplaceCalls, name: AlertStatementName, values: readonly (string | null)[]): Promise<unknown[]> {
-  const bound = alertStatement(name, values)
-
-  return calls.query(name as never, bound.values as never)
-}
-
-/** The eight alerts methods. Tests call this directly; the entry module withholds it until the SQL catalogue has the names. */
+/** The eight alerts methods, over the catalogued `list_saved_jobs` function and the `alert_*` statements. */
 export function alertMethods(context: NormalizedFeatureContext): MarketplaceAlertsPort {
   return {
     async listSavedJobs(viewer): Promise<MarketplaceSavedJobView[]> {
-      const rows = await run(context, viewer, true, (calls) =>
-        calls.call("list_saved_jobs" as never, { p_org_id: viewer.organizationId } as never))
+      const rows = await run(context, viewer, true, (calls) => calls.call("list_saved_jobs", { p_org_id: viewer.organizationId }))
 
       return rows.map(savedJobFromRow)
     },
@@ -84,18 +90,18 @@ export function alertMethods(context: NormalizedFeatureContext): MarketplaceAler
       const id = parseInput(marketplaceSavedJobIdSchema, jobId)
       const planned = planSavedJobWrite(viewer.organizationId, id)
 
-      await run(context, viewer, false, (calls) => statement(calls, "alert_save_job", [planned.organizationId, planned.jobId]))
+      requireMemberWrite(await run(context, viewer, false, (calls) => calls.query("alert_save_job", [planned.organizationId, planned.jobId])))
     },
 
     async unsaveJob(viewer, jobId): Promise<void> {
       const id = parseInput(marketplaceSavedJobIdSchema, jobId)
       const planned = planSavedJobWrite(viewer.organizationId, id)
 
-      await run(context, viewer, false, (calls) => statement(calls, "alert_unsave_job", [planned.organizationId, planned.jobId]))
+      requireMemberWrite(await run(context, viewer, false, (calls) => calls.query("alert_unsave_job", [planned.organizationId, planned.jobId])))
     },
 
     async listJobSearches(viewer): Promise<MarketplaceSavedSearchView[]> {
-      const rows = await run(context, viewer, true, (calls) => statement(calls, "alert_list_job_searches", [viewer.organizationId]))
+      const rows = await run(context, viewer, true, (calls) => calls.query("alert_list_job_searches", [viewer.organizationId]))
 
       return rows.map(savedJobSearchFromRow)
     },
@@ -103,31 +109,35 @@ export function alertMethods(context: NormalizedFeatureContext): MarketplaceAler
     async saveJobSearch(viewer, input): Promise<{ searchId: string }> {
       const parsed = parseInput(marketplaceSavedJobSearchInputSchema, input)
       const planned = planJobSearchWrite(viewer.organizationId, parsed)
-      const values = [planned.name, JSON.stringify(planned.criteria), planned.alertsEnabled ? "true" : "false"] as const
+      const criteria = JSON.stringify(planned.criteria)
 
       if (planned.searchId) {
-        const [row] = await run(context, viewer, false, (calls) => statement(calls, "alert_update_job_search", [
-          planned.searchId,
+        const searchId = planned.searchId
+        const [row] = await run(context, viewer, false, (calls) => calls.query("alert_update_job_search", [
           planned.organizationId,
-          ...values
+          searchId,
+          planned.name,
+          criteria,
+          planned.alertsEnabled
         ]))
 
         if (!idFromRow(row)) {
           throw new MarketplaceRefusalError(NOT_FOUND_SEARCH, "P0002")
         }
 
-        return { searchId: planned.searchId }
+        return { searchId }
       }
 
-      const [row] = await run(context, viewer, false, (calls) => statement(calls, "alert_insert_job_search", [
+      const [row] = await run(context, viewer, false, (calls) => calls.query("alert_insert_job_search", [
         planned.organizationId,
-        ...values
+        planned.name,
+        criteria,
+        planned.alertsEnabled
       ]))
+      // The insert answers its new id for a member of the active business, and nothing for anyone else.
       const searchId = idFromRow(row)
 
-      if (!searchId) {
-        throw new MarketplaceStoreError()
-      }
+      if (!searchId) notAvailable()
 
       return { searchId }
     },
@@ -135,11 +145,11 @@ export function alertMethods(context: NormalizedFeatureContext): MarketplaceAler
     async deleteJobSearch(viewer, searchId): Promise<void> {
       const id = parseInput(searchIdSchema, searchId)
 
-      await run(context, viewer, false, (calls) => statement(calls, "alert_delete_job_search", [id, viewer.organizationId]))
+      requireMemberWrite(await run(context, viewer, false, (calls) => calls.query("alert_delete_job_search", [viewer.organizationId, id])))
     },
 
     async notificationPreferences(viewer) {
-      const rows = await run(context, viewer, true, (calls) => statement(calls, "alert_list_notification_preferences", [viewer.organizationId]))
+      const rows = await run(context, viewer, true, (calls) => calls.query("alert_list_notification_preferences", [viewer.organizationId]))
 
       return notificationPreferenceList(rows.map(preferenceFromRow))
     },
@@ -148,19 +158,20 @@ export function alertMethods(context: NormalizedFeatureContext): MarketplaceAler
       const parsed = parseInput(marketplaceNotificationPreferenceInputSchema, input)
       const planned = planPreferenceWrite(viewer.organizationId, parsed)
 
-      await run(context, viewer, false, (calls) => statement(calls, "alert_set_notification_preference", [
+      requireMemberWrite(await run(context, viewer, false, (calls) => calls.query("alert_set_notification_preference", [
         planned.organizationId,
         planned.category,
         planned.channel,
-        planned.enabled ? "true" : "false"
-      ]))
+        planned.enabled
+      ])))
     }
   }
 }
 
 /**
  * Mints an unsubscribe link for the signed-in person in the active business. The marketplace user id comes from
- * `current_user_id()`. The input cannot name a person, a business or an email address.
+ * `current_user_id()`, and only for a member of that business. The input cannot name a person, a business or an
+ * email address.
  */
 export async function createAlertUnsubscribeToken(
   context: NormalizedFeatureContext,
@@ -170,12 +181,10 @@ export async function createAlertUnsubscribeToken(
   now: Date
 ): Promise<{ token: string }> {
   const preference: MarketplaceNotificationPreferenceInput = parseInput(marketplaceNotificationPreferenceInputSchema, input)
-  const [row] = await run(context, viewer, true, (calls) => statement(calls, "alert_viewer_user", []))
+  const [row] = await run(context, viewer, true, (calls) => calls.query("alert_viewer_user", [viewer.organizationId]))
   const userId = idFromRow(row)
 
-  if (!userId) {
-    throw new MarketplaceRefusalError("This is not available to your account.", "42501")
-  }
+  if (!userId) notAvailable()
 
   return {
     token: signAlertUnsubscribeToken({
@@ -188,8 +197,11 @@ export async function createAlertUnsubscribeToken(
 }
 
 /**
- * Applies an unsubscribe link. There is no viewer. `run` executes the one update; a tampered or expired token never
- * reaches it. The returned object is the outcome alone.
+ * Applies an unsubscribe link. There is no viewer. `runStatement` executes the one update; a tampered or expired token
+ * never reaches it. The returned object is the outcome alone.
+ *
+ * Not wired (#316): the update is not in `MARKETPLACE_QUERIES`, and no adapter transaction can run it, because it has
+ * no session and stage 26's policy is authenticated-only. #294 adds the SECURITY DEFINER function that replaces it.
  */
 export async function unsubscribeAlert(
   token: string,
@@ -199,12 +211,7 @@ export async function unsubscribeAlert(
 ): Promise<MarketplaceUnsubscribeResult> {
   try {
     return await applyAlertUnsubscribe(token, secret, now, async (target) => {
-      await runStatement(alertStatement("alert_unsubscribe_notification", [
-        target.userId,
-        target.organizationId,
-        target.category,
-        target.channel
-      ]))
+      await runStatement(alertUnsubscribeStatement(target))
     })
   } catch (error) {
     throw translateStoreError(error)

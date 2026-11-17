@@ -28,6 +28,8 @@ import { InquiryReplyComposer } from "@/components/v2/InquiryReplyComposer"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { respondToInterestAction } from "@/lib/marketplace-v2/actions"
+import { V2_FAULT_CODES, v2ErrorMessage, v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
+import { reportV2Error } from "@/lib/marketplace-v2/error-log"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import {
   chooseInquiryTab,
@@ -163,8 +165,12 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
 
     try {
       interests = await listLandingInquiries(viewer.organizationId, viewer.userId)
-    } catch {
-      refusal = withBusinessSwitchNote("Your role in this business cannot review hauler inquiries.")
+    } catch (error) {
+      // A refusal reads as the role note; a fault is logged and says so, with its reference (#279, K2).
+      const failure = reportV2Error(error, "inquiries.landing_list")
+      refusal = V2_FAULT_CODES.has(failure.code)
+        ? v2ErrorMessage(failure.code, failure.requestId)
+        : withBusinessSwitchNote("Your role in this business cannot review hauler inquiries.")
     }
 
     if (!refusal && interests.length > 0) {
@@ -174,7 +180,8 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
     }
   }
 
-  const error = one(query.error) || null
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
   const filters = landingInquiryFilters(interests, jobs, { job: one(query.job), landing: one(query.landing) })
   const carried = filterQuery(filters)
   const counts = inquiryTabCounts(filters.interests, LANDING_INQUIRY_TABS, landingQueueOf)
@@ -188,7 +195,7 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
 
   const list = (
     <>
-      {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
+      {failure ? <PageNotice role="alert" tone="critical">{failure.message}</PageNotice> : null}
       {refusal ? (
         <PageNotice>{refusal}</PageNotice>
       ) : (

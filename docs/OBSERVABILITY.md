@@ -1,9 +1,10 @@
 # LogLoads — Observability and Marketplace Event Taxonomy
 
-> **Status:** Revised 2026-11-01.
+> **Status:** Revised 2026-11-01; §1 privacy posture and §3 revised 2026-11-11 (#330).
 > - §1–§2 describe the existing instrumentation, IMPLEMENTED in code at `15892b7`.
-> - §3 is the proposed V2 taxonomy (TARGET). **No V2 event is emitted today** — the `/v2` code calls no
->   analytics function.
+> - §3 points to the V2 product events in [`analytics/event-plan.md`](./analytics/event-plan.md). Their call sites
+>   are IMPLEMENTED (#330). No event reaches PostHog until `NEXT_PUBLIC_POSTHOG_KEY` is set, and delivery is
+>   UNVERIFIED (§4).
 >
 > Production health on 2026-08-05 reported analytics and error tracking as configured. That is a
 > **historical** observation: it proves environment presence then, not event delivery now.
@@ -19,10 +20,15 @@ PostHog is env-gated (`NEXT_PUBLIC_POSTHOG_KEY` / `_HOST`) and inert without a k
 
 ### Privacy posture (verified in code)
 
-- The only client event is a manual, path-only `$pageview`. Query strings and fragments are removed before
-  capture, and a global send hook strips them again as defense in depth.
+- The client sends a manual, path-only `$pageview` and the two browser product events of the
+  [event plan](./analytics/event-plan.md) (§2, rule 6). Query strings and fragments are removed before capture, and a
+  global send hook (`sanitizePostHogEvent`) strips them again as defense in depth.
+- A browser that sends Do Not Track or Global Privacy Control never loads PostHog (#330).
+- On message, sign-in, sign-up, verification, consent and one-tap routes, the send hook lets through only a
+  pageview at the route's root, with no id or token from the path, and drops every other event (legal review
+  §6.5, P0 item 12; `SENSITIVE_ROUTES` in `apps/web/lib/analytics-pageview.ts`).
 - These are all disabled:
-  - autocapture;
+  - autocapture and rage clicks;
   - exception, performance, dead-click, and heatmap capture;
   - session recording;
   - console logs;
@@ -63,23 +69,19 @@ is `nodejs`. `onRequestError` forwards server errors. Without a DSN, Sentry is n
 - **Source maps are not uploaded:** `next.config` is not wrapped with `withSentryConfig`, so stack traces are
   minified. Uploading source maps is an optional later change that needs `SENTRY_AUTH_TOKEN` at build time.
 
-## 3. Proposed V2 marketplace events (TARGET — not emitted)
+## 3. V2 marketplace events
 
-Emit each event once, when the underlying transition **commits**. Never emit on a click or a page load alone.
+The V2 product events, their properties, privacy rules, flow metrics and call sites are defined in
+[`analytics/event-plan.md`](./analytics/event-plan.md). That plan replaces the proposed table that used to be here.
 
-| Event | When | Safe properties | Why |
-|---|---|---|---|
-| `job_published` | A real posting publish commits | `jobId`, `orgId`, product class | Supply created |
-| `job_reconfirmed` | Poster explicitly confirms the terms are still current | `jobId`, confirmation time | Freshness |
-| `job_viewed` | Deduplicated, consent-compatible detail view | `jobId`, surface | Discovery funnel (no inflated views) |
-| `job_search_used` | Search applies filters | Coarse filter class, result count | Coverage diagnostics |
-| `interest_submitted` | Unique or renewed interest commits | Opaque job and hauler IDs, renewed flag | Core conversion |
-| `interest_replied` | Landing response commits | Opaque interest ID, response category | Time to meaningful response |
-| `interest_withdrawn` | Withdrawal commits | Opaque interest ID | Honest outcomes |
-| `availability_reconfirmed` | Hauler publishes a fresh self-report | `orgId`, equipment category | Regional supply freshness |
-| `invitation_delivered` | Delivery verified by the channel's defined rule | Opaque invitation ID, channel | Allowance reconciliation |
-| `boost_exposure` | An eligible sponsored impression is served | Opaque boost and job IDs | Evidence-backed promotion value |
-| `job_reported` | Moderation report commits | Opaque report ID, reason class | Trust and safety |
+- **Catalogue:** plan §3, version 1. Six server events (`job_published`, `interest_submitted`, `interest_replied`,
+  `availability_reconfirmed`, `job_reconfirmed`, `job_stopped`) and two browser events (`share_link_opened`,
+  `flow_timed`).
+- **Call sites:** plan §6. Each server event is sent once, after the write it describes commits, from inside
+  `after()`, so the response never waits for PostHog and a PostHog failure never fails the action.
+- **Not in version 1:** the earlier proposals `job_viewed`, `job_search_used`, `interest_withdrawn`,
+  `invitation_delivered`, `boost_exposure` and `job_reported`. Adding one needs a new catalogue entry in the plan
+  and in `apps/web/lib/analytics/events.ts`.
 
 **Never capture any of these:**
 

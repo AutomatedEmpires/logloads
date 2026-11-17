@@ -103,8 +103,8 @@ beforeEach(() => {
 })
 
 describe("normalized adapter: port v3 groups (#244)", () => {
-  it("supports no group yet, and every group has methods to refuse", () => {
-    expect(adapter().supports).toEqual(marketplaceV2FeatureSupport())
+  it("supports only the groups whose every method works (alerts #316, billing #306, jobs #247), and every group has methods", () => {
+    expect(adapter().supports).toEqual(marketplaceV2FeatureSupport(["alerts", "billing", "jobs"]))
 
     for (const feature of MARKETPLACE_V2_FEATURES) {
       expect(marketplaceV2FeatureMethods(feature).length, feature).toBeGreaterThan(0)
@@ -113,14 +113,13 @@ describe("normalized adapter: port v3 groups (#244)", () => {
 
   it("refuses every not-yet-built method as unavailable, naming the operation and its group, without reaching the store", async () => {
     const port = adapter()
+    const unbuilt = MARKETPLACE_V2_FEATURES.filter((feature) => !port.supports[feature])
     let refused = 0
 
-    for (const feature of MARKETPLACE_V2_FEATURES) {
+    for (const feature of unbuilt) {
       const operations: Readonly<Record<string, string>> = MARKETPLACE_V2_FEATURE_OPERATIONS[feature]
 
       for (const method of marketplaceV2FeatureMethods(feature)) {
-        if (method === "planAllowance") continue
-
         const call = port[method] as (...values: unknown[]) => Promise<unknown>
         const outcome = await call(viewer, "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa", {}).then(() => null, (error: unknown) => error)
 
@@ -133,7 +132,10 @@ describe("normalized adapter: port v3 groups (#244)", () => {
       }
     }
 
-    expect(refused).toBe(50)
+    // 51 methods in nine groups; alerts' eight, billing's two and jobs' six work.
+    expect(unbuilt).not.toContain("alerts")
+    expect(refused).toBe(unbuilt.reduce((count, feature) => count + marketplaceV2FeatureMethods(feature).length, 0))
+    expect(refused).toBe(35)
     expect(recorded).toEqual([])
     expect(principal).not.toHaveBeenCalled()
   })
@@ -141,7 +143,8 @@ describe("normalized adapter: port v3 groups (#244)", () => {
   it("turns a group on only when its entry module says every method works", () => {
     const team: NormalizedFeature<"team"> = { methods: () => unavailableMarketplaceV2Feature("team"), supported: true }
 
-    expect(adapter({ team }).supports).toEqual(marketplaceV2FeatureSupport(["team"]))
+    expect(adapter({ team }).supports).toEqual({ ...adapter().supports, team: true })
+    expect(adapter().supports.team).toBe(false)
   })
 
   it("never lets a group replace a method the adapter already defines", async () => {
@@ -216,8 +219,15 @@ describe("normalized adapter: plan and allowance read model (billing #248)", () 
     expect(view).not.toHaveProperty("maxTeamMembers")
   })
 
+  it.each(["paused", "unpaid"])("reads a %s subscription (stored since stage 12, LE-04), which entitles no plan", (status) => {
+    const view = planAllowanceFromRow(entitlementRow({ period_end: null, plan_code: null, subscription_status: status }))
+
+    expect(view).toMatchObject({ cycleEndsAt: null, invitationsRemaining: null, planCode: null, subscriptionStatus: status })
+  })
+
   it("fails loudly on a row that drifted from the SQL, and on a missing row", async () => {
-    expect(() => planAllowanceFromRow(entitlementRow({ subscription_status: "paused" }))).toThrow(MarketplaceStoreError)
+    // 12 stores `incomplete_expired` as `canceled`, and `get_org_entitlement_state` never returns a cancelled one.
+    expect(() => planAllowanceFromRow(entitlementRow({ subscription_status: "incomplete_expired" }))).toThrow(MarketplaceStoreError)
     expect(() => planAllowanceFromRow(entitlementRow({ seat_conflict: null }))).toThrow(MarketplaceStoreError)
     expect(() => planAllowanceFromRow(entitlementRow({ grace_ends_at: "soon" }))).toThrow(MarketplaceStoreError)
 

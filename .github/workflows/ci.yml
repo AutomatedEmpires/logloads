@@ -14,6 +14,9 @@ jobs:
   extended-validation:
     needs: ci
     runs-on: ubuntu-latest
+    # A clean run takes about 16 minutes. The limits below stop a hung step long before this one (#323); this is the
+    # backstop, so a stuck job no longer holds a PR for the default 6 hours.
+    timeout-minutes: 45
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -40,20 +43,51 @@ jobs:
         with:
           version: 2.121.0
 
+      # tools/db-check.sh retries the stack start up to 3 times from a clean slate, never the migrations or checks.
       - name: Validate database migrations
+        timeout-minutes: 15
         run: pnpm db:assert
 
       - name: Guardrails
         run: pnpm guardrails
 
       - name: Build production application
+        timeout-minutes: 15
         run: pnpm --filter @logloads/web build
+
+      # The browser comes from the cache when this Playwright version has run before. The system packages still come
+      # from apt, whose mirrors sometimes fail to resolve; the install is retried up to 3 times (#323).
+      - name: Read the Playwright version
+        id: playwright-version
+        run: echo "version=$(pnpm --filter @logloads/web exec playwright --version | awk '{print $NF}')" >>"$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
 
       - name: Install Playwright browsers
         id: playwright-browsers
-        run: pnpm --filter @logloads/web exec playwright install --with-deps chromium
+        timeout-minutes: 10
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm --filter @logloads/web exec playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::Playwright install attempt ${attempt} of 3 failed."
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep $((attempt * 20))
+              sudo apt-get update || true
+            fi
+          done
+          exit 1
 
+      # Playwright stops a broken run after 5 failed tests or 15 minutes (tests/playwright.config.mjs); the step limit
+      # covers the server start and the Supabase readiness wait on top.
       - name: End-to-end smoke
+        id: e2e
+        timeout-minutes: 20
         run: pnpm test:e2e
         env:
           CI: "true"
@@ -73,17 +107,29 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # The server's own output (tools/e2e-server.mjs), including any request it left unanswered for 20 s, when the
+      # journeys failed or ran out of time. It holds only this job's disposable stack and seeded demo accounts.
+      - name: Upload pilot E2E server log
+        if: ${{ !cancelled() && steps.e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-e2e-server-log
+          path: apps/web/test-results/server.log
+          if-no-files-found: ignore
+          retention-days: 7
+
       # DS-05 (#148): reuses this job's build, browsers and Supabase stack, with Marketplace V2 on its own port.
       # It runs even when the pilot journeys above fail, so each suite reports its own result.
       - name: Design-system regression
         id: design-system
         if: ${{ !cancelled() && steps.playwright-browsers.outcome == 'success' }}
+        timeout-minutes: 15
         run: pnpm test:e2e:design-system
         env:
           CI: "true"
 
       # Playwright keeps a trace of each failed DS-05 case (design-system.config.mjs); upload them so a CI-only failure
-      # can be read. They hold only this job's disposable local stack and seeded demo accounts.
+      # can be read, with the server's log. They hold only this job's disposable local stack and seeded demo accounts.
       - name: Upload design-system traces
         if: ${{ !cancelled() && steps.design-system.outcome == 'failure' }}
         uses: actions/upload-artifact@v4

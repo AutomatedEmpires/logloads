@@ -1,9 +1,16 @@
 import { z } from "zod"
 
 /**
- * The LogLoads platform fee, as arithmetic and nothing else.
+ * The retired LogLoads platform fee, as arithmetic and nothing else.
  *
- * WHAT IS BEING CHARGED. A host posts a load and states what it pays the driver.
+ * THIS IS NOT A CURRENT PRODUCT. The completed-load percentage fee is retired
+ * (docs/DECISIONS.md, 2026-11-01: no new percentage obligation may be created
+ * by current code). No caller may accept a new percentage agreement, quote the
+ * fee as a current price, or record a new fee from this module. It stays so the
+ * fee rows, invoices and agreements written before the retirement remain
+ * readable, explainable and reconcilable exactly as they were recorded.
+ *
+ * WHAT WAS CHARGED. A host posts a load and states what it pays the driver.
  * LogLoads charges the HOST a percentage of that stated driver pay, ON TOP of it,
  * and only once the load is completed. The driver is paid exactly the number the
  * host stated; nothing in this module, and nothing built on it, may ever return
@@ -50,20 +57,40 @@ export const LEGACY_PERCENTAGE_ELIGIBLE_CURRENCY = "USD"
 export const FEE_BPS_SCALE = 10_000
 
 /**
- * The founder-decided platform fee: a flat 5% of stated driver pay, charged to the
- * host on top, on completed loads only. There is no monthly minimum and no charge
- * to post; drivers pay nothing, ever.
+ * The rate of the retired platform fee: a flat 5% of stated driver pay, charged
+ * to the host on top, on completed loads only. It is the rate the
+ * `percentage-v1-2026-08-03` agreement froze, kept so stored agreements and fee
+ * rows still validate. It is not a current price and no new fee accrues at it.
  *
- * Flat rather than tiered on purpose: load *count* is a host-controlled field in
- * this product (a host decides how many slots a series has), so any count-based
- * tier is gameable by construction, and a graduated tier re-rates every other load
- * in a period the moment one load is voided.
- *
- * This constant is the CURRENT rate. It is never the rate of a load that already
- * happened — every accrual freezes its own `feeBps`, so changing this number
- * cannot re-rate history.
+ * It is never the rate of a load that already happened — every recorded fee
+ * froze its own `feeBps`, so this number cannot re-rate history.
  */
 export const PLATFORM_FEE_BPS = 500
+
+// ── Retirement ────────────────────────────────────────────────────────────────
+
+/**
+ * The stable, machine-readable code for every refusal of a new percentage-fee
+ * agreement or accrual. Routes return it beside the message so a client can
+ * recognise the refusal without matching on wording.
+ */
+export const PERCENTAGE_FEE_RETIRED_CODE = "percentage_fee_retired"
+
+/**
+ * The one user-safe sentence every boundary uses to refuse a new
+ * percentage-fee agreement or accrual. It names no record, organization or
+ * amount, so it cannot be used to probe what exists.
+ */
+export const PERCENTAGE_FEE_RETIRED_MESSAGE =
+  "The completed-load percentage fee is retired. LogLoads no longer accepts new percentage-fee agreements or adds this fee to completed loads. Fee records from before the retirement are unchanged."
+
+/**
+ * The host-fee collection state frozen onto an assignment committed after the
+ * retirement. It is deliberately not `accrues_monthly_in_arrears`, so
+ * `frozenPlatformFeeBps` reads no rate from it and no ledger path can treat the
+ * assignment as fee-bearing.
+ */
+export const PERCENTAGE_FEE_RETIRED_COLLECTION_STATE = "percentage_fee_retired"
 
 /**
  * The fee rate an accepted assignment actually authorized.
@@ -126,10 +153,10 @@ export const hostInvoiceStatusSchema = z.enum([
 ])
 
 /**
- * Whether a percentage-billed host has a usable card on file. `attached` gates
- * new percentage work whose frozen terms will accrue the fee. Historical
- * subscription records use their own provider state and remain serviceable for
- * reconciliation without authorizing post-cutover publication.
+ * Whether a host has a usable card on file for a bill recorded before the
+ * percentage fee was retired. It no longer gates publication: no new work can
+ * accrue the fee. Historical subscription records use their own provider state
+ * and remain serviceable for reconciliation.
  */
 export const hostBillingProfileStatusSchema = z.enum(["none", "attached", "failed"])
 

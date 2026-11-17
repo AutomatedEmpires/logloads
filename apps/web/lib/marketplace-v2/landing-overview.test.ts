@@ -1,8 +1,19 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { filterMarketplaceJobs, type MarketplaceInterestView, type MarketplaceJobCardView } from "@logloads/contracts"
 
-import { checklistIncomplete, newInquiryCount, newInquiryItems, overviewChecklist, ownJobFilters, unconfirmedJobItems, unconfirmedLabel } from "./landing-overview"
+import {
+  checklistIncomplete,
+  newInquiryCount,
+  newInquiryItems,
+  overviewChecklist,
+  ownJobFilters,
+  readOwnJobs,
+  reconfirmableJob,
+  unconfirmedJobItems,
+  unconfirmedLabel
+} from "./landing-overview"
+import { MarketplaceOperationUnavailableError, MarketplaceRefusalError } from "./port"
 
 const ORG = "22222222-aaaa-4aaa-8aaa-222222222222"
 const OTHER = "88888888-cccc-4ccc-8ccc-cccccccccccc"
@@ -81,6 +92,17 @@ describe("the overview's attention list (#133 criterion 2)", () => {
     expect(unconfirmedLabel(items[0]!)).toBe("“Never confirmed” has never been confirmed as still available")
   })
 
+  it("lists a day-14 job, which the store reports as not accepting interest, because it is the one most in need (#374)", () => {
+    const items = unconfirmedJobItems([
+      job("day14", "Off Find Work", { acceptingInterest: false, lastConfirmedAt: "2026-10-19T12:00:00.000Z" }),
+      job("never14", "Never confirmed", { acceptingInterest: false, lastConfirmedAt: null }),
+      job("lapsed", "Lapsed", { acceptingInterest: false, expiresAt: "2026-11-01T00:00:00.000Z", lastConfirmedAt: null }),
+      job("filled", "Filled", { acceptingInterest: false, lastConfirmedAt: null, status: "filled" })
+    ], ORG, NOW)
+
+    expect(items.map((item) => [item.jobId, item.days])).toEqual([["never14", null], ["day14", 15]])
+  })
+
   it("never counts an edit as a confirmation", () => {
     expect(unconfirmedJobItems([job("edited", "Edited today", { lastConfirmedAt: "2026-10-01T00:00:00.000Z", lastModifiedAt: NOW })], ORG, NOW)).toHaveLength(1)
   })
@@ -120,5 +142,56 @@ describe("the new subscriber's checklist (#133 criterion 6)", () => {
     expect(posted({ landings: [landing(1)] })).toBe(true)
     expect(posted({ landings: [landing(null)] })).toBe(false)
     expect(posted({ interests: null })).toBe(false)
+  })
+})
+
+describe("which of its own jobs a business can reconfirm (#374)", () => {
+  it("is a listed job, including one the store reports as not accepting interest, and no stopped or expired job", () => {
+    expect(reconfirmableJob(job("a", "Listed"), NOW)).toBe(true)
+    expect(reconfirmableJob(job("b", "Day 14", { acceptingInterest: false, lastConfirmedAt: "2026-10-01T00:00:00.000Z" }), NOW)).toBe(true)
+
+    for (const status of ["paused", "filled", "closed", "expired"] as const) {
+      expect(reconfirmableJob(job("c", status, { acceptingInterest: false, status }), NOW), status).toBe(false)
+    }
+
+    expect(reconfirmableJob(job("d", "Lapsed", { expiresAt: "2026-11-02T00:00:00.000Z" }), NOW)).toBe(false)
+  })
+})
+
+describe("reading the business's own jobs (#374)", () => {
+  const view = (id: string, overrides: Partial<MarketplaceJobCardView> = {}) => ({ job: job(id, id, overrides) })
+
+  it("reads them through listOwnJobs, so a day-14 job is not left out", async () => {
+    const port = {
+      listJobs: vi.fn(),
+      listOwnJobs: vi.fn().mockResolvedValue([view("own"), view("day14", { acceptingInterest: false }), view("rival", { posterOrganizationId: OTHER })]),
+      supportsPublishing: true
+    }
+    const viewer = { organizationId: ORG, userId: "u1" }
+
+    expect((await readOwnJobs(port as never, viewer)).map((j) => j.id)).toEqual(["own", "day14"])
+    expect(port.listOwnJobs).toHaveBeenCalledExactlyOnceWith(viewer)
+    expect(port.listJobs).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the public read for a role without the job desk, which only sees what is listed", async () => {
+    const port = {
+      listJobs: vi.fn().mockResolvedValue([job("own", "Mine")]),
+      listOwnJobs: vi.fn().mockRejectedValue(new MarketplaceRefusalError("Your role cannot manage this business's jobs", "42501")),
+      supportsPublishing: true
+    }
+
+    expect((await readOwnJobs(port as never, { organizationId: ORG, userId: "u1" })).map((j) => j.id)).toEqual(["own"])
+    expect(port.listJobs).toHaveBeenCalledExactlyOnceWith(ownJobFilters(ORG))
+  })
+
+  it("uses the public read where the store has no job desk (the pilot), and lets any other failure through", async () => {
+    const pilot = { listJobs: vi.fn().mockResolvedValue([job("own", "Mine")]), listOwnJobs: vi.fn(), supportsPublishing: false }
+    expect((await readOwnJobs(pilot as never, { organizationId: ORG, userId: "u1" })).map((j) => j.id)).toEqual(["own"])
+    expect(pilot.listOwnJobs).not.toHaveBeenCalled()
+
+    const broken = { listJobs: vi.fn(), listOwnJobs: vi.fn().mockRejectedValue(new Error("store down")), supportsPublishing: true }
+    await expect(readOwnJobs(broken as never, { organizationId: ORG, userId: "u1" })).rejects.toThrow("store down")
+    expect(MarketplaceOperationUnavailableError).toBeDefined()
   })
 })

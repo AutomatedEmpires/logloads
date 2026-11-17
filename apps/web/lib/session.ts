@@ -226,7 +226,8 @@ export const getClerkPersonHints = cache(async (): Promise<{ fullName: string; v
  *   `clerkUserId` stands in for a Clerk user id: the same dev identity mapping the normalized adapter uses.
  *
  * Nothing here comes from request input other than the server-signed cookie. `requestedOrganizationId` is that
- * cookie's workspace selection: a hint that every reader re-checks against the person's current memberships.
+ * cookie's workspace selection: a hint that every reader re-checks against the person's current memberships, and
+ * honours only for the person it was signed for (`selectionUserId`, #246).
  */
 export interface SessionIdentity {
   source: "clerk" | "dev"
@@ -237,7 +238,17 @@ export interface SessionIdentity {
    */
   cookieUserId: string | null
   requestedOrganizationId: string | null
-  /** The person's name and provider-verified email, for a first link. Dev profiles never carry a verified email. */
+  /**
+   * The user id the selection was signed for (#246). A Clerk sign-in can find a cookie that an earlier sign-in left on
+   * the same browser, so a reader honours `requestedOrganizationId` only when this is the id it signs its own
+   * selections with: the pilot profile id, or the normalized store's `normalizedSessionCookieUserId()`. For a dev
+   * sign-in it is the dev profile's id, which is also who is signed in. `null` without a selection cookie.
+   */
+  selectionUserId: string | null
+  /**
+   * The person's name and provider-verified email, for a first link and for recording an email verified later (#246).
+   * Dev profiles never carry a verified email.
+   */
   hints: () => Promise<{ fullName: string; verifiedEmail: string | null }>
 }
 
@@ -252,6 +263,7 @@ export const getSessionIdentity = cache(async (): Promise<SessionIdentity | null
       cookieUserId: null,
       hints: async () => (await getClerkPersonHints()) ?? { fullName: "", verifiedEmail: null },
       requestedOrganizationId: devSession?.organizationId ?? null,
+      selectionUserId: devSession?.userId ?? null,
       source: "clerk"
     }
   }
@@ -274,6 +286,7 @@ export const getSessionIdentity = cache(async (): Promise<SessionIdentity | null
     cookieUserId: profile.id,
     hints: async () => ({ fullName: profile.fullName, verifiedEmail: null }),
     requestedOrganizationId: devSession.organizationId,
+    selectionUserId: devSession.userId,
     source: "dev"
   }
 })
@@ -328,9 +341,11 @@ export const getSessionActor = cache(async (): Promise<SessionActor | null> => {
   const clerkProfile = await resolveClerkProfile()
 
   if (clerkProfile) {
+    // #246: the selection is honoured only for the profile it was signed for. One an earlier sign-in left on this
+    // browser is not this person's, so they start on their own first business instead of an invalid selection.
     return buildSessionActor(
       clerkProfile,
-      devSession?.organizationId ?? null,
+      devSession?.userId === clerkProfile.id ? devSession.organizationId : null,
       "clerk"
     )
   }

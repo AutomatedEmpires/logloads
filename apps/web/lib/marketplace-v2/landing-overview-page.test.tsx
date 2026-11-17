@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   landingAllowance: vi.fn(),
   listJobs: vi.fn(),
   listLandingInterests: vi.fn(),
+  listOwnJobs: vi.fn(),
   listOwnLandings: vi.fn(),
   resolveV2Viewer: vi.fn(),
   supportsPublishing: false
@@ -37,6 +38,7 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
     landingAllowance: mocks.landingAllowance,
     listJobs: mocks.listJobs,
     listLandingInterests: mocks.listLandingInterests,
+    listOwnJobs: mocks.listOwnJobs,
     listOwnLandings: mocks.listOwnLandings,
     get supportsPublishing() {
       return mocks.supportsPublishing
@@ -93,6 +95,7 @@ beforeEach(() => {
   mocks.resolveV2Viewer.mockResolvedValue({ access: { capabilities: DESK, organizationName: "Cedar Fork Logging" }, ok: true, viewer })
   mocks.listOwnLandings.mockResolvedValue([landing()])
   mocks.listJobs.mockResolvedValue([job("j1", "Oak saw-log morning run"), job("j2", "Pulp to Eugene"), job("j9", "Rival run", { posterOrganizationId: OTHER })])
+  mocks.listOwnJobs.mockImplementation(async () => (await mocks.listJobs()).map((own: MarketplaceJobCardView) => ({ job: own })))
   mocks.listLandingInterests.mockResolvedValue([interest("i1", "j1", "Oak saw-log morning run"), interest("i2", "j1", "Oak saw-log morning run"), interest("i3", "j2", "Pulp to Eugene", "replied")])
   mocks.landingAllowance.mockResolvedValue({ activeLandings: 1, cycleEndsAt: "2026-12-01T00:00:00.000Z", invitationsRemaining: 2, planCode: "basic", teamMembers: 2 })
 })
@@ -138,6 +141,21 @@ describe("the landing overview (#133)", () => {
     expect(page).toContain("“Pulp to Eugene” not confirmed for 9 days")
     expect(page).toMatch(/<button[^>]*name="availabilityAttestation"[^>]*value="confirmed"|<button[^>]*value="confirmed"[^>]*name="availabilityAttestation"/)
     expect(page).toContain("name=\"returnTo\" value=\"/v2/landing\"")
+    expect(page).not.toContain("Rival run")
+  })
+
+  it("reads the desk's own jobs through listOwnJobs where the store keeps them, so a day-14 job is listed to confirm (#374)", async () => {
+    mocks.supportsPublishing = true
+    mocks.listOwnJobs.mockResolvedValue([
+      { job: job("j1", "Fresh run") },
+      { job: job("j2", "Off Find Work", { acceptingInterest: false, lastConfirmedAt: "2026-10-01T12:00:00.000Z" }) },
+      { job: job("j9", "Rival run", { posterOrganizationId: OTHER }) }
+    ])
+    const page = await render()
+
+    expect(mocks.listOwnJobs).toHaveBeenCalledExactlyOnceWith(viewer)
+    expect(mocks.listJobs).not.toHaveBeenCalled()
+    expect(page).toContain("“Off Find Work” not confirmed for")
     expect(page).not.toContain("Rival run")
   })
 
@@ -225,5 +243,28 @@ describe("the landing overview (#133)", () => {
 
     expect(await render()).toContain("no landing desk for your role")
     expect(mocks.listLandingInterests).not.toHaveBeenCalled()
+  })
+})
+
+describe("the overview's errors (#279)", () => {
+  it("shows fixed copy for ?error=, never its words (C2)", async () => {
+    const injected = await render({ error: "Your account is locked. Call 541-555-0100 to keep your listings." })
+
+    expect(injected).not.toContain("541-555-0100")
+    expect(injected).toMatch(/role="alert"[^>]*><p>Something went wrong on our side\. Try again in a moment\.<\/p>/)
+    expect(await render({ error: "reconfirm_attestation" })).toContain("Tick the availability confirmation to record that this job is still available.")
+  })
+
+  it("logs a read that failed under a request id, without its words (K2)", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    mocks.listJobs.mockRejectedValue(new Error("store unavailable for maya@northpine.example"))
+
+    expect(await render()).toContain("Your jobs could not be loaded")
+    expect(logged).toHaveBeenCalledExactlyOnceWith(
+      "logloads: marketplace v2 request failed",
+      expect.objectContaining({ code: "unexpected", operation: "landing_overview.jobs", requestId: expect.stringMatching(/^[0-9a-f]{12}$/) })
+    )
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("maya@northpine.example")
+    logged.mockRestore()
   })
 })

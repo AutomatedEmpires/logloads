@@ -15,6 +15,7 @@ import type { LogLoadsDatabaseState } from "@logloads/db"
 import { buildNetworkView } from "../network"
 import { mutateState, readState } from "../services"
 import { selectMarketplaceV2Port } from "./adapter"
+import { marketplaceInterestPage, marketplaceJobPage } from "./keyset-pages"
 import { pilotPosterVerification, toInterestView, toJobDetailView } from "./mapping"
 import {
   MARKETPLACE_V2_FEATURE_OPERATIONS,
@@ -32,6 +33,12 @@ import {
  * advertisement into the legacy load/slot/route-pack records would recreate the dispatch model, and a
  * second permanent JSON job model would compete with the normalized `job_postings` table. Those two
  * operations wait for the normalized adapter; the authoring screens validate and preview only.
+ *
+ * The day-14 reconfirmation rule (#308, #321) belongs with them. It takes a job off Find Work until its poster
+ * reconfirms it, and the pilot records no "still available" confirmation (`lastConfirmedAt` is always null) and takes
+ * none. Applied here, it would hide every pilot job from Find Work and from its own landing desk, with no way back. So
+ * a pilot job's board place and new interest follow its status alone, as before. The normalized adapter applies the
+ * rule (`jobTakesNewInterest`), and so does the store.
  */
 
 function publicJobs(state: LogLoadsDatabaseState, at = new Date()): MarketplaceJobDetailView[] {
@@ -49,6 +56,14 @@ function publicJobs(state: LogLoadsDatabaseState, at = new Date()): MarketplaceJ
 
     return [toJobDetailView(networkLoad, load, pilotPosterVerification(poster, state.verificationRecords), marketplaceJobStatus(load, atIso))]
   })
+}
+
+/**
+ * Discovery: filtering and order are the contract's pure rules, so this adapter and the normalized one agree. Distance
+ * is measured only to each job's approximate public point, from a search origin snapped to the same 0.1° grid.
+ */
+function discoveredJobs(state: LogLoadsDatabaseState, filters: MarketplaceJobFilters): MarketplaceJobDetailView[] {
+  return sortMarketplaceJobs(filterMarketplaceJobs(publicJobs(state), filters), filters)
 }
 
 function actor(viewer: MarketplaceV2Viewer) {
@@ -150,14 +165,34 @@ export const operatingStateMarketplaceV2: MarketplaceV2Port = {
   },
 
   async listJobs(filters: MarketplaceJobFilters) {
-    // Filtering and order are the contract's pure rules, so this adapter and the normalized one agree: distance is
-    // measured only to each job's approximate public point, from a search origin snapped to the same 0.1° grid.
-    return readState((current) => sortMarketplaceJobs(filterMarketplaceJobs(publicJobs(current.state), filters), filters))
+    return readState((current) => discoveredJobs(current.state, filters))
+  },
+
+  // #280: one read of the document per page. The public view already carries every job's detail fields, and the
+  // document holds every job, so the count is exact.
+  async listJobPage(filters, page) {
+    return readState((current) => marketplaceJobPage(discoveredJobs(current.state, filters), filters, page, { exact: true }))
   },
 
   async listLandingInterests(viewer) {
     return readState((current) =>
       current.listMarketplaceInterestsForLanding(actor(viewer)).map((interest) => interestView(current.state, interest)))
+  },
+
+  // #280: the same services and authority checks as the two lists above, in one read.
+  async listInterestPage(viewer, side, page) {
+    return readState((current) => {
+      const interests = side === "hauler"
+        ? current.listMarketplaceInterestsForHauler(actor(viewer))
+        : current.listMarketplaceInterestsForLanding(actor(viewer))
+
+      return marketplaceInterestPage(
+        interests.map((interest) => interestView(current.state, interest)),
+        { organizationId: viewer.organizationId, side },
+        page,
+        { exact: true }
+      )
+    })
   },
 
   async publishJob() {

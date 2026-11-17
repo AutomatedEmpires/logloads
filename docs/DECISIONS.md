@@ -2,6 +2,213 @@
 
 Append-only. Newest at top. Every runtime / provider / architecture change needs a dated entry.
 
+## 2026-11-11 — Normalized-v2 stage 31: who reads a founding offer, and three rules now enforced in SQL (#294)
+
+Decided by the lead on #294 (2026-11-11) and implemented by `31_v2_reply_gate_reconfirmation_unsubscribe.sql`. The
+schema is still a non-active prototype: nothing here activates billing, a deployment or a hosted database.
+
+- **Founding offer: every member with `plan.view` may read the business's redemption.** Before, only owners could
+  (`promotion_redemptions_read`), while every active member already holds `plan.view` and reads the plan and the
+  allowance (`get_org_entitlement_state`). The offer is part of what the plan costs; it gives no power to change
+  it. Members read its status, grant date and cycles applied, never who granted it (16's column grant stands). A
+  member of a business that redeemed a promotion also reads that promotion's terms after it closes, so an offer's
+  terms no longer disappear. The adapter's `foundingOffer` read model still answers owners only until the billing
+  feature widens it. Source: #248's report on #235; the lead's scope note on #294.
+- **Private details and the site phone: only after the landing replies and opts in, in the database too.** This is
+  the founder's 2026-11-10 phone-reveal rule. The security sweep of 2026-11-11 found the schema let a desk member
+  share them by marking an inquiry viewed, before any reply (P1). Stage 31 closes it: the hauling business reads
+  them only while its inquiry is `replied`, and a decline, a revocation or a withdrawal ends it.
+- **Day 14: the reconfirmation stop of #308 is enforced by the store.** From exactly 14 x 24 hours after its last
+  confirmation, and for a legacy job that was never confirmed, an active job is off `list_marketplace_jobs` and
+  `search_job_postings` and takes no new interest ("Waiting for the poster to confirm"). It is not expired or
+  paused, its poster still sees it, and reconfirming restores it at once. Same boundary as
+  `packages/services/src/v2/jobs/lifecycle.ts`.
+- **A signed-out unsubscribe link works without an account session.** One signed, expiring, single-use token turns
+  off one person's one channel preference and reveals nothing. The signing key never leaves the database.
+- **A job of another business reads as not found** to the job lifecycle functions, exactly like an unknown id.
+
+Review: the lead rechecks the founding-offer read when the billing screens are designed (#248 follow-up).
+
+## 2026-11-10 — Decision register #114 closed out: delegated decisions and dated deferrals (#308)
+
+Every item here was **decided by the lead and agents under the founder's 2026-11-10 delegation** ("108 and 114 you
+and other agents collaborate and deicde", #235 comment 6784468462, item 7). The founder can reverse any of them.
+None changes a price, a plan limit or legal text, and none activates billing, a deployment or a production change.
+Where an older entry disagrees, the founder's 2026-11-10 decisions (next entry) win.
+
+**UX decisions UX-DEC-01 to 07, now recorded.** Source: `docs/product/ux-v2/08_UX_DECISIONS.md` at `c41a14b` on
+`docs/product/v2-ux-spec`, made under the founder's 2026-11-02 delegation to the UX lane.
+
+- **C5/C6 (UX-DEC-01): decided.** One status vocabulary, as the 2026-11-03 entry below words it. Why: the spec had
+  three queue lists that disagreed. Unblocked #135 (closed).
+- **C8 (UX-DEC-02): decided.** Publishing needs a start date, plus an end date, a duration, or an explicit
+  "Ongoing". Why: spec §4.5 and §8.21 require start timing and "duration or ongoing", and a blank must not read as
+  ongoing. Unblocked #128 (closed).
+- **C9 (UX-DEC-03): decided.** Product comes from the list Saw logs, Pulpwood, Poles and pilings, Chips, Hog fuel
+  and biomass, Hardwood logs, or Other (described), and is required to publish. Why: spec §8.21 asks for a
+  controlled taxonomy and §5.2 filters on it. Unblocked #128 and the product filter.
+- **C10 (UX-DEC-04, amended): decided.** First contact is through LogLoads messages, and no public page shows a
+  phone number or email address. Amendment from the founder decisions of 2026-11-10: a hauler sees the landing's
+  phone number only after the landing replies to that hauler's interest, and only if the landing opted in. Why:
+  spec §10.28 guards against scraping, and a call is how this trade closes a deal. Unblocks the phone-reveal work.
+- **C4 (UX-DEC-05): decided.** Access follows the organization role on every plan. Pro and Regional get per-landing
+  views, not per-landing permissions. Why: the schema has no landing-scoped grant, and adding one is a
+  tenant-isolation change that needs its own security review. Unblocks #127.
+- **UX-DEC-06: decided.** A verification mark comes only from a current typed record and names its type, source
+  and month, for example "Business identity reviewed by LogLoads · Oct 2026". Why: Blueprint §10.2 forbids a mark
+  that implies more than was checked. Unblocked #150 (closed).
+- **UX-DEC-07: decided.** Prototype tasks run inside the #119 interviews. Why: same participants, one outreach.
+  The interview regions follow the many-regions pilot. Unblocks #138.
+
+**Publishing and freshness.**
+
+- **ATT-2: decided.** The publish attestation is three statements, all required and never pre-ticked: "This is a
+  real job at {landing}, which is recruiting now." · "Pay, equipment and dates are accurate today." · "We'll update
+  or pause it when we no longer need trucks." Reconfirming uses one: "I confirm this job is currently available as
+  described." These are the strings in `packages/contracts/src/marketplace-job-draft.ts`. Why: V2-DEC-03 requires
+  an explicit attestation, and the three statements cover the three ways a posting goes wrong (not real, not
+  accurate, not maintained). Unblocked #128 and #105 (closed). Whether the statements should cite the Terms is a
+  counsel question (#293) and does not block.
+- **Reconfirmation interval (Blueprint §16.2): decided, as pilot defaults.** One number for both sides: **7 days**.
+  - **Jobs.** A confirmation is recent for 7 days (`RECENT_CONFIRMATION_DAYS`). The poster is reminded on day 5.
+    From day 7 the job is due and haulers see "Last confirmed N days ago — check with the poster". At **14 days**
+    without a confirmation the job stops taking new interest and leaves Find Work until the poster confirms again
+    with the reconfirm statement. It is not expired, deleted or re-billed, and its label must not say the poster
+    paused it.
+  - **Truck availability.** The same 7 days. A hauler is reminded on day 5 and confirms in one tap. From day 7
+    the truck shows "last confirmed N days ago" and is left out of every count labelled "available", including
+    the audience count a landing sees. At 14 days the status reads "unknown". The profile stays, and there is no
+    penalty (spec §10.10).
+  - Why: logging work is planned by the week, so a weekly confirmation matches how the facts change. One number
+    is one habit to learn, and it is the number haulers already see. Counting only trucks confirmed inside 7 days
+    keeps the audience count honest, which the "truck never pays" promise depends on. The 14-day stop is what holds
+    stale active jobs under the strategy's 10% target without forcing a new post (Blueprint §10.1). A reminder on
+    day 5 is the spec §14 default, "reminders before stale state".
+  - Review: the lead rechecks both numbers against basin data from the liquidity board by 2026-12-15. Unblocks
+    #247, #292 and the one-tap confirm flows.
+
+**Commercial.**
+
+- **COPY-1 (#108): decided.** Option B, restricted. `/pricing` shows Basic $149, Pro $299 and Regional $499 per
+  month, each marked not for sale, with no payment control, no boost prices, no founding offer and no geography
+  claim. `/terms` keeps the 2026-11-02 change notice and does not change until the legal review. The exact strings
+  are in the ruling on #108 (comment 6785833334). Why: the founder's 2026-11-04 decision text (PR #223, unmerged)
+  keeps the three prices visible and not purchasable, nothing on 2026-11-10 reverses it, and a price list with no
+  checkout is not the monetized launch that Blueprint §15 gates. Unblocks #298 and the copy deck.
+- **COM-1: decided in part.** "Launched state" is retired as a unit. The unit is an **open basin**: a named timber
+  region that the lead switches on. This fits the founder's 2026-11-10 "many regions", gated per basin, and
+  replaces the state-by-state schedule that the 2026-11-04 text had already dropped.
+  - Accounts, profiles, landings and drafts work everywhere. A basin with no listings is shown as empty, with no
+    invented activity.
+  - A basin opens when it has at least 20 hauling businesses with availability confirmed in the last 14 days and
+    at least 4 independent landing organizations ready to post. These are the #117 pilot figures, reused as the
+    starting gate, not new research.
+  - A qualifying landing organization has a current "Business identity reviewed by LogLoads" record (UX-DEC-06)
+    and an operation in the basin. One offer per legal organization (Blueprint §8.1).
+  - **Deferred to the founder, by 2026-11-24:** the founding offer stays disabled. Its cohort unit (the lead
+    proposes the first 10 qualifying organizations per open basin), its eligibility window, and whether 50% for
+    six paid cycles still stands are commercial terms that agents do not set.
+  - **Deferred to the lead, by 2026-11-24:** the list of basins and their boundaries, from the market research
+    (#267, PR #270).
+- **COM-2: decided.** Early pilot landings may be told: the pilot is free and takes no card; the three plan prices,
+  not for sale yet; and that nothing is charged unless they later choose a plan at a checkout that shows the
+  terms. They may not be promised the founding offer, a discount, a free period after billing opens or a price
+  lock. If asked: "A founding discount is in the plan, but its terms are not decided, so we can't promise it."
+  Why: `docs/PILOT_LAUNCH.md` §4 forbids promising free or discounted terms before the decision exists, and
+  Blueprint §8.1 requires the customer to see the full terms before subscribing. Unblocks #120.
+- **RES-1: decided.** The #117 thresholds are adopted as written and are fixed before interviews start. They apply
+  to each pilot basin, except the price commitments (3 written, 2 full-price renewals), which count across the
+  pilot. They may be tightened after baseline interviews and are never relaxed after results are seen. Why: #117
+  calls them hypotheses to fix in advance, and the 2026-11-10 pilot covers many regions. Unblocks #119 to #122.
+
+**Billing behaviour (PR #123 and PR #157, already merged).** These ratify what the SQL does. Billing stays dark.
+
+- **F1: ratified.** Hauler profiles are private until an owner or manager consents to public listing. Onboarding
+  must ask plainly, so supply is not lost by default. Pre-V2 public profiles do not carry over without consent.
+  Why: consent first is the safer reading of Blueprint §10.4.
+- **F2 and F2a: decided.** A legacy posting needs valid pay before it is reconfirmed or re-activated, and an active
+  legacy posting without pay is **not listed publicly** until pay is added. Why: C1 and V2-DEC-02 require pay on
+  every posting a hauler can see.
+- **F3: ratified.** Re-activating a job needs a fresh attestation. Why: the same reason as the 14-day stop.
+- **F4: ratified.** Drafts may be incomplete. Publication enforces completeness (V2-DEC-02).
+- **F5: decided.** A founding-discount cycle is counted once per billing period, when payment for that period
+  is evidenced (`invoice.paid` or `invoice.payment_succeeded`). An unpaid renewal never counts, a late-paid period
+  counts when paid, and a plan change does not consume a cycle. Why: Blueprint §8.1 says "first six paid billing
+  cycles". This closes review finding E-2. The offer itself stays disabled.
+- **F6: decided.** The invitation allowance belongs to the billing period. A plan change inside a period changes
+  the cap and never the used count, with remaining floored at zero and no clawback. A new period starts at zero
+  used. Why: Blueprint §6.2 gives an allowance per cycle with no rollover, and this is the one rule that gives no
+  reset for switching plans. Payment proration wording is a Terms matter for #293.
+- **F7: decided.** `paused` and `unpaid` grant no entitlement, as LE-04 implements. LogLoads does not offer pausing
+  a plan. The status is recorded and alerted, payment restores the plan, and the owner re-activates landings and
+  jobs. The failed-payment grace period is a published term (Blueprint §16.2) and is deferred to the founder with
+  the Terms. Unblocks #306.
+- **Moderation hold and review policy questions: decided.**
+  - C-1/C-3: a hold covers one job. A moderator may widen it to the organization's publishing for repeat or evasive
+    reposting (Blueprint §10.6). The owner sees the reason category.
+  - B-8: owners see "LogLoads moderation" and the reason, never the moderator's identity.
+  - B-3: only platform admins with a support or trust role read inquiries, messages and memberships, and every
+    such read is audited.
+  - B-4: changing a verified organization's legal or display name removes the mark until it is reviewed again.
+  - E-7/D-12: `open_subscription_cycle` is revoked from `service_role`. Webhooks go through the event path only.
+  - A-1: every enabled identity issuer pins an audience (LE-09).
+  - I-1: callers cannot shorten the invitation dedupe window.
+  - R4: the ordering rules stand as implemented.
+  - Why: each takes the narrower, audited option, and all are reversible. The #264 and #255 owners check them
+    against the current SQL.
+
+**Other rows.**
+
+- **SPEC-1.1: decided.** UX spec v1.1 may be issued with the formatting fixes F1–F5 only and no requirement
+  change. The lead assigns it to the docs lane. It blocks nothing.
+- **PROV-1: decided.** A development Supabase project and Clerk instance are provided. The work is #271 and #112.
+- **RET-2: deferred to 2026-11-24, owner: the #293 legal review, then the lead.** The evidence files stay in the
+  tree (RET-1) until LEG-2 is done and counsel names a minimum retention period.
+- **LEG-2: deferred to 2026-11-24, owner: the founder as the authorized operator.** Legacy obligations stay
+  unverified, not presumed zero. The check is read-only: the production `operating_state` collections for
+  agreements, invoices, accrued fees and refunds, and the records of the earlier Stripe account, which
+  `docs/ACTIVATION_STRIPE.md` says was deleted. The lead supplies the checklist from PR #156. It blocks RET-2 and
+  the removal of legacy billing code.
+- **MAP-2: deferred to 2026-11-24, owner: the lead, with the founder's account access.** Verify the CARTO
+  allowance, origin restrictions and separate development and production keys before any basin opens.
+
+**Questions sent to the legal review (#293).** Agent analysis first; each names where licensed counsel must
+confirm.
+
+1. Does a public price list marked not for sale create advertising or offer duties, and may LogLoads say "free
+   forever" to haulers?
+2. Terms: the liability cap worded as "platform fees you paid", the effective date, the Privacy Policy's
+   billing-record wording, the checkbox "accept the current LogLoads Terms", how `/terms` relates to
+   `percentage-v1-2026-08-03` acceptances, and whether the 2026-11-02 change notice is enough.
+3. Do targeted invitations, Sponsored boosts or the phone reveal after a reply change broker status (Blueprint
+   §15)?
+4. What must a founding offer disclose (introductory price, renewal, cancellation) before it is switched on?
+5. How long must the legacy billing and security evidence be kept (RET-2)?
+6. Should the publish attestation cite the Terms, and what is LogLoads' exposure for a false posting?
+7. What terms are needed for proration, failed-payment grace, and `paused` or `unpaid` plans (F6, F7)?
+8. What notice is needed for admins reading messages (B-3) and for public hauler listings (F1)?
+9. Are reconfirm reminders and one-tap confirm links by text or email transactional, and what consent do they
+   need?
+
+## 2026-11-10 — Founder decisions: boundary, many regions, SMS at a zero cap, phone reveal, legal review
+
+Recorded from #235 comment 6784468462, where the lead quotes the founder exactly: "1. yes possibly, if we can be
+competitive and useful in other ways? 2. wed pilot in many regions? 3. yes approve. dont add budget yet (capped at
+0 now) 4. agents decide... 5. i dont know, design agnets decide. 6. agents can act as lawyer and do extensive
+review. 7. 108 and 114 you and other agents collaborate and deicde." The numbers answer the strategy comment
+6784066522.
+
+- **Boundary.** No scale tickets, load tracking or settlement for now. It is revisited only with evidence.
+- **Pilot.** Many regions at once, each gated per basin.
+- **SMS.** Approved as a channel. The monthly send budget is capped at 0, so nothing is sent until the founder
+  raises the cap.
+- **Phone reveal (agents decide).** A hauler sees the landing's phone number only after the landing replies to
+  that hauler's interest, and only if the landing opts in. It is never public. This amends UX-DEC-04.
+- **Dark theme (design agents decide).** Decided in #281.
+- **Legal.** Agents do an extensive legal review (#293). It is agent analysis, not advice from licensed counsel,
+  and it says where counsel is needed before launch.
+- **#108 and #114.** Decided by the lead with agents. See the entry above.
+
 ## 2026-11-03 — One status vocabulary for interests and jobs (UX-12, #135)
 
 - **Approval.** The lead approved #135 on 2026-11-03 and delegated the exact wording. This implements UX-DEC-01

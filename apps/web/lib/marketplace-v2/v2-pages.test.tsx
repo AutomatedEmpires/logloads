@@ -278,8 +278,15 @@ describe("the job page (/v2/work/[jobId])", () => {
     expect(sent).not.toContain('name="loadPostingId"')
   })
 
-  it("announces a server refusal", async () => {
-    expect(await renderJob({ error: "Enter how many trucks you can offer" })).toMatch(/role="alert"[^>]*>Enter how many trucks you can offer/)
+  it("announces a server refusal by its code's fixed copy", async () => {
+    expect(await renderJob({ error: "trucks_required" })).toMatch(/role="alert"[^>]*>Enter how many trucks you can offer\./)
+  })
+
+  it("never shows the words of ?error= (#279, C2)", async () => {
+    const html = await renderJob({ error: "Enter how many trucks you can offer" })
+
+    expect(html).toMatch(/role="alert"[^>]*>Something went wrong on our side\./)
+    expect(html).not.toContain("Enter how many trucks you can offer")
   })
 })
 
@@ -673,5 +680,36 @@ describe("v2.css is retired", () => {
     for (const path of sources) {
       expect(readFileSync(path, "utf8"), path).not.toMatch(/className="v2-|className={`v2-|import "\.\/v2\.css"/)
     }
+  })
+})
+
+describe("both inquiry pages show fixed copy for ?error=, never its words (#279, C2)", () => {
+  const PHISHING = "Your account is locked. Call 541-555-0100 to keep your listings."
+
+  it.each([
+    ["My inquiries", MyInquiriesPage, "hauler"],
+    ["the landing inbox", LandingInboxPage, "landing"]
+  ] as const)("%s", async (_label, page, side) => {
+    mocks.resolveV2Actor.mockResolvedValue({ actor: actorFor(side === "hauler" ? HAULER_ORG : LANDING_ORG), ok: true })
+    mocks.listHaulerInterests.mockResolvedValue([interest()])
+    mocks.listLandingInterests.mockResolvedValue([interest()])
+
+    const injected = await renderPage(page, { error: PHISHING, inquiry: FIRST })
+    expect(injected).not.toContain("541-555-0100")
+    expect(injected).toMatch(/role="alert"[^>]*>Something went wrong on our side\. Try again in a moment\.</)
+
+    expect(await renderPage(page, { error: "inquiry_closed", inquiry: FIRST })).toMatch(/role="alert"[^>]*>This inquiry is closed\. Nothing more can be sent on it\.</)
+  })
+
+  it("names a failed list read by fixed copy and a reference, never by the error's words (#279, C3)", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    mocks.listHaulerInterests.mockRejectedValueOnce(new TypeError("Cannot read properties of undefined (reading 'maya@northpine.example')"))
+
+    const text = textOf(await renderPage(MyInquiriesPage))
+
+    expect(text).toMatch(/Something went wrong on our side\. Try again in a moment\. Reference: [0-9a-f]{12}\./)
+    expect(text).not.toContain("maya@northpine.example")
+    expect(logged).toHaveBeenCalledOnce()
+    logged.mockRestore()
   })
 })

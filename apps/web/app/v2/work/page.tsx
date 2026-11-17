@@ -11,19 +11,22 @@ import { PageContainer, PageHeader } from "@logloads/ui/layout"
 import { Button, EmptyState } from "@logloads/ui/primitives"
 
 import { FindWorkFilters } from "@/components/v2/discovery/FindWorkFilters"
-import { FindWorkResults, type FindWorkRow } from "@/components/v2/discovery/FindWorkResults"
+import { FindWorkResults, type FindWorkPaging, type FindWorkRow } from "@/components/v2/discovery/FindWorkResults"
 import { SortControl } from "@/components/v2/discovery/SortControl"
 import { JobMapLoader } from "@/components/v2/JobMapLoader"
 import { HaulerSetupChecklist } from "@/components/v2/onboarding/HaulerSetupChecklist"
 import {
   effectiveSort,
   filterTexts,
+  FIND_WORK_PAGE_SIZE,
   FIND_WORK_RADIUS_LABELS,
+  findWorkCountText,
   findWorkEmptyState,
   findWorkFilters,
   findWorkFormValues,
   findWorkHiddenFields,
   findWorkHref,
+  findWorkRangeText,
   parseFindWorkSearch,
   whereText,
   type FindWorkContext,
@@ -53,6 +56,9 @@ function listDescription(search: FindWorkSearch): string {
  * resolves the viewer and their own equipment from the session, and asks the port for matching jobs; the components
  * only render. Location is a typed town or ZIP, never a device location, and every distance is measured to a job's
  * approximate public point. Works without JavaScript: the filters are a GET form and each row is a plain link.
+ *
+ * Results come a page at a time (#280): the heading states how many jobs match ("200+" when the store stopped reading
+ * at its limit, never a cut list as the total), and "Show more jobs" links to the next keyset page of the same search.
  */
 export default async function FindWorkPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -71,23 +77,23 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
   const context: FindWorkContext = { hasSetups: setups.length > 0 }
 
   const search = parseFindWorkSearch(params, context)
-  const jobs = await pilotMarketplaceV2.listJobs(findWorkFilters(search, { now, setups }))
   const origin = search.place.status === "found" ? search.place.place.point : null
   const href = (overrides: Partial<FindWorkSearch>) => findWorkHref(search, context, overrides)
 
-  // Each listed job's public detail view and the viewer's standing interest, so selecting a row needs no request.
-  const [details, interests, checklist] = await Promise.all([
-    Promise.all(jobs.map((job) => pilotMarketplaceV2.getJob(job.id))),
+  // One store read for the page, whatever it holds (#280): each job arrives with its public detail fields, so selecting
+  // a row needs no request and no job is read twice. The viewer's standing interest is one more read, not one per job.
+  const [page, interests, checklist] = await Promise.all([
+    pilotMarketplaceV2.listJobPage(findWorkFilters(search, { now, setups }), { after: search.after, limit: FIND_WORK_PAGE_SIZE }),
     canExpress && viewer ? pilotMarketplaceV2.listHaulerInterests(viewer).catch(() => []) : Promise.resolve([]),
     haulerChecklistFor(viewer, canExpress)
   ])
+  const jobs = page.items
   const sentTo = new Set(interests.filter((interest) => interest.status !== "withdrawn").map((interest) => interest.job.id))
 
-  const rows: FindWorkRow[] = details.flatMap((job) => {
-    if (!job) return []
+  const rows: FindWorkRow[] = jobs.map((job) => {
     const own = job.posterOrganizationId === workspace?.id
 
-    return [{
+    return {
       canExpressInterest: canExpress && !own,
       distanceMiles: origin ? marketplaceDistanceMiles(origin, job) : null,
       // Advisory, from the viewer's own setups; never on the viewer's own listing.
@@ -97,17 +103,37 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
       // The public view only: the row is a client component's prop, and the organization id is needed only above.
       job: toPublicJobView(job),
       selectHref: href({ jobId: job.id })
-    }]
+    }
   })
   const selectedId = search.jobId && rows.some((row) => row.job.id === search.jobId) ? search.jobId : null
 
   const showMap = search.view === "map"
-  // Each pin's preview is the job's public card (#183): the allowlisted fields only, never the detail view.
+  // Each pin's preview is the job's public card (#183): the allowlisted fields only, never the detail view. The map
+  // shows this page's jobs, the same ones as the list.
   const points = jobMapPoints(jobs)
   const sort = effectiveSort(search)
   const bases = marketplaceComparablePayUnits(jobs)
-  const empty = rows.length === 0 ? findWorkEmptyState(search, context) : null
+  const firstHref = href({ after: null, jobId: null })
+  const empty = page.total.count === 0
+    ? findWorkEmptyState(search, context, { complete: page.total.exact })
+    : rows.length === 0
+      // A cursor past the last job: the jobs after it closed or changed since the link was made.
+      ? { actions: [{ href: firstHref, label: "Back to the first jobs" }], body: "The jobs that came after this point have closed or changed.", title: "No more jobs in this list" }
+      : null
+  const paging: FindWorkPaging | null = rows.length > 0 && (page.start > 0 || page.nextCursor !== null || !page.total.exact)
+    ? {
+        firstHref: page.start > 0 ? firstHref : null,
+        moreHref: page.nextCursor ? href({ after: page.nextCursor, jobId: null }) : null,
+        note: page.nextCursor === null && !page.total.exact
+          ? "These are the matches among the most recent listings. Add keywords to narrow the search and reach older ones."
+          : null,
+        range: findWorkRangeText(page.start, rows.length, page.total)
+      }
+    : null
   const notes = [
+    page.restarted ? (
+      <p key="restarted">The list changed since that link was made, so it starts again from the first jobs.</p>
+    ) : null,
     search.place.status === "unknown" ? (
       <p key="place">
         We couldn&apos;t place &ldquo;{search.place.input}&rdquo;, so jobs at every distance are shown. Change the search to
@@ -138,9 +164,9 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
         <FindWorkResults
           actions={
             <>
-              {rows.length > 1 ? (
+              {page.total.count > 1 ? (
                 <SortControl
-                  hidden={findWorkHiddenFields(search, context, { jobId: null, sort: "newest" })}
+                  hidden={findWorkHiddenFields(search, context, { after: null, jobId: null, sort: "newest" })}
                   nearestAvailable={origin !== null}
                   value={sort}
                 />
@@ -168,10 +194,11 @@ export default async function FindWorkPage({ searchParams }: { searchParams: Sea
             ) : null
           }
           footnote="Pay is shown as each poster stated it. Rates on different bases (per load, per ton, per hour) are never converted into one another."
-          heading={`${rows.length} job${rows.length === 1 ? "" : "s"}`}
+          heading={findWorkCountText(page.total)}
           map={showMap ? <JobMapLoader now={now} points={points} /> : null}
           notes={notes.length > 0 ? notes : null}
           now={now}
+          paging={paging}
           rows={rows}
           selectedId={selectedId}
         />

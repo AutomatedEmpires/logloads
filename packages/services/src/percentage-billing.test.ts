@@ -1,12 +1,26 @@
 import {
+  isCurrentPercentageAgreement,
+  PERCENTAGE_FEE_RETIRED_CODE,
+  PERCENTAGE_FEE_RETIRED_MESSAGE,
   PERCENTAGE_V1_TERMS_VERSION,
   PLATFORM_FEE_BPS
 } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { createLogLoadsServices } from "./index"
+import {
+  acceptPercentageBillingAgreement,
+  PercentageFeeRetiredError
+} from "./percentage-billing"
 import { DomainRefusalError } from "./utils"
+
+/**
+ * The completed-load percentage fee is retired. These tests hold the service
+ * boundary to two promises: nothing can create a new percentage agreement,
+ * however it is called, and every agreement accepted before the retirement
+ * stays exactly as it was recorded.
+ */
 
 const HOST = "33333333-3333-4333-8333-333333333332"
 const HOST_OWNER = "22222222-2222-4222-8222-222222222223"
@@ -16,6 +30,8 @@ const FLEET = "33333333-3333-4333-8333-333333333334"
 const FLEET_OWNER = "22222222-2222-4222-8222-222222222227"
 const ACCEPTED_AT = "2026-08-04T12:00:00.000Z"
 
+type Services = ReturnType<typeof createLogLoadsServices>
+
 function acceptanceInput() {
   return {
     acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
@@ -24,14 +40,26 @@ function acceptanceInput() {
   }
 }
 
-function markHostLegacy(
-  services: ReturnType<typeof createLogLoadsServices>
-) {
+function hostAccount(services: Services) {
   const account = services.state.organizationBillingAccounts.find(
     (candidate) => candidate.organizationId === HOST
   )
 
   if (!account) throw new Error("Seed host billing account missing")
+  return account
+}
+
+function markHostUnenrolled(services: Services) {
+  const account = hostAccount(services)
+  account.activationState = "unenrolled"
+  account.billingModel = null
+  account.percentageTermsSnapshot = null
+  account.subscriptionId = null
+  return account
+}
+
+function markHostLegacy(services: Services) {
+  const account = hostAccount(services)
   account.activationState = "legacy"
   account.billingModel = "legacy_percentage"
   account.percentageTermsSnapshot = null
@@ -39,9 +67,7 @@ function markHostLegacy(
   return account
 }
 
-function activeHistoricalSubscription(
-  services: ReturnType<typeof createLogLoadsServices>
-) {
+function activeHistoricalSubscription(services: Services) {
   markHostLegacy(services)
   const configured = services.configureOrganizationSubscription(
     {
@@ -77,6 +103,39 @@ function activeHistoricalSubscription(
   ).subscription
 }
 
+function terminalHistoricalSubscription(services: Services) {
+  const subscription = activeHistoricalSubscription(services)
+  const stored = services.state.organizationSubscriptions.find(
+    (candidate) => candidate.id === subscription.id
+  )!
+  stored.status = "cancelled"
+  stored.operationalExpiredAt = "2026-08-03T00:00:00.000Z"
+  return stored
+}
+
+/**
+ * The account exactly as the retired acceptance stored it before the
+ * retirement. History tests start from this row rather than calling the
+ * service, because the service can no longer write it.
+ */
+function seedHistoricalAcceptance(services: Services, at = ACCEPTED_AT) {
+  const account = hostAccount(services)
+  account.activationState = "percentage_active"
+  account.billingModel = "percentage_v1"
+  account.effectiveAt = at
+  account.percentageTermsSnapshot = {
+    acceptedAt: at,
+    acceptedByUserId: HOST_OWNER,
+    acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+    billingCadence: "monthly_in_arrears",
+    currency: "USD",
+    feeBps: PLATFORM_FEE_BPS
+  }
+  account.subscriptionId = null
+  account.updatedAt = at
+  return account
+}
+
 function delayedProviderInput(
   subscription: ReturnType<typeof activeHistoricalSubscription>
 ) {
@@ -92,321 +151,175 @@ function delayedProviderInput(
   }
 }
 
-describe("percentage_v1 agreement acceptance", () => {
-  it("moves an explicit legacy host to the exact current agreement without rewriting frozen work", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    markHostLegacy(services)
-    const assignmentsBefore = structuredClone(services.state.assignments)
-
-    const result = services.acceptPercentageBillingAgreement(
-      acceptanceInput(),
-      ACCEPTED_AT
-    )
-
-    expect(result.changed).toBe(true)
-    expect(result.account).toMatchObject({
-      activationState: "percentage_active",
-      billingModel: "percentage_v1",
-      effectiveAt: ACCEPTED_AT,
-      percentageTermsSnapshot: {
-        acceptedAt: ACCEPTED_AT,
-        acceptedByUserId: HOST_OWNER,
-        acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
-        billingCadence: "monthly_in_arrears",
-        currency: "USD",
-        feeBps: PLATFORM_FEE_BPS
-      },
-      subscriptionId: null
-    })
-    expect(services.state.assignments).toEqual(assignmentsBefore)
-    expect(
-      services.state.auditEvents.filter(
-        (event) => event.action === "percentage_v1_agreement_accepted"
-      )
-    ).toHaveLength(1)
-    expect(
-      services.state.notifications.filter(
-        (notification) => notification.relatedEntityId === result.account.id
-      )
-    ).toHaveLength(1)
-  })
-
-  it.each(["pending", "verified"] as const)(
-    "allows a %s host workspace to accept the current agreement",
-    (verificationStatus) => {
-      const services = createLogLoadsServices(createInMemoryDatabase())
-      const organization = services.state.organizations.find(
-        (candidate) => candidate.id === HOST
-      )
-
-      if (!organization) throw new Error("Seed host organization missing")
-
-      markHostLegacy(services)
-      organization.verificationStatus = verificationStatus
-
-      expect(
-        services.acceptPercentageBillingAgreement(
-          acceptanceInput(),
-          ACCEPTED_AT
-        )
-      ).toMatchObject({
-        changed: true,
-        account: {
-          activationState: "percentage_active",
-          billingModel: "percentage_v1"
-        }
-      })
-    }
+function acceptanceAudits(services: Services) {
+  return services.state.auditEvents.filter(
+    (event) => event.action === "percentage_v1_agreement_accepted"
   )
+}
+
+function expectRetiredRefusal(attempt: () => unknown) {
+  let caught: unknown
+
+  try {
+    attempt()
+  } catch (error) {
+    caught = error
+  }
+
+  expect(caught).toBeInstanceOf(PercentageFeeRetiredError)
+  // A domain refusal, so every HTTP boundary answers it as a 4xx policy
+  // refusal rather than a 500.
+  expect(caught).toBeInstanceOf(DomainRefusalError)
+  expect((caught as PercentageFeeRetiredError).code).toBe(
+    PERCENTAGE_FEE_RETIRED_CODE
+  )
+  expect((caught as Error).message).toBe(PERCENTAGE_FEE_RETIRED_MESSAGE)
+}
+
+describe("a new percentage agreement is refused", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
 
   it.each([
-    { archivedAt: null, verificationStatus: "rejected" as const },
-    { archivedAt: null, verificationStatus: "suspended" as const },
     {
-      archivedAt: "2026-08-04T11:59:00.000Z",
-      verificationStatus: "verified" as const
+      label: "an unenrolled host",
+      prepare: markHostUnenrolled
+    },
+    {
+      label: "an explicit legacy host",
+      prepare: markHostLegacy
+    },
+    {
+      label: "a host whose historical subscription is terminal",
+      prepare: terminalHistoricalSubscription
+    },
+    {
+      label: "a host that already accepted percentage-v1-2026-08-03",
+      prepare: (services: Services) => seedHistoricalAcceptance(services)
     }
-  ])(
-    "refuses a $verificationStatus host workspace with archivedAt=$archivedAt without writing",
-    ({ archivedAt, verificationStatus }) => {
-      const services = createLogLoadsServices(createInMemoryDatabase())
-      const organization = services.state.organizations.find(
-        (candidate) => candidate.id === HOST
-      )
-
-      if (!organization) throw new Error("Seed host organization missing")
-
-      markHostLegacy(services)
-      organization.archivedAt = archivedAt
-      organization.verificationStatus = verificationStatus
-      const before = structuredClone(services.state)
-
-      expect(() =>
-        services.acceptPercentageBillingAgreement(
-          acceptanceInput(),
-          ACCEPTED_AT
-        )
-      ).toThrow(/workspace is locked/)
-      expect(services.state).toEqual(before)
-    }
-  )
-
-  it("makes an exact retry a no-op", () => {
+  ])("refuses $label and writes nothing", ({ prepare }) => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    markHostLegacy(services)
-    const first = services.acceptPercentageBillingAgreement(
-      acceptanceInput(),
-      ACCEPTED_AT
-    )
-    const auditCount = services.state.auditEvents.length
-    const notificationCount = services.state.notifications.length
-
-    const retry = services.acceptPercentageBillingAgreement(
-      acceptanceInput(),
-      "2026-08-04T12:05:00.000Z"
-    )
-
-    expect(retry).toEqual({ account: first.account, changed: false })
-    expect(services.state.auditEvents).toHaveLength(auditCount)
-    expect(services.state.notifications).toHaveLength(notificationCount)
-  })
-
-  it("refuses an unauthorized member and any non-host organization", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    markHostLegacy(services)
-
-    expect(() =>
-      services.acceptPercentageBillingAgreement(
-        { ...acceptanceInput(), actorUserId: HOST_DISPATCHER },
-        ACCEPTED_AT
-      )
-    ).toThrow(/owner, administrator, or billing manager/)
-    expect(() =>
-      services.acceptPercentageBillingAgreement(
-        {
-          acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
-          actorUserId: FLEET_OWNER,
-          organizationId: FLEET
-        },
-        ACCEPTED_AT
-      )
-    ).toThrow(/landing-source or destination host organizations/)
-  })
-
-  it("refuses active and past-due provider subscriptions", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const subscription = activeHistoricalSubscription(services)
-    const activeBefore = structuredClone(services.state)
-
-    expect(() =>
-      services.acceptPercentageBillingAgreement(
-        acceptanceInput(),
-        ACCEPTED_AT
-      )
-    ).toThrow(/must be cancelled or expired/)
-    expect(services.state).toEqual(activeBefore)
-
-    const stored = services.state.organizationSubscriptions.find(
-      (candidate) => candidate.id === subscription.id
-    )!
-    stored.status = "past_due"
-    stored.paymentState = "past_due"
-    stored.providerPaymentState = "past_due"
-    const pastDueBefore = structuredClone(services.state)
-
-    expect(() =>
-      services.acceptPercentageBillingAgreement(
-        acceptanceInput(),
-        ACCEPTED_AT
-      )
-    ).toThrow(DomainRefusalError)
-    expect(services.state).toEqual(pastDueBefore)
-  })
-
-  it("refuses a detached nonterminal commercial subscription", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    activeHistoricalSubscription(services)
-    const account = services.state.organizationBillingAccounts.find(
-      (candidate) => candidate.organizationId === HOST
-    )!
-    account.subscriptionId = null
+    prepare(services)
     const before = structuredClone(services.state)
 
-    expect(() =>
-      services.acceptPercentageBillingAgreement(
-        acceptanceInput(),
-        ACCEPTED_AT
-      )
-    ).toThrow(/Every historical commercial subscription must be cancelled or expired/)
+    expectRetiredRefusal(() =>
+      services.acceptPercentageBillingAgreement(acceptanceInput(), ACCEPTED_AT)
+    )
     expect(services.state).toEqual(before)
   })
 
-  it("refuses a nonterminal conversion target when the pointed source is terminal", () => {
+  it("refuses a host with no billing account at all", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const source = activeHistoricalSubscription(services)
-    const storedSource = services.state.organizationSubscriptions.find(
-      (candidate) => candidate.id === source.id
-    )!
-    storedSource.status = "cancelled"
-    storedSource.operationalExpiredAt = "2026-08-03T00:00:00.000Z"
-    services.state.organizationSubscriptions.push({
-      ...structuredClone(storedSource),
-      convertedFromPlanCode: storedSource.planCode,
-      convertedFromSubscriptionId: storedSource.id,
-      currentPeriodEnd: null,
-      currentPeriodStart: null,
-      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
-      operationalActivatedAt: null,
-      operationalExpiredAt: null,
-      paymentState: "none",
-      providerPaymentState: "none",
-      status: "pending",
-      stripeCustomerId: null,
-      stripeSubscriptionId: null
-    })
+    services.state.organizationBillingAccounts =
+      services.state.organizationBillingAccounts.filter(
+        (account) => account.organizationId !== HOST
+      )
     const before = structuredClone(services.state)
 
-    expect(() =>
-      services.acceptPercentageBillingAgreement(
-        acceptanceInput(),
-        ACCEPTED_AT
-      )
-    ).toThrow(/Every historical commercial subscription must be cancelled or expired/)
+    expectRetiredRefusal(() =>
+      services.acceptPercentageBillingAgreement(acceptanceInput(), ACCEPTED_AT)
+    )
     expect(services.state).toEqual(before)
   })
 
-  it("fails closed when an already-percentage account has detached subscription exposure", () => {
+  it("gives every caller the same refusal, whoever they are and whatever they send", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    activeHistoricalSubscription(services)
-    const account = services.state.organizationBillingAccounts.find(
-      (candidate) => candidate.organizationId === HOST
-    )!
-    account.activationState = "percentage_active"
-    account.billingModel = "percentage_v1"
-    account.effectiveAt = ACCEPTED_AT
-    account.percentageTermsSnapshot = {
-      acceptedAt: ACCEPTED_AT,
+    markHostUnenrolled(services)
+    const before = structuredClone(services.state)
+
+    // The old rules refused these callers for different reasons. One constant
+    // answer means the refusal cannot be used to learn about a member, an
+    // organization or an input rule.
+    for (const input of [
+      { ...acceptanceInput(), actorUserId: HOST_DISPATCHER },
+      {
+        acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
+        actorUserId: FLEET_OWNER,
+        organizationId: FLEET
+      },
+      { ...acceptanceInput(), acceptedTermsVersion: "attacker-selected" },
+      { acceptedTermsVersion: "", actorUserId: "not-a-uuid", organizationId: "" }
+    ]) {
+      expectRetiredRefusal(() =>
+        services.acceptPercentageBillingAgreement(input, ACCEPTED_AT)
+      )
+    }
+    expect(services.state).toEqual(before)
+  })
+
+  it("refuses the same way on every retry and leaves no audit or notification", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    markHostLegacy(services)
+    const before = structuredClone(services.state)
+
+    for (const at of [ACCEPTED_AT, "2026-08-04T12:05:00.000Z", undefined]) {
+      expectRetiredRefusal(() =>
+        services.acceptPercentageBillingAgreement(acceptanceInput(), at)
+      )
+    }
+
+    expect(acceptanceAudits(services)).toHaveLength(0)
+    expect(services.state.notifications).toEqual(before.notifications)
+    expect(services.state).toEqual(before)
+  })
+
+  it("refuses the free function as well as the bound service method", () => {
+    const state = createInMemoryDatabase()
+    const before = structuredClone(state)
+
+    expectRetiredRefusal(() =>
+      acceptPercentageBillingAgreement(state, acceptanceInput(), ACCEPTED_AT)
+    )
+    expect(state).toEqual(before)
+  })
+
+  it("holds even when both percentage flags are set to enabled", () => {
+    // The flags stay as they are and stay dark in every environment. This proves
+    // that switching them on still cannot reopen enrollment or accrual.
+    vi.stubEnv("LOGLOADS_PERCENTAGE_ENROLLMENT", "enabled")
+    vi.stubEnv("LOGLOADS_PERCENTAGE_ALLOWED_ORGANIZATION_IDS", HOST)
+    vi.stubEnv("LOGLOADS_FEE_COLLECTION", "enabled")
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    markHostUnenrolled(services)
+    const before = structuredClone(services.state)
+
+    expectRetiredRefusal(() =>
+      services.acceptPercentageBillingAgreement(acceptanceInput(), ACCEPTED_AT)
+    )
+    expect(services.state).toEqual(before)
+  })
+})
+
+describe("agreements accepted before the retirement stay readable", () => {
+  it("leaves a stored percentage-v1-2026-08-03 agreement exactly as recorded", () => {
+    const services = createLogLoadsServices(createInMemoryDatabase())
+    const account = hostAccount(services)
+    const recorded = structuredClone(account)
+
+    // The seed host accepted the agreement before the retirement.
+    expect(isCurrentPercentageAgreement(account)).toBe(true)
+
+    expectRetiredRefusal(() =>
+      services.acceptPercentageBillingAgreement(acceptanceInput(), ACCEPTED_AT)
+    )
+
+    expect(hostAccount(services)).toEqual(recorded)
+    expect(hostAccount(services).percentageTermsSnapshot).toEqual({
+      acceptedAt: recorded.percentageTermsSnapshot?.acceptedAt,
       acceptedByUserId: HOST_OWNER,
       acceptedTermsVersion: PERCENTAGE_V1_TERMS_VERSION,
       billingCadence: "monthly_in_arrears",
       currency: "USD",
       feeBps: PLATFORM_FEE_BPS
-    }
-    account.subscriptionId = null
-    const before = structuredClone(services.state)
-
-    expect(() =>
-      services.acceptPercentageBillingAgreement(
-        acceptanceInput(),
-        "2026-08-04T12:05:00.000Z"
-      )
-    ).toThrow(/Every historical commercial subscription must be cancelled or expired/)
-    expect(services.state).toEqual(before)
+    })
+    expect(isCurrentPercentageAgreement(hostAccount(services))).toBe(true)
   })
 
-  it("crosses over a terminal subscription idempotently without rewriting provider history", () => {
+  it("acknowledges delayed provider lifecycle after a historical crossover without reviving subscription billing", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const subscription = activeHistoricalSubscription(services)
-    const stored = services.state.organizationSubscriptions.find(
-      (candidate) => candidate.id === subscription.id
-    )!
-    stored.status = "cancelled"
-    stored.operationalExpiredAt = "2026-08-03T00:00:00.000Z"
-    const historicalBefore = structuredClone(
-      services.state.organizationSubscriptions
-    )
-
-    const accepted = services.acceptPercentageBillingAgreement(
-      acceptanceInput(),
-      ACCEPTED_AT
-    )
-
-    expect(accepted.changed).toBe(true)
-    expect(accepted.account).toMatchObject({
-      activationState: "percentage_active",
-      billingModel: "percentage_v1",
-      subscriptionId: null
-    })
-    expect(services.state.organizationSubscriptions).toEqual(historicalBefore)
-    expect(
-      services.state.auditEvents
-        .filter((event) => event.action === "percentage_v1_agreement_accepted")
-        .at(-1)?.metadata
-    ).toMatchObject({
-      previousSubscriptionId: subscription.id,
-      previousSubscriptionOperationalExpiredAt:
-        "2026-08-03T00:00:00.000Z",
-      previousSubscriptionStatus: "cancelled",
-      previousSubscriptionStripeCustomerId:
-        "cus_percentage_transition_001",
-      previousSubscriptionStripeSubscriptionId:
-        "sub_percentage_transition_001"
-    })
-
-    const auditCount = services.state.auditEvents.length
-    expect(
-      services.acceptPercentageBillingAgreement(
-        acceptanceInput(),
-        "2026-08-04T12:05:00.000Z"
-      )
-    ).toEqual({ account: accepted.account, changed: false })
-    expect(services.state.organizationSubscriptions).toEqual(historicalBefore)
-    expect(services.state.auditEvents).toHaveLength(auditCount)
-  })
-
-  it("acknowledges delayed provider lifecycle after crossover without reviving subscription billing", () => {
-    const services = createLogLoadsServices(createInMemoryDatabase())
-    const subscription = activeHistoricalSubscription(services)
-    const stored = services.state.organizationSubscriptions.find(
-      (candidate) => candidate.id === subscription.id
-    )!
-    stored.status = "cancelled"
-    stored.operationalExpiredAt = "2026-08-03T00:00:00.000Z"
-
-    const accepted = services.acceptPercentageBillingAgreement(
-      acceptanceInput(),
-      ACCEPTED_AT
-    )
+    const stored = terminalHistoricalSubscription(services)
+    const accepted = structuredClone(seedHistoricalAcceptance(services))
     const historicalBefore = structuredClone(stored)
     const providerInput = delayedProviderInput(stored)
 
@@ -426,11 +339,7 @@ describe("percentage_v1 agreement acceptance", () => {
         (candidate) => candidate.id === stored.id
       )
     ).toEqual(historicalBefore)
-    expect(
-      services.state.organizationBillingAccounts.find(
-        (account) => account.organizationId === HOST
-      )
-    ).toEqual(accepted.account)
+    expect(hostAccount(services)).toEqual(accepted)
     expect(
       services.state.auditEvents.filter(
         (event) =>
@@ -442,18 +351,9 @@ describe("percentage_v1 agreement acceptance", () => {
 
   it("fails before mutating terminal provider history when billing accounts conflict", () => {
     const services = createLogLoadsServices(createInMemoryDatabase())
-    const subscription = activeHistoricalSubscription(services)
-    const staleSubscriptionAccount = structuredClone(
-      services.state.organizationBillingAccounts.find(
-        (account) => account.organizationId === HOST
-      )!
-    )
-    const stored = services.state.organizationSubscriptions.find(
-      (candidate) => candidate.id === subscription.id
-    )!
-    stored.status = "cancelled"
-    stored.operationalExpiredAt = "2026-08-03T00:00:00.000Z"
-    services.acceptPercentageBillingAgreement(acceptanceInput(), ACCEPTED_AT)
+    const stored = terminalHistoricalSubscription(services)
+    const staleSubscriptionAccount = structuredClone(hostAccount(services))
+    seedHistoricalAcceptance(services)
     services.state.organizationBillingAccounts.push({
       ...staleSubscriptionAccount,
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"
@@ -469,23 +369,15 @@ describe("percentage_v1 agreement acceptance", () => {
     expect(services.state).toEqual(before)
   })
 
-  it("fails before mutating terminal provider history for a malformed percentage account", () => {
+  it("fails before mutating terminal provider history for a malformed historical agreement", () => {
     for (const defect of ["subscription_pointer", "missing_terms"] as const) {
       const services = createLogLoadsServices(createInMemoryDatabase())
-      const subscription = activeHistoricalSubscription(services)
-      const stored = services.state.organizationSubscriptions.find(
-        (candidate) => candidate.id === subscription.id
-      )!
-      stored.status = "cancelled"
-      stored.operationalExpiredAt = "2026-08-03T00:00:00.000Z"
-      const accepted = services.acceptPercentageBillingAgreement(
-        acceptanceInput(),
-        ACCEPTED_AT
-      )
+      const stored = terminalHistoricalSubscription(services)
+      const account = seedHistoricalAcceptance(services)
       if (defect === "subscription_pointer") {
-        accepted.account.subscriptionId = stored.id
+        account.subscriptionId = stored.id
       } else {
-        accepted.account.percentageTermsSnapshot = null
+        account.percentageTermsSnapshot = null
       }
       const before = structuredClone(services.state)
 

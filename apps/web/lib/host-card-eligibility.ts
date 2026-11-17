@@ -1,7 +1,6 @@
 import "server-only"
 
 import {
-  isCurrentPercentageAgreement,
   type HostBillingProfile,
   type HostInvoice,
   type PlatformFeeEvent
@@ -49,7 +48,6 @@ export type HostCardSetupEligibility =
   | {
       allowed: true
       basis:
-        | "accepted_percentage_v1"
         | "preserved_legacy_agreement"
         | "preserved_subscription_agreement"
         | "unsettled_obligation"
@@ -64,7 +62,7 @@ export type HostCardSetupEligibility =
     }
 
 const AGREEMENT_REQUIRED_MESSAGE =
-  "Payment method setup opens only after this workspace is approved for percentage billing and accepts the current agreement, or when a preserved obligation still requires collection."
+  "Payment method setup is not needed. The completed-load percentage fee is retired, publishing needs no card, and setup opens only when a preserved LogLoads bill still requires collection."
 
 function preservedSubscriptionAgreement(
   account: HostCardEligibilityAccount
@@ -85,16 +83,20 @@ function preservedSubscriptionAgreement(
 /**
  * Whether this host may transmit a new payment method to Stripe.
  *
- * New percentage activity requires both the exact accepted agreement and the
- * server-owned rollout allowlist. Frozen legacy agreements and unsettled ledger
- * obligations remain serviceable so tightening the new-enrollment gate cannot
- * strand money the parties already committed to.
+ * The completed-load percentage fee is retired, so new percentage activity is
+ * never a basis: an accepted agreement alone opens nothing, whatever
+ * `LOGLOADS_PERCENTAGE_ENROLLMENT` says. Frozen legacy agreements, preserved
+ * subscriptions and unsettled ledger obligations remain serviceable, so the
+ * retirement cannot strand money the parties already committed to.
  */
 export function hostCardSetupEligibility(
   source: HostCardEligibilitySource,
   organizationId: string,
   percentageEnrollmentAllowed: boolean
 ): HostCardSetupEligibility {
+  // Kept so existing callers compile. Enrollment can no longer open setup.
+  void percentageEnrollmentAllowed
+
   const profiles = (source.hostBillingProfiles ?? []).filter(
     (profile) => profile.organizationId === organizationId
   )
@@ -113,20 +115,6 @@ export function hostCardSetupEligibility(
 
   const account = accounts[0]
   const profileCustomerId = profiles[0]?.stripeCustomerId ?? null
-
-  if (
-    account &&
-    percentageEnrollmentAllowed &&
-    isCurrentPercentageAgreement(account)
-  ) {
-    return {
-      allowed: true,
-      basis: "accepted_percentage_v1",
-      existingCustomerId: profileCustomerId,
-      message: null,
-      profileCustomerId
-    }
-  }
 
   if (
     account?.activationState === "legacy" &&

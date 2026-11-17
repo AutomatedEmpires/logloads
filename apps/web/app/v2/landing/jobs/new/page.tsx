@@ -3,7 +3,10 @@ import { notFound, redirect } from "next/navigation"
 import { Button, EmptyState } from "@logloads/ui/primitives"
 
 import { EditorNotice, JobEditorAside, JobEditorLayout, JobEditorStepForm, RestoredNotice, StepIssuesNotice } from "@/components/v2/JobEditor"
+import { FlowClockStart } from "@/lib/analytics/beacons"
+import { clientAnalyticsEnabled } from "@/lib/analytics/client"
 import { draftQueryString, draftValuesFromQuery } from "@/lib/marketplace-v2/draft-params"
+import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { jobEditorChecklist, jobEditorPreview, REVIEW_JOB_PATH, resolveJobEditorScreen } from "@/lib/marketplace-v2/job-editor"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
@@ -20,6 +23,10 @@ function one(value: string | string[] | undefined): string {
  * draft. The page validates the step being left, on the server, and shows the next one, or the first step that
  * fails with focus on its first invalid field. When steps 1–3 pass, the review step takes over. A refused
  * publish (`publishJobAction`) also returns here, to the step that needs fixing.
+ *
+ * The editor opening starts flow B's clock (#330, docs/analytics/event-plan.md §6); a clock already running in this
+ * tab is kept, so moving between steps or coming back after a refusal does not restart it. Business and landing
+ * setup before the editor are not timed. Without a PostHog key no beacon is rendered, so no beacon code is fetched.
  */
 export default async function NewJobPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -58,7 +65,8 @@ export default async function NewJobPage({ searchParams }: { searchParams: Searc
     redirect(`${REVIEW_JOB_PATH}?${[draftQueryString(values), restored ? "restored=1" : ""].filter(Boolean).join("&")}`)
   }
 
-  const error = one(query.error)
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
   const now = new Date().toISOString()
   const preview = jobEditorPreview(values, landings, { now, posterName: access.organizationName, posterOrganizationId: viewer.organizationId })
 
@@ -67,7 +75,8 @@ export default async function NewJobPage({ searchParams }: { searchParams: Searc
       aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} preview={{ job: preview?.job ?? null }} values={values} />}
       organizationName={access.organizationName}
     >
-      {error ? <EditorNotice tone="critical">{error}</EditorNotice> : <StepIssuesNotice count={screen.issues.length} />}
+      {clientAnalyticsEnabled() ? <FlowClockStart flow="B" /> : null}
+      {failure ? <EditorNotice tone="critical">{failure.message}</EditorNotice> : <StepIssuesNotice count={screen.issues.length} />}
       {restored ? <RestoredNotice /> : null}
       <JobEditorStepForm
         issues={screen.issues}

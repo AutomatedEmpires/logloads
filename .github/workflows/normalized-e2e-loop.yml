@@ -8,8 +8,9 @@ name: Normalized V2 E2E Loop
 # The store is a disposable Supabase CLI local stack started inside this job (tools/normalized-v2-ci/supabase-stack.sh),
 # deployed the way the owner deploys staging (docs/INTEGRATIONS.md §15.1): the normalized store first, with the owner
 # tool (tools/normalized-store.mjs: the chain, the issuer row, the adapter's login role), then the pilot migrations,
-# then the synthetic pilot seed. The app is the production build under `next start`, with
-# LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized; V2 resolves the signed-in person and business from the normalized store.
+# then the synthetic pilot seed. The app is the production build under `next start`, behind tools/e2e-server.mjs as in
+# the other suites (#323, #368), with LOGLOADS_MARKETPLACE_V2_ADAPTER=normalized; V2 resolves the signed-in person and
+# business from the normalized store.
 # Legacy sign-in still uses the pilot operating state in the same stack's API. Publishing and the rest of the loop run in two Playwright invocations, each with its own server, and
 # psql checks the rows in between and after, so the loop is proven against the database, not a process's memory.
 #
@@ -31,6 +32,7 @@ on:
       - architecture/normalized-v2/**
       - tools/normalized-store*.mjs
       - tools/normalized-v2-ci/**
+      - tools/e2e-server.mjs
       - supabase/migrations/**
       - .github/workflows/normalized-e2e-loop.yml
       - apps/web/package.json
@@ -197,11 +199,14 @@ jobs:
       - name: Re-verify the disposable database before the app writes
         run: bash tools/normalized-v2-ci/guard.sh verify
 
+      # Each invocation writes its JSON report (every attempt's result) to its own file, which Playwright reads from
+      # PLAYWRIGHT_JSON_OUTPUT_FILE (v2-normalized-loop.config.mjs).
       - name: "1. Publish through the job editor (desktop and mobile), on the first server"
         timeout-minutes: 10
         env:
           SUPABASE_URL: ${{ env.LOGLOADS_SUPABASE_API_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOGLOADS_SUPABASE_SERVICE_ROLE_KEY }}
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/normalized-loop-report/1-publish.json
         run: |
           pnpm --filter @logloads/web exec playwright test --config tests/v2-normalized-loop.config.mjs \
             --grep @publish --output tests/test-results/normalized-loop/1-publish
@@ -243,6 +248,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ env.LOGLOADS_SUPABASE_API_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOGLOADS_SUPABASE_SERVICE_ROLE_KEY }}
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/normalized-loop-report/2-loop.json
         run: |
           pnpm --filter @logloads/web exec playwright test --config tests/v2-normalized-loop.config.mjs \
             --grep @loop --output tests/test-results/normalized-loop/2-loop
@@ -289,6 +295,20 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # Each invocation's JSON report: every test's result on every attempt, so a first attempt that failed and a
+      # retry that passed can be told apart from a clean pass. Like the traces, it holds only this job's disposable
+      # stack and seeded demo accounts.
+      - name: Upload Playwright reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-e2e-loop-report
+          path: ${{ runner.temp }}/normalized-loop-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # With the app server's own log (tools/e2e-server.mjs), including any request it left unanswered for 20 s. Each
+      # invocation's server rewrites it and a failed step stops the steps after it, so it is the failed invocation's.
       - name: Collect Supabase container logs
         if: failure()
         run: |
@@ -297,8 +317,10 @@ jobs:
           for c in db rest kong auth; do
             docker logs "supabase_${c}_${LOGLOADS_SUPABASE_PROJECT_ID}" > "$RUNNER_TEMP/normalized-loop-logs/supabase-${c}.log" 2>&1
           done
+          cp apps/web/tests/test-results/normalized-loop-server.log "$RUNNER_TEMP/normalized-loop-logs/app-server.log"
           tail -n 60 "$RUNNER_TEMP/normalized-loop-logs/supabase-db.log"
 
+      # Like the traces, the logs hold only this job's disposable stack and seeded demo accounts.
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4

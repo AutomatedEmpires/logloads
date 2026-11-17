@@ -7,11 +7,22 @@ import {
   firstSearchValue,
   firstRunDestination,
   homePathForIntent,
+  isMarketplaceV2Path,
+  legacyOnboardingEntry,
   parseEntryIntent,
   readFirstRunHandoffCookie,
   safeEntryNext,
-  safeFirstRunContinuation
+  safeFirstRunContinuation,
+  V2_HAULER_START_PATH,
+  V2_LANDING_START_PATH,
+  V2_SETUP_RESUME_COOKIE,
+  V2_SETUP_RESUME_MAX_AGE_SECONDS,
+  V2_START_PATH,
+  v2EntryDestination,
+  v2SetupResumeCookieOptions,
+  v2SetupStep
 } from "./entry-routing"
+import { HAULER_START_PATH, LANDING_START_PATH } from "./marketplace-v2/hauler-profile-form"
 import type { SessionActor } from "./session-policy"
 
 const state = createInMemoryDatabase()
@@ -283,5 +294,134 @@ describe("public entry routing", () => {
       currentHome: "/access-restricted",
       kind: "session"
     })
+  })
+})
+
+describe("Marketplace V2 entry (#246)", () => {
+  it("names the same setup pages the V2 setup flow uses", () => {
+    expect(V2_START_PATH).toBe("/v2/start")
+    expect(V2_HAULER_START_PATH).toBe(HAULER_START_PATH)
+    expect(V2_LANDING_START_PATH).toBe(LANDING_START_PATH)
+  })
+
+  it("recognizes V2 paths by whole segment", () => {
+    expect(isMarketplaceV2Path("/v2")).toBe(true)
+    expect(isMarketplaceV2Path("/v2/work/job-1?view=map")).toBe(true)
+    expect(isMarketplaceV2Path("/v2/")).toBe(true)
+    expect(isMarketplaceV2Path("/v2x")).toBe(false)
+    expect(isMarketplaceV2Path("/V2/start")).toBe(false)
+    expect(isMarketplaceV2Path("/driver/loads")).toBe(false)
+    expect(isMarketplaceV2Path("/")).toBe(false)
+  })
+
+  it("reads the legacy onboarding entry and the role intent its path names", () => {
+    expect(legacyOnboardingEntry("/onboarding")).toEqual({ intent: null })
+    expect(legacyOnboardingEntry("/onboarding/")).toEqual({ intent: null })
+    expect(legacyOnboardingEntry("/onboarding/driver")).toEqual({ intent: "driver" })
+    expect(legacyOnboardingEntry("/onboarding/fleet")).toEqual({ intent: "fleet" })
+    expect(legacyOnboardingEntry("/onboarding/host/")).toEqual({ intent: "host" })
+    expect(legacyOnboardingEntry("/onboarding/admin")).toBeNull()
+    expect(legacyOnboardingEntry("/onboarding/driver/extra")).toBeNull()
+    expect(legacyOnboardingEntry("/onboardingx")).toBeNull()
+    expect(legacyOnboardingEntry("/workspace")).toBeNull()
+  })
+
+  it("canonicalizes the setup steps a person can be on before they have a business", () => {
+    expect(v2SetupStep("/v2/start")).toBe("/v2/start")
+    expect(v2SetupStep("/v2/start/")).toBe("/v2/start")
+    expect(v2SetupStep("/v2/start?path=hauler")).toBe("/v2/start/hauler")
+    expect(v2SetupStep("/v2/start?path=landing")).toBe("/v2/start/landing")
+    expect(v2SetupStep("/v2/start?path=admin")).toBe("/v2/start")
+    expect(v2SetupStep("/v2/start/hauler")).toBe("/v2/start/hauler")
+    expect(v2SetupStep("/v2/start/hauler?type=solo")).toBe("/v2/start/hauler?type=solo")
+    expect(v2SetupStep("/v2/start/hauler?type=company")).toBe("/v2/start/hauler?type=company")
+    expect(v2SetupStep("/v2/start/hauler?type=member")).toBe("/v2/start/hauler?type=member")
+    expect(v2SetupStep("/v2/start/landing")).toBe("/v2/start/landing")
+  })
+
+  it("keeps only the query values a setup page reads, so a remembered step carries nothing else", () => {
+    expect(v2SetupStep("/v2/start/hauler?type=boss")).toBe("/v2/start/hauler")
+    expect(v2SetupStep("/v2/start/hauler?utm_source=mail&type=solo#top")).toBe("/v2/start/hauler?type=solo")
+    expect(v2SetupStep("/v2/start/hauler?type=solo&type=member")).toBe("/v2/start/hauler?type=solo")
+    expect(v2SetupStep("/v2/start/landing?email=person%40example.test")).toBe("/v2/start/landing")
+  })
+
+  it("is no setup step for any other page, an external or malformed value, or a non-string", () => {
+    for (const value of [
+      "/v2/work",
+      "/v2/work/job-1",
+      "/v2/hauler/profile?setup=1",
+      "/v2/start/hauler/extra",
+      "/v2/startx",
+      "/V2/start",
+      "/driver/loads",
+      "/onboarding",
+      "https://attacker.example/v2/start",
+      "//attacker.example/v2/start",
+      "/\\attacker.example",
+      " /v2/start",
+      `/v2/start/hauler?type=solo&pad=${"x".repeat(600)}`,
+      "",
+      null,
+      undefined,
+      ["/v2/start"],
+      42
+    ]) {
+      expect(v2SetupStep(value)).toBe("")
+    }
+  })
+
+  it("continues to a safe V2 page the person asked for before signing up", () => {
+    expect(v2EntryDestination({ next: "/v2/start/hauler?type=solo" })).toBe("/v2/start/hauler?type=solo")
+    expect(v2EntryDestination({ next: "/v2/work/job-1" })).toBe("/v2/work/job-1")
+    // An explicit page the person asked for beats a role intent and a remembered step.
+    expect(v2EntryDestination({ intent: "host", next: "/v2/work/job-1", resume: "/v2/start/landing" })).toBe("/v2/work/job-1")
+  })
+
+  it("never continues to a legacy cockpit, an entry route, an external site or an oversized path", () => {
+    for (const next of [
+      "/driver/loads",
+      "/host/command",
+      "/workspace",
+      "/sign-in?next=/v2/work",
+      "/onboarding?next=/v2/work",
+      "https://attacker.example/v2/work",
+      "//attacker.example/v2/work",
+      `/v2/work?q=${"x".repeat(1100)}`
+    ]) {
+      expect(v2EntryDestination({ next })).toBe("/v2/start")
+    }
+  })
+
+  it("starts the setup for an explicit role intent, skipping the choice it already made", () => {
+    expect(v2EntryDestination({ intent: "driver" })).toBe("/v2/start/hauler")
+    expect(v2EntryDestination({ intent: "fleet" })).toBe("/v2/start/hauler")
+    expect(v2EntryDestination({ intent: "host" })).toBe("/v2/start/landing")
+    // A current intent beats a step remembered from earlier.
+    expect(v2EntryDestination({ intent: "host", resume: "/v2/start/hauler?type=solo" })).toBe("/v2/start/landing")
+    // A legacy cockpit continuation is dropped, and the intent still applies.
+    expect(v2EntryDestination({ intent: "driver", next: "/driver/loads" })).toBe("/v2/start/hauler")
+  })
+
+  it("resumes a remembered setup step, but only one that is still a canonical setup step", () => {
+    expect(v2EntryDestination({ resume: "/v2/start/hauler?type=company" })).toBe("/v2/start/hauler?type=company")
+    expect(v2EntryDestination({ resume: "/v2/start/landing" })).toBe("/v2/start/landing")
+    expect(v2EntryDestination({ resume: "/v2/work/job-1" })).toBe("/v2/start")
+    expect(v2EntryDestination({ resume: "https://attacker.example/v2/start" })).toBe("/v2/start")
+    // The cookie only ever holds a canonical step, so anything else was not written by LogLoads.
+    expect(v2EntryDestination({ resume: "/v2/start/hauler?type=solo&x=1" })).toBe("/v2/start")
+    expect(v2EntryDestination({ resume: "/v2/start?path=landing" })).toBe("/v2/start")
+  })
+
+  it("lands everyone else on /v2/start", () => {
+    expect(v2EntryDestination({})).toBe("/v2/start")
+    expect(v2EntryDestination({ intent: null, next: null, resume: undefined })).toBe("/v2/start")
+  })
+
+  it("remembers a setup step in a short-lived HttpOnly cookie the browser's scripts cannot read", () => {
+    expect(V2_SETUP_RESUME_COOKIE).toBe("ll_v2_setup")
+    expect(V2_SETUP_RESUME_MAX_AGE_SECONDS).toBe(3600)
+    expect(v2SetupResumeCookieOptions(false)).toEqual({ httpOnly: true, maxAge: 3600, path: "/", sameSite: "lax", secure: false })
+    expect(v2SetupResumeCookieOptions(true)).toMatchObject({ httpOnly: true, secure: true })
   })
 })

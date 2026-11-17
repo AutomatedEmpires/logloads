@@ -411,7 +411,8 @@ test.describe("negative checks", () => {
     await postNatively(page, openPath, fields)
     const refused = new URL(page.url())
     expect(refused.pathname).toBe(`/v2/work/${SEEDED_CLOSED_JOB_ID}`)
-    expect(refused.searchParams.get("error")).toMatch(/no longer accepting interest/)
+    // An error code with fixed copy, never words in the URL (#279).
+    expect(refused.searchParams.get("error")).toBe("job_closed")
 
     // Nothing was sent: no tab of My inquiries lists it (CI's psql check counts the rows too). Each tab is opened by its
     // id: the first tab's own link carries none, and an empty first tab then shows the first tab with inquiries.
@@ -445,7 +446,7 @@ test.describe("negative checks", () => {
     await expect(replyComposer(page)).toHaveCount(0)
 
     await postNatively(page, "/v2/landing/inquiries", fields)
-    expect(new URL(page.url()).searchParams.get("error")).toMatch(/Inquiry not found/)
+    expect(new URL(page.url()).searchParams.get("error")).toBe("inquiry_not_found")
     await expect(page.getByRole("alert").filter({ hasText: "Inquiry not found" })).toBeVisible()
 
     // The conversation is unchanged for both of its parties.

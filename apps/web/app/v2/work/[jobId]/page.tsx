@@ -14,6 +14,9 @@ import page from "@/components/v2/JobPage.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { ReportListing } from "@/components/v2/ReportListing"
 import { ShareListing } from "@/components/v2/ShareListing"
+import { FlowClockStop, FlowTapCounter } from "@/lib/analytics/beacons"
+import { clientAnalyticsEnabled } from "@/lib/analytics/client"
+import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { contradictionText, UPDATE_AVAILABILITY, type CapacityContradiction } from "@/lib/marketplace-v2/interest-capacity"
 import { interestConfirmation, interestSheetModel, sentContradictions, standingInterestSummary } from "@/lib/marketplace-v2/interest-sheet"
@@ -88,6 +91,11 @@ function SimilarJobs({ jobs }: { jobs: SimilarJob[] }) {
  * A paused, filled, closed or expired job still renders here (200) with why and when, and similar open jobs; only a job
  * the store does not return is a 404 (#188, #193). Components receive the public view, never the poster's
  * organization id, which only the server's own-job check needs.
+ *
+ * Flow timing (#330, docs/analytics/event-plan.md §6) renders nothing: taps are counted while the interest sheet is
+ * open, the "sent" answer stops flow A's clock for this job, and the poster's "published" answer stops flow B's. Each
+ * does nothing unless a clock is running in this tab and the browser allows measuring, and none is rendered (so no
+ * beacon code is fetched) without a PostHog key.
  */
 export default async function JobDetailPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -115,8 +123,11 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         Promise.resolve().then(() => pilotMarketplaceV2.listHaulerInterests(viewer)).catch((): MarketplaceInterestView[] => [])
       ])
     : [null, [], null, []]
-  const error = typeof query.error === "string" ? query.error : null
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
   const sent = query.sent === "1"
+  const published = query.published === "1" && isPoster
+  const measured = clientAnalyticsEnabled()
   const now = new Date()
   const standing = standingInterest(existing)
   const justSent = sent && standing !== null
@@ -145,11 +156,13 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         <ContentGrid
           aside={
             <div className={styles.anchor} id={INTEREST_ANCHOR}>
+              {measured && sent && canExpress ? <FlowClockStop flow="A" jobId={job.id} step="first_send" /> : null}
+              {measured && published ? <FlowClockStop flow="B" step="published" /> : null}
               <Section title="Interested in this job?">
                 <div className={styles.stack}>
                   {justSent ? <PageNotice role="status" tone="positive">{interestConfirmation(standing)}</PageNotice> : null}
                   {sent && !standing ? <PageNotice role="status" tone="positive">Your interest was sent. The landing can reply in My inquiries.</PageNotice> : null}
-                  {error ? <PageNotice role="alert" tone="critical">{error}</PageNotice> : null}
+                  {failure ? <PageNotice role="alert" tone="critical">{failure.message}</PageNotice> : null}
                   {!job.acceptingInterest ? (
                     <p className={styles.text}>
                       {jobClosureText(job)} It is not accepting new interest.{" "}
@@ -186,17 +199,20 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                       </p>
                     </div>
                   ) : (
-                    <InterestSheet
-                      jobId={job.id}
-                      model={interestSheetModel({
-                        businessName: access?.organizationName ?? "your business",
-                        capacity,
-                        interests,
-                        job,
-                        options: equipmentOptions,
-                        today: now.toISOString().slice(0, 10)
-                      })}
-                    />
+                    <>
+                      {measured ? <FlowTapCounter flow="A" /> : null}
+                      <InterestSheet
+                        jobId={job.id}
+                        model={interestSheetModel({
+                          businessName: access?.organizationName ?? "your business",
+                          capacity,
+                          interests,
+                          job,
+                          options: equipmentOptions,
+                          today: now.toISOString().slice(0, 10)
+                        })}
+                      />
+                    </>
                   )}
                 </div>
               </Section>

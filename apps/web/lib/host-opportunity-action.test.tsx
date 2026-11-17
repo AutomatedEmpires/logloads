@@ -88,7 +88,7 @@ describe("host work actions", () => {
 
       expect(emptyState.actionHref).toBe("/host/opportunities")
       expect(emptyState.actionLabel).toBe(expectedAction)
-      expect(emptyState.body).toContain(activationComplete ? "Publish the next block" : "publication remains locked")
+      expect(emptyState.body).toContain(activationComplete ? "Publish the next block" : "publication stays held")
       expect(`${emptyState.actionLabel} ${emptyState.body}`).not.toContain(forbiddenAction)
     }
   )

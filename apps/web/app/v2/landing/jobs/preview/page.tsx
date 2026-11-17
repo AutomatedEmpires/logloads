@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation"
 
-import { MARKETPLACE_PUBLISH_ATTESTATION_FIELDS, marketplacePublishAttestations, PUBLISH_ATTESTATION_REQUIRED } from "@logloads/contracts"
+import { MARKETPLACE_PUBLISH_ATTESTATION_FIELDS, marketplacePublishAttestations } from "@logloads/contracts"
 import { JobDetail } from "@logloads/ui/marketplace"
 import { Button, FormActions, VisibilityPanel } from "@logloads/ui/primitives"
 
@@ -18,8 +18,11 @@ import {
 import styles from "@/components/v2/JobEditor.module.css"
 import { JobDraftSession } from "@/components/v2/JobDraftSession"
 import { PublishButton } from "@/components/v2/PublishButton"
+import { FlowTapCounter } from "@/lib/analytics/beacons"
+import { clientAnalyticsEnabled } from "@/lib/analytics/client"
 import { publishJobAction } from "@/lib/marketplace-v2/actions"
 import { draftQueryString, draftValuesFromQuery, hasDraftValues } from "@/lib/marketplace-v2/draft-params"
+import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { firstIncompleteJobEditorStep, jobEditorChecklist, jobEditorPreview, NEW_JOB_PATH } from "@/lib/marketplace-v2/job-editor"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
@@ -38,6 +41,7 @@ function one(value: string | string[] | undefined): string {
  * components discovery uses (JobResultRow `context="preview"` and JobDetail), lists what haulers never see, and
  * asks for the three V2-DEC-03 statements. Publish stays aria-disabled until all three are ticked; the server
  * (`publishJobAction`) re-checks everything. A draft that isn't ready goes back to the step that needs fixing.
+ * Taps here count toward flow B's clock, which the editor started (#330); nothing is sent from this page.
  */
 export default async function JobPreviewPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -80,14 +84,16 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
   }
 
   const { job, landing } = preview
-  const error = one(query.error)
+  // Only the fixed copy for an error code reaches the page, never text from the URL (#279).
+  const failure = v2ErrorNotice(query)
   const canPublish = pilotMarketplaceV2.supportsPublishing
   const attestations = marketplacePublishAttestations(landing.name)
-  const focusStatements = error === PUBLISH_ATTESTATION_REQUIRED
+  const focusStatements = failure?.code === "publish_attestation"
 
   return (
     <JobEditorLayout aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} values={values} />} organizationName={access.organizationName}>
-      {error ? <EditorNotice tone="critical">{error}</EditorNotice> : null}
+      {clientAnalyticsEnabled() ? <FlowTapCounter flow="B" /> : null}
+      {failure ? <EditorNotice tone="critical">{failure.message}</EditorNotice> : null}
       {one(query.unavailable) === "publish" ? (
         <EditorNotice>Publishing isn&apos;t saved yet: it needs the normalized marketplace store. Your draft is unchanged.</EditorNotice>
       ) : null}

@@ -5,6 +5,7 @@ import type { Stripe } from "@stripe/stripe-js"
 import { loadStripe } from "@stripe/stripe-js/pure"
 import { AppLink as Link } from "../AppLink"
 import { useId, useMemo, useState } from "react"
+import { PERCENTAGE_V1_TERMS_VERSION } from "@logloads/contracts"
 import { Badge, Icon } from "@logloads/ui"
 
 import {
@@ -190,8 +191,8 @@ function HostCardControl({
           </strong>
         </p>
         <p className="settings-meaning">
-          No card is needed to create a workspace or prepare draft work. LogLoads
-          will never ask for one before the applicable billing agreement is in force.
+          No card is needed to create a workspace, prepare draft work or publish
+          live work.
         </p>
       </div>
     )
@@ -697,77 +698,6 @@ function SubscriptionBillingAction({
   )
 }
 
-// This control accepts the percentage-v1-2026-08-03 agreement (see
-// app/api/billing/percentage-agreement), so it links the Terms text that version
-// accepted, archived at a stable URL, not whatever /terms says today (LE-13).
-function PercentageAgreementControl() {
-  const [accepted, setAccepted] = useState(false)
-  const [pending, setPending] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
-
-  return (
-    <div className="plan-action">
-      <label className="settings-meaning">
-        <input
-          checked={accepted}
-          onChange={(event) => setAccepted(event.target.checked)}
-          type="checkbox"
-        />{" "}
-        I am authorized to accept the <Link href={TERMS_2026_08_03_PATH}>LogLoads Terms effective August 3, 2026</Link>. I
-        understand that each completed load carries a 5% LogLoads fee added on top
-        of the driver pay I state; there is no posting fee, subscription, monthly
-        minimum, tier, allowance, or overage charge.
-      </label>
-      <button
-        className="action-link"
-        disabled={!accepted || pending}
-        onClick={async () => {
-          setPending(true)
-          setNotice(null)
-
-          try {
-            const response = await fetch("/api/billing/percentage-agreement", {
-              body: JSON.stringify({ acceptPercentageTerms: true }),
-              headers: { "Content-Type": "application/json" },
-              method: "POST"
-            })
-            const result = await readJson<{ error?: string }>(response)
-
-            if (!response.ok) {
-              throw new Error(
-                result?.error ?? "The percentage agreement could not be accepted."
-              )
-            }
-
-            setNotice("Agreement accepted. Refreshing billing…")
-            window.location.reload()
-          } catch (error) {
-            setNotice(
-              error instanceof Error
-                ? error.message
-                : "The percentage agreement could not be accepted."
-            )
-            setPending(false)
-          }
-        }}
-        type="button"
-      >
-        {pending ? "Accepting agreement…" : "Accept 5% host agreement"}
-      </button>
-      <p className="settings-meaning">
-        Acceptance does not charge a card. Add a payment method separately before
-        publishing live work.
-      </p>
-      {notice ? (
-        <p className="plan-action__notice" role={pending ? "status" : "alert"}>
-          <Icon aria-hidden name={pending ? "status.assigned" : "status.warning"} size={16} />
-          <span>{notice}</span>
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
 /**
  * Everything a host has to be able to answer about their own money without
  * contacting anybody. Rendered from the read model only — no arithmetic happens
@@ -775,16 +705,12 @@ function PercentageAgreementControl() {
  */
 function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
   const { currentPeriod, fee, invoices, paymentMethod, percentageAgreement } = hostBilling
-  const hasPercentageActivity =
-    currentPeriod.lines.length > 0 ||
-    currentPeriod.voidedLines.length > 0 ||
-    invoices.length > 0
 
   return (
     <>
-      <section className="settings-panel" aria-label="Current host pricing">
+      <section className="settings-panel" aria-label="Retired host fee">
           <SectionHeader
-            eyebrow="Host pricing"
+            eyebrow="Retired host fee"
             title={`${fee.rateLabel} of stated driver pay, added on top`}
           />
           {percentageAgreement.state === "active" ? (
@@ -795,24 +721,28 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
                 {percentageAgreement.acceptedOnLabel
                   ? ` · accepted ${percentageAgreement.acceptedOnLabel}`
                   : ""}
+                . It is kept as a record under the{" "}
+                {percentageAgreement.termsVersion === PERCENTAGE_V1_TERMS_VERSION ? (
+                  <Link href={TERMS_2026_08_03_PATH}>LogLoads Terms effective August 3, 2026</Link>
+                ) : (
+                  "terms it was accepted under"
+                )}
+                {" "}and adds no fee to new loads.
               </span>
             </p>
           ) : percentageAgreement.state === "legacy" ? (
             <p className="fee-alert" role="note">
               <Icon aria-hidden name="ops.notice" size={16} />
               <span>
-                {percentageAgreement.canAccept
-                  ? "Previously committed percentage terms remain readable and collectible and will not be rewritten. Accept the current agreement below to use percentage_v1 for new work."
-                  : "Previously committed percentage terms remain readable and collectible and will not be rewritten. Current agreement enrollment is not open for this workspace."}
+                Previously committed percentage terms remain readable and collectible and will not be rewritten.
+                New loads add no fee.
               </span>
             </p>
           ) : percentageAgreement.state === "historical_subscription" ? (
             <p className="fee-alert" role="note">
               <Icon aria-hidden name="ops.notice" size={16} />
               <span>
-                {percentageAgreement.canAccept
-                  ? "This workspace's terminal subscription remains preserved as history. Accept the current percentage agreement below to activate percentage_v1 for new work; the old record will not be rewritten."
-                  : "This workspace's historical subscription remains preserved as history. Current percentage enrollment requires both a terminal record and inclusion in the controlled rollout."}
+                This workspace&apos;s historical subscription remains preserved as history. New loads add no fee.
               </span>
             </p>
           ) : null}
@@ -820,7 +750,8 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
           {/* Named as an example in visible text, not only in the label: three
               money figures with no lead-in read as this host's own money. */}
           <p className="fee-example-lead">
-            For example, one truckload where you state the driver is paid {fee.example.driverPayLabel}:
+            How a fee recorded before the retirement reads, for one truckload where the driver is paid{" "}
+            {fee.example.driverPayLabel}:
           </p>
           <dl aria-label={`Example: a ${fee.example.driverPayLabel} truckload`} className="fee-figures">
             <div>
@@ -841,7 +772,7 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
               <dt>Your total cost</dt>
               <dd>
                 {fee.example.hostTotalLabel}
-                <span>Once the truckload completes</span>
+                <span>On a load completed before the retirement</span>
               </dd>
             </div>
           </dl>
@@ -853,7 +784,6 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
               </li>
             ))}
           </ul>
-          {percentageAgreement.canAccept ? <PercentageAgreementControl /> : null}
         </section>
 
       <section className="settings-panel" aria-label="Payment method">
@@ -893,9 +823,8 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
             />
             {currentPeriod.lines.length === 0 ? (
               <p className="settings-meaning">
-                Nothing has accrued in {currentPeriod.periodLabel}. A LogLoads fee appears here the first time
-                a truckload completes — posting work costs nothing, and a load that is never hauled is never
-                billed.
+                No LogLoads fee was recorded in {currentPeriod.periodLabel}. Completed loads no longer add
+                one, and posting work costs nothing.
               </p>
             ) : (
               <>
@@ -937,8 +866,7 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
             <SectionHeader eyebrow="Invoices" title="Monthly platform-fee charges" />
             {invoices.length === 0 ? (
               <p className="settings-meaning">
-                No bill has been raised yet. Your first one covers {currentPeriod.periodLabel} and is charged
-                after it closes on {currentPeriod.closesOnLabel}.
+                No LogLoads fee bill has been raised for this workspace.
               </p>
             ) : (
               <div className="invoice-list">
@@ -948,12 +876,6 @@ function HostMoneySections({ hostBilling }: { hostBilling: HostBillingView }) {
               </div>
             )}
           </section>
-      {!hasPercentageActivity ? (
-        <p className="settings-meaning">
-          Your billing history begins after the first completed load under an
-          accepted percentage agreement.
-        </p>
-      ) : null}
     </>
   )
 }
@@ -1023,18 +945,6 @@ export function BillingPage({
           <p className={`billing-banner billing-banner--${checkoutNotice.tone}`} role="status">
             <Icon aria-hidden name={checkoutNotice.tone === "success" ? "status.assigned" : "ops.notice"} size={18} />
             <span>{checkoutNotice.message}</span>
-          </p>
-        ) : null}
-
-        {/* First thing on the page when it is true, because it stops the host
-            working. The consequence is worded once in the read model, so this
-            banner and the payment-method panel cannot disagree about it. */}
-        {hostBilling?.paymentMethod.blocksPublishing ? (
-          <p className="billing-banner billing-banner--blocked" role="note">
-            <Icon aria-hidden name="status.lock" size={18} />
-            <span>
-              <strong>{hostBilling.paymentMethod.statusLabel}.</strong> {hostBilling.paymentMethod.consequence}
-            </span>
           </p>
         ) : null}
 
@@ -1317,7 +1227,7 @@ export function SettingsPage({
             <EmptyState
               actionHref={billingHref}
               actionLabel="Open billing"
-              body={role === "fleet" ? "Fleet Free includes dispatch, drivers, equipment, and private partner work without a subscription." : "Review and accept the current 5% completed-load agreement in Billing before publishing live work. There is no subscription, monthly minimum, tier, allowance, or posting fee."}
+              body={role === "fleet" ? "Fleet Free includes dispatch, drivers, equipment, and private partner work without a subscription." : "Publishing work needs no agreement or card. The completed-load percentage fee is retired, and LogLoads charges nothing to post."}
               title="No billing record on this workspace yet"
             />
           ) : (
