@@ -25,6 +25,8 @@
 }
 
 /* box-shadow: none removes the app's legacy global :focus-visible halo (globals.css). */
+.step:active:not([aria-disabled="true"]) { background: var(--ll-pressed-overlay); }
+
 .step:focus-visible {
   outline: var(--ll-focus-width) solid var(--ll-focus-color);
   outline-offset: var(--ll-focus-offset);

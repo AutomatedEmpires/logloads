@@ -15,13 +15,13 @@
   padding-top: var(--ll-space-2);
   border-top: 3px solid var(--ll-color-border);
   color: var(--ll-color-text-muted);
-  font-size: var(--ll-text-sm);
+  font-size: var(--ll-text-base);
 }
 
 .step[data-state="done"] { border-top-color: var(--ll-color-text-secondary); color: var(--ll-color-text-secondary); }
 .step[data-state="current"] { border-top-color: var(--ll-color-action); color: var(--ll-color-text); font-weight: var(--ll-weight-semibold); }
 
-.number { font-family: var(--ll-font-mono); font-size: var(--ll-text-2xs); letter-spacing: var(--ll-tracking-label); }
+.number { font-family: var(--ll-font-sans); font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); }
 
 /* bp-sm 600: collapse to the current label. Other labels are clipped, not removed, so screen readers keep them. */
 @container ll-app (max-width: 599px) {

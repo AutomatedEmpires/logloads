@@ -20,12 +20,12 @@
   padding: var(--ll-space-3) var(--ll-c-section-pad);
   border-bottom: 1px solid var(--ll-color-border);
   color: var(--ll-color-text-secondary);
-  font-family: var(--ll-font-mono);
-  font-size: var(--ll-text-2xs);
+  font-family: var(--ll-font-sans);
+  font-size: var(--ll-text-md);
   font-weight: var(--ll-weight-semibold);
-  letter-spacing: var(--ll-tracking-label);
+  letter-spacing: normal;
   line-height: var(--ll-leading-snug);
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .body { display: grid; gap: var(--ll-space-4); padding: var(--ll-c-section-pad); }
