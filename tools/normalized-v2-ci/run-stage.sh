@@ -746,16 +746,18 @@ SUITES
     ACL_CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage38-acl-before.txt" "$LOG_DIR/stage38-acl-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
     [[ -z "$ACL_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 38 changed the grants of [$ACL_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
     echo "  check ok: no existing function's grants changed" | tee -a "$LOG"
-    ADDED_TABLES="$(LC_ALL=C comm -13 "$LOG_DIR/stage38-tables-before.txt" "$LOG_DIR/stage38-tables-after.txt" | paste -sd, -)"
-    REMOVED_TABLES="$(LC_ALL=C comm -23 "$LOG_DIR/stage38-tables-before.txt" "$LOG_DIR/stage38-tables-after.txt" | paste -sd, -)"
+    # Lines present in the second file and not the first. awk does not require comm's sort check.
+    only_in() { awk 'NR==FNR { if ($0 != "") seen[$0] = 1; next } $0 != "" && !($0 in seen)' "$1" "$2" | LC_ALL=C sort | paste -sd, -; }
+    ADDED_TABLES="$(only_in "$LOG_DIR/stage38-tables-before.txt" "$LOG_DIR/stage38-tables-after.txt")"
+    REMOVED_TABLES="$(only_in "$LOG_DIR/stage38-tables-after.txt" "$LOG_DIR/stage38-tables-before.txt")"
     [[ -z "$REMOVED_TABLES" && "$ADDED_TABLES" == "basins" ]] || { echo "POST-STAGE CHECK FAILED: 38 tables added [$ADDED_TABLES] removed [$REMOVED_TABLES]" | tee -a "$LOG" >&2; exit 1; }
-    ADDED_COLS="$(LC_ALL=C comm -13 <(cut -d'|' -f1 "$LOG_DIR/stage38-columns-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage38-columns-after.txt") | paste -sd, -)"
-    REMOVED_COLS="$(LC_ALL=C comm -23 <(cut -d'|' -f1 "$LOG_DIR/stage38-columns-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage38-columns-after.txt") | paste -sd, -)"
+    ADDED_COLS="$(only_in <(cut -d'|' -f1 "$LOG_DIR/stage38-columns-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage38-columns-after.txt"))"
+    REMOVED_COLS="$(only_in <(cut -d'|' -f1 "$LOG_DIR/stage38-columns-after.txt") <(cut -d'|' -f1 "$LOG_DIR/stage38-columns-before.txt"))"
     [[ -z "$REMOVED_COLS" && "$ADDED_COLS" == "basins.boundary,basins.counties,basins.created_at,basins.created_by,basins.id,basins.name,basins.state_code,basins.status,basins.updated_at" ]] || { echo "POST-STAGE CHECK FAILED: 38 columns added [$ADDED_COLS] removed [$REMOVED_COLS]" | tee -a "$LOG" >&2; exit 1; }
-    ADDED_INDEXES="$(LC_ALL=C comm -13 "$LOG_DIR/stage38-indexes-before.txt" "$LOG_DIR/stage38-indexes-after.txt" | paste -sd, -)"
-    REMOVED_INDEXES="$(LC_ALL=C comm -23 "$LOG_DIR/stage38-indexes-before.txt" "$LOG_DIR/stage38-indexes-after.txt" | paste -sd, -)"
-    [[ -z "$REMOVED_INDEXES" && "$ADDED_INDEXES" == "marketplace.basins_boundary_gix,marketplace.basins_pkey,marketplace.basins_state_name_uq,marketplace.basins_state_status_idx" ]] || { echo "POST-STAGE CHECK FAILED: 38 indexes added [$ADDED_INDEXES] removed [$REMOVED_INDEXES]" | tee -a "$LOG" >&2; exit 1; }
-    POLICY_DIFF="$(LC_ALL=C comm -3 <(cut -d'|' -f1 "$LOG_DIR/stage38-policies-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage38-policies-after.txt") | tr -d '\t' | paste -sd, -)"
+    ADDED_INDEXES="$(only_in "$LOG_DIR/stage38-indexes-before.txt" "$LOG_DIR/stage38-indexes-after.txt" | sed 's/marketplace\.//g')"
+    REMOVED_INDEXES="$(only_in "$LOG_DIR/stage38-indexes-after.txt" "$LOG_DIR/stage38-indexes-before.txt" | sed 's/marketplace\.//g')"
+    [[ -z "$REMOVED_INDEXES" && "$ADDED_INDEXES" == "basins_boundary_gix,basins_pkey,basins_state_name_uq,basins_state_status_idx" ]] || { echo "POST-STAGE CHECK FAILED: 38 indexes added [$ADDED_INDEXES] removed [$REMOVED_INDEXES]" | tee -a "$LOG" >&2; exit 1; }
+    POLICY_DIFF="$(only_in <(cut -d'|' -f1 "$LOG_DIR/stage38-policies-before.txt") <(cut -d'|' -f1 "$LOG_DIR/stage38-policies-after.txt"); only_in <(cut -d'|' -f1 "$LOG_DIR/stage38-policies-after.txt") <(cut -d'|' -f1 "$LOG_DIR/stage38-policies-before.txt"))"
     POLICY_CHANGED="$(LC_ALL=C join -t'|' "$LOG_DIR/stage38-policies-before.txt" "$LOG_DIR/stage38-policies-after.txt" | awk -F'|' '$2 != $3 {print $1}' | paste -sd, -)"
     [[ -z "$POLICY_DIFF" && -z "$POLICY_CHANGED" ]] || { echo "POST-STAGE CHECK FAILED: 38 policies added or dropped [$POLICY_DIFF] and changed [$POLICY_CHANGED]" | tee -a "$LOG" >&2; exit 1; }
     echo "  check ok: 38 adds basins and its columns and indexes, and no policy" | tee -a "$LOG"
