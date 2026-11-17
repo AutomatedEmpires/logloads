@@ -1,25 +1,13 @@
 import type { Metadata } from "next"
 
-import { inspectOneTap, productionRuntime } from "../perform"
+import { openOneTapPage } from "../open"
 import { OneTapScreen } from "../screen"
-import { oneTapPressPath } from "../token"
-import { oneTapModel, oneTapNotice } from "../view"
 
 export const dynamic = "force-dynamic"
 
 interface OneTapPageProps {
   params: Promise<{ token: string }>
   searchParams: Promise<{ notice?: string | string[] }>
-}
-
-/** A read of a signed link. The store is not called. The press lives at `.../press`. */
-export function openOneTapPage(token: string, notice: string | string[] | undefined) {
-  const model = oneTapModel(inspectOneTap(token, productionRuntime()), oneTapNotice(notice))
-
-  return {
-    model,
-    pressHref: model.kind === "ready" ? oneTapPressPath(token) : ""
-  }
 }
 
 export async function generateMetadata({ params }: OneTapPageProps): Promise<Metadata> {

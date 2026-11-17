@@ -46,7 +46,7 @@ import { JOB_LIFECYCLE_PRODUCT_EVENTS, withoutJobLifecycleEvents } from "@/lib/m
 
 import { GET } from "./[token]/press/route"
 import { createOneTapLedger, resetOneTapLedger } from "./ledger"
-import { openOneTapPage } from "./[token]/page"
+import { openOneTapPage } from "./open"
 import { postOneTap } from "./http"
 import { inspectOneTap, pressOneTap, type OneTapRuntime } from "./perform"
 import { OneTapScreen } from "@/app/v2/act/screen"
