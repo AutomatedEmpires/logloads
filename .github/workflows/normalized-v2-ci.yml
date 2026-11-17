@@ -339,6 +339,14 @@ jobs:
         timeout-minutes: 14
         run: bash tools/normalized-v2-ci/run-stage.sh 36
 
+      - name: "Stage 38: 38_v2_basins.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 38
+
+      - name: "Stage 39: 39_v2_basins_tests.sql (and earlier suites again on the 38 schema)"
+        timeout-minutes: 16
+        run: bash tools/normalized-v2-ci/run-stage.sh 39
+
       - name: "Stage 8: 08_v2_contract_concurrency_test.sh"
         timeout-minutes: 12
         run: bash tools/normalized-v2-ci/run-stage.sh 8
@@ -566,6 +574,16 @@ jobs:
       - name: "Stage 36: 36_v2_day14_direct_reads_unsubscribe_keys_tests.sql (and 04, 07, 09, 13, 21, 17, 19, 27, 30, 32, 34 again on the 35 schema)"
         timeout-minutes: 14
         run: bash tools/normalized-v2-ci/run-stage.sh 36
+
+      # 38 and 39 run before 14 and 22. Those two commit the test issuer and organizations, and 39 re-runs 04,
+      # which inserts that issuer and then requires every organization to have rolled back.
+      - name: "Stage 38: 38_v2_basins.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 38
+
+      - name: "Stage 39: 39_v2_basins_tests.sql (and earlier suites again on the 38 schema)"
+        timeout-minutes: 16
+        run: bash tools/normalized-v2-ci/run-stage.sh 39
 
       - name: "Stage 14: 14_supabase_api_tests.sh (PostgREST + JWT, real Supabase roles)"
         timeout-minutes: 6

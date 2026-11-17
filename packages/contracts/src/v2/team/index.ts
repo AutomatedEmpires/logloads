@@ -1,16 +1,28 @@
 /**
  * team (#249): seats 2/5/10 including the owner, seat invitations by email, landing scope (UX spec §2.4, §4.11, §8.7,
- * §8.15). Views and inputs for `MarketplaceTeamPort` (apps/web/lib/marketplace-v2/port.ts). #249 adds its schemas and
- * rules here and in `packages/services/src/v2/team/`.
+ * §8.15). Views for `MarketplaceTeamPort` (apps/web/lib/marketplace-v2/port.ts). Invite and scope schemas are in
+ * `./rules`; the seat arithmetic is in `packages/services/src/v2/team/`.
  */
 
 import type { MarketplaceMemberRole } from "../../marketplace-permissions"
 import type { MarketplaceId, MarketplaceLandingRef } from "../../marketplace-port-v3"
 import type { MarketplaceNoticeStatus } from "../notify"
+import type { MarketplaceInvitableRole } from "./rules"
 
-/** The roles an owner may invite. Ownership changes hands only through a separate guarded transfer. */
-export const MARKETPLACE_INVITABLE_ROLES = ["manager", "staff", "driver"] as const
-export type MarketplaceInvitableRole = (typeof MARKETPLACE_INVITABLE_ROLES)[number]
+export {
+  MARKETPLACE_INVITABLE_ROLES,
+  TEAM_INVITE_DEFAULT_DAYS,
+  TEAM_DRIVER_SEAT_MESSAGE,
+  TEAM_EMAIL_MESSAGE,
+  TEAM_INVITE_DAYS_MESSAGE,
+  TEAM_INVITE_ROLE_MESSAGE,
+  TEAM_LANDING_MESSAGE,
+  TEAM_SCOPE_MESSAGE,
+  TEAM_SEAT_MESSAGE,
+  marketplaceTeamInviteInputSchema,
+  marketplaceTeamScopeInputSchema
+} from "./rules"
+export type { MarketplaceInvitableRole, MarketplaceTeamInviteInput, MarketplaceTeamScopeInput } from "./rules"
 
 /** `team_invitations.status`. A pending invitation past `expiresAt` is shown as expired. */
 export const MARKETPLACE_TEAM_INVITATION_STATUSES = ["pending", "accepted", "declined", "revoked", "expired"] as const
@@ -25,7 +37,8 @@ export interface MarketplaceTeamMemberView {
   landingWorkspaceSeat: boolean
   /** The landings this member is limited to; empty means every landing (26-B). Owners are never limited. */
   landingScope: MarketplaceLandingRef[]
-  status: "active" | "suspended"
+  /** `invited` is a membership that has not been accepted yet. It still holds a landing seat when the flag says so. */
+  status: "invited" | "active" | "suspended"
   joinedAt: string
 }
 
@@ -47,8 +60,11 @@ export interface MarketplaceTeamInvitationView {
   membershipId: MarketplaceId | null
   /** The invitation email's delivery state; `null` before one was queued. `sent` is never shown as delivered. */
   emailStatus: MarketplaceNoticeStatus | null
-  /** Whether a pending invitation with a seat still fits the plan; `true` for one without a seat. */
-  seatAvailable: boolean
+  /**
+   * Whether an open invitation still fits the plan. `true` for one that does not take a seat.
+   * `null` once the invitation is no longer open: the store only computes this for an open one.
+   */
+  seatAvailable: boolean | null
   createdAt: string
 }
 
@@ -69,21 +85,4 @@ export interface MarketplaceReceivedTeamInvitationView {
   landingNames: string[]
   invitedByName: string
   expiresAt: string
-}
-
-export interface MarketplaceTeamInviteInput {
-  /** The address the person signs in with; lower-cased and trimmed. */
-  email: string
-  role: MarketplaceInvitableRole
-  landingWorkspaceSeat: boolean
-  /** Only a seated manager or staff member may be limited to landings; empty means every landing. */
-  landingIds: MarketplaceId[]
-  /** 1–30 days; omitted, the store's own default applies. */
-  validForDays?: number
-}
-
-export interface MarketplaceTeamScopeInput {
-  membershipId: MarketplaceId
-  /** Empty: every landing. */
-  landingIds: MarketplaceId[]
 }
