@@ -14,11 +14,19 @@ export function jobPagePath(job: Pick<MarketplacePublicJobView, "slug">): string
 }
 
 /**
- * The public-safe link "Share" shows (spec §10.6): the deployment's public origin and the job's path only. It never
+ * The signed-out share page (#287). A text or Facebook unfurls its Open Graph card. The full job page stays at
+ * `jobPagePath`.
+ */
+export function jobSharePath(job: Pick<MarketplacePublicJobView, "slug">): string {
+  return `/v2/share/${encodeURIComponent(job.slug)}`
+}
+
+/**
+ * The public-safe link "Share" shows (spec §10.6): the deployment's public origin and the share page only. It never
  * carries this request's query (`?sent=1`, an error), a draft, or anything the public page does not show itself.
  */
 export function jobShareUrl(job: Pick<MarketplacePublicJobView, "slug">, origin: string = resolvePublicAppUrl()): string {
-  return new URL(jobPagePath(job), origin).toString()
+  return new URL(jobSharePath(job), origin).toString()
 }
 
 export interface SimilarJob {
