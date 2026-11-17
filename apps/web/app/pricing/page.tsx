@@ -1,11 +1,13 @@
 import type { Metadata } from "next"
 
 import { PricingPage } from "@/components/v3"
+import { pricingPageCopy } from "@/lib/v3-shared"
+
+const pricing = pricingPageCopy()
 
 export const metadata: Metadata = {
-  title: "Pricing — Free for drivers and fleets",
-  description:
-    "LogLoads is a timber-hauling load board. Drivers and hauling businesses use it free. Pricing for landing organizations has not been published, and nothing is offered for sale yet."
+  title: "Pricing — Haulers and fleets are free",
+  description: pricing.description
 }
 
 export default function Page() {
