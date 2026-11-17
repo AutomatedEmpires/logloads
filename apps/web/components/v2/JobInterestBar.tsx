@@ -70,6 +70,7 @@ export function JobInterestBar({ offer, summaryId, targetId }: { offer: Interest
     }
 
     function clearFocused(element: HTMLElement) {
+      if (!bar) return
       const barTop = bar.getBoundingClientRect().top
       const rect = element.getBoundingClientRect()
       if (rect.bottom > barTop - CLEARANCE_PX && rect.top < window.innerHeight) {
