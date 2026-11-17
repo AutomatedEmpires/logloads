@@ -920,8 +920,8 @@ export function AdminBillingPage({ account, billing }: { account: ShellAccount; 
           <Metric label="Outstanding" value={billing.platformFeeLedger.currentOutstandingInvoiceLabel} />
         </div>
         <p className="admin-panel__intro">
-          Current host revenue is the 5% platform fee added on top of stated
-          driver pay for completed loads. Posting is free; there is no subscription,
+          The 5% platform fee is retired and is not current host revenue.
+          Posting is free; there is no subscription,
           monthly minimum, tier, allowance, or overage. Legacy percentage rows remain
           in the same immutable ledger and retain their frozen discriminator.
         </p>
