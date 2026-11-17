@@ -17,9 +17,10 @@ import { payHeadline, presentPay } from "@/lib/pay-display"
 import type { ResidualSettlementItem } from "@/lib/residual-settlement-data"
 
 import {
+  forLandingsPlanAllowances,
   legalPages,
   loadProductLabel,
-  pricingPlans,
+  pricingPageCopy,
   publicLoadHref,
   publicSignUpCopy,
   slugify,
@@ -108,10 +109,11 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           </div>
         </section>
         <section className="promise-strip" aria-label="LogLoads promise">
-          <div><strong>Drivers are free forever.</strong><span>No subscription. No fee hidden from your pay.</span></div>
+          <div><strong>Free for haulers and fleets.</strong><span>Finding work, listing your trucks and messaging landings will not cost you anything.</span></div>
           <div><strong>Know the match before you request.</strong><span>Truck, trailer, equipment, schedule, and capacity checked together.</span></div>
           <div><strong>One schedule. One next action.</strong><span>Requested, booked, moving, and completed work stays clear.</span></div>
         </section>
+        <p>{pricingPageCopy().homeBand}</p>
         <section className="driver-flow-band" aria-label="The driver flow">
           <div className="loop-band__intro">
             <p className="eyebrow">Built around the decision</p>
@@ -134,7 +136,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
           <div className="feature-grid">
             <article><span>Driver accounts</span><h3>Drivers &amp; owner-operators</h3><p>See available work, know whether it fits, request it, and follow the schedule from a phone.</p><Link className="text-link" href="/sign-up?path=driver">Create a driver profile</Link></article>
             <article><span>Free fleet dispatch</span><h3>Dispatchers &amp; fleets</h3><p>Keep trucks, drivers, requests, schedules, and exceptions in one operating view without reducing driver pay.</p><Link className="text-link" href="/sign-up?path=fleet">Set up dispatch</Link></article>
-            <article><span>Post hauling work</span><h3>Hosts</h3><p>Prepare your landings and the hauling work you need trucks for. Live publication requires separate pilot approval. Pricing for landing organizations has not been published.</p><Link className="text-link" href="/pricing">About pricing</Link></article>
+            <article><span>Post hauling work</span><h3>Hosts</h3><p>Prepare your landings and the hauling work you need trucks for. Live publication requires separate pilot approval.</p><Link className="text-link" href="/pricing">About pricing</Link></article>
           </div>
         </section>
         <section className="loads-preview">
@@ -156,7 +158,7 @@ export function PublicHome({ loads }: { loads: NetworkLoadView[] }) {
         </section>
         <section className="home-cta">
           <h2>Know what is available. Know what is moving.</h2>
-          <p>Start with one load or one truck. Drivers are free forever.</p>
+          <p>Start with one load or one truck. Free for haulers and fleets. Finding work, listing your trucks and messaging landings will not cost you anything.</p>
           <div className="hero-actions">
             <Link className="action-link" href="/sign-up">Choose your role</Link>
             <Link className="action-link action-link--secondary" href="/pilot">Explore the Pilot Center</Link>
@@ -313,6 +315,21 @@ export function StoryPage({ page }: { page: PublicStoryPage }) {
             ))}
           </div>
         )}
+        {page.slug === "for-landings" ? (
+          <section aria-label="Landing plans" className="story-grid">
+            {forLandingsPlanAllowances().map((plan) => (
+              <article className="story-card" key={plan.name}>
+                <h3>{plan.name}</h3>
+                <ul>
+                  <li>{plan.activeLandings}</li>
+                  <li>{plan.teamMembers}</li>
+                  <li>{plan.invitations}</li>
+                </ul>
+              </article>
+            ))}
+            <Link className="text-link" href="/pricing">See pricing</Link>
+          </section>
+        ) : null}
         <div className="story-page__action">
           <span>Ready for the next operational step?</span>
           <Link className="action-link" href={page.cta.href}>
@@ -325,124 +342,79 @@ export function StoryPage({ page }: { page: PublicStoryPage }) {
   )
 }
 
-type PricingPlan = (typeof pricingPlans)[number]
-
-function PricingCard({
-  plan,
-  variant
+function FreePricingCard({
+  plan
 }: {
-  plan: PricingPlan
-  variant: "driver" | "fleet" | "host"
+  plan: ReturnType<typeof pricingPageCopy>["freeCards"][number]
 }) {
-  const isFree = variant !== "host"
-  const badge = variant === "driver"
-    ? <Badge tone="success">Always free</Badge>
-    : variant === "fleet"
-      ? <Badge tone="success">No subscription</Badge>
-      : <Badge tone="info">Pilot access</Badge>
-
   return (
-    <article
-      className={`pricing-card pricing-card--${variant}${isFree ? " pricing-card--free" : ""}`}
-    >
-      <div className="pricing-card__topline">
-        <p className="pricing-card__audience">{plan.audience}</p>
-        {badge}
-      </div>
+    <article className="pricing-card pricing-card--free">
       <h3>{plan.name}</h3>
       <strong className="pricing-card__price">{plan.price}</strong>
       <p className="pricing-card__summary">{plan.summary}</p>
-      {plan.included || plan.overage || plan.commitment ? (
-        <dl className="pricing-card__facts">
-          {plan.included ? <div><dt>Included</dt><dd>{plan.included}</dd></div> : null}
-          {plan.overage ? <div><dt>Additional usage</dt><dd>{plan.overage}</dd></div> : null}
-          {plan.commitment ? <div><dt>Commitment</dt><dd>{plan.commitment}</dd></div> : null}
-        </dl>
-      ) : null}
+      <div className="pricing-card__footer">
+        <Link className="action-link" href={plan.cta.href}>{plan.cta.label}</Link>
+      </div>
+    </article>
+  )
+}
+
+function LandingPlanPricingCard({
+  plan
+}: {
+  plan: ReturnType<typeof pricingPageCopy>["planCards"][number]
+}) {
+  return (
+    <article className="pricing-card">
+      <div className="pricing-card__topline">
+        <p className="pricing-card__audience">{plan.positioning}</p>
+        <Badge tone="info">{plan.tag}</Badge>
+      </div>
+      <h3>{plan.name}</h3>
+      <strong className="pricing-card__price">{plan.price}</strong>
+      <p className="pricing-card__note">{plan.caveats}</p>
       <ul className="pricing-card__features">
-        {plan.features.map((feature) => (
+        {[plan.activeLandings, plan.teamMembers, plan.invitations, plan.posts].map((feature) => (
           <li key={feature}>
             <Icon aria-hidden name="status.assigned" size={17} />
             <span>{feature}</span>
           </li>
         ))}
       </ul>
-      <div className="pricing-card__footer">
-        <Link
-          className={isFree ? "action-link" : "action-link action-link--secondary"}
-          href={plan.cta.href}
-        >
-          {plan.cta.label}
-        </Link>
-        {plan.note ? <p className="pricing-card__note">{plan.note}</p> : null}
-      </div>
     </article>
   )
 }
 
 export function PricingPage() {
-  const driverPlan = pricingPlans.find((plan) => plan.name === "Driver")
-  const fleetPlan = pricingPlans.find((plan) => plan.name === "Fleet Free")
-  const hostPlan = pricingPlans.find((plan) => plan.name === "Host")
-
-  if (!driverPlan || !fleetPlan || !hostPlan || pricingPlans.length !== 3) {
-    throw new Error("The fixed public pricing catalog is incomplete.")
-  }
+  const copy = pricingPageCopy()
+  const [statusLead, statusRest] = [copy.status.slice(0, "Billing is not open.".length), copy.status.slice("Billing is not open.".length).trim()]
 
   return (
     <PublicShell>
       <main className="page-main pricing-page">
-        <PageIntro
-          eyebrow="Pricing"
-          title="Pricing for landing organizations is not published yet."
-          body="LogLoads is a timber-hauling load board: businesses that need log trucks post their hauling work, and hauling businesses find work that fits their trucks. Drivers and hauling businesses use LogLoads free. Pricing for landing organizations will be published before any paid feature is offered."
-        />
+        <PageIntro eyebrow={copy.eyebrow} title={copy.title} body={copy.body} />
 
         <aside className="pricing-availability" role="note">
           <Icon aria-hidden name="status.warning" size={24} />
           <div>
-            <strong>Nothing is for sale yet.</strong>
-            <p>No plan, upgrade, or paid feature can be purchased today. Live publication remains limited to separately approved pilot organizations, and creating an account does not activate billing.</p>
-            <Link className="text-link" href="/pilot">Explore the complete product before setup</Link>
+            <strong>{statusLead}</strong>
+            <p>{statusRest}</p>
+            <p>{copy.priceCaveats}</p>
           </div>
         </aside>
 
-        <section aria-labelledby="pricing-start-title" className="pricing-lane pricing-lane--baseline">
-          <div className="pricing-lane__intro">
-            <p className="eyebrow">Who uses LogLoads</p>
-            <h2 id="pricing-start-title">Three ways to use the load board.</h2>
-            <p>Drivers and hauling businesses find work that fits their trucks and keep their equipment current. Landing organizations prepare and post the hauling work they need trucks for.</p>
-          </div>
+        <section aria-label="Hauler and fleet" className="pricing-lane pricing-lane--baseline">
           <div className="pricing-grid pricing-grid--baseline">
-            <PricingCard plan={driverPlan} variant="driver" />
-            <PricingCard plan={fleetPlan} variant="fleet" />
-            <PricingCard plan={hostPlan} variant="host" />
+            {copy.freeCards.map((plan) => <FreePricingCard key={plan.name} plan={plan} />)}
           </div>
         </section>
 
-        <section aria-label="How pricing works today" className="pricing-explainers">
-          <article className="pricing-explainer">
-            <div className="pricing-explainer__heading">
-              <Icon aria-hidden name="load.pay" size={24} />
-              <h2>Driver pay stays between host and hauler.</h2>
-            </div>
-            <p>
-              The host and the hauler agree on driver pay, and the host pays it
-              directly. LogLoads does not carry freight or receive, hold, deduct
-              from, or distribute transportation compensation.
-            </p>
-          </article>
-          <article className="pricing-explainer">
-            <div className="pricing-explainer__heading">
-              <Icon aria-hidden name="ops.audit" size={24} />
-              <h2>Prices come before purchases.</h2>
-            </div>
-            <p>
-              Prices and terms for landing organizations will be published before
-              any paid feature is offered. Until then, nothing on LogLoads can be
-              purchased.
-            </p>
-          </article>
+        <section aria-label="Landing plans" className="pricing-lane pricing-lane--baseline">
+          <div className="pricing-grid pricing-grid--baseline">
+            {copy.planCards.map((plan) => <LandingPlanPricingCard key={plan.name} plan={plan} />)}
+          </div>
+          <p>{copy.invitationNote}</p>
+          <Link className="action-link" href={copy.landingAction.href}>{copy.landingAction.label}</Link>
         </section>
       </main>
     </PublicShell>
@@ -932,10 +904,8 @@ export function ContactPage({
             </section>
             <section>
               <h2>Pricing</h2>
-              <p>
-                Pricing for landing organizations has not been published. Nothing
-                on LogLoads is offered for sale today.
-              </p>
+              <p>{pricingPageCopy().homeBand}</p>
+              <Link className="text-link" href="/pricing">See pricing</Link>
             </section>
           </aside>
         </div>

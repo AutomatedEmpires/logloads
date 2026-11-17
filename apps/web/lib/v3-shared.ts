@@ -1,3 +1,5 @@
+import { landingPlanCards, type LandingPlanCardFacts } from "@logloads/contracts"
+
 import { TERMS_2026_08_03_PATH } from "./legal-archive"
 import type { NetworkLoadView, NetworkView } from "./network"
 
@@ -63,7 +65,7 @@ const DEFAULT_SIGN_UP_COPY: PublicSignUpCopy = {
 
 const SIGN_UP_COPY_BY_INTENT: Record<PublicSignUpIntent, PublicSignUpCopy> = {
   driver: {
-    body: "Drivers use LogLoads free forever. Add your operating area and main equipment, then finish the required records before requesting work.",
+    body: "Free for haulers and fleets. Finding work, listing your trucks and messaging landings will not cost you anything. Add your operating area and main equipment, then finish the required records before requesting work.",
     eyebrow: "Driver account",
     intentLabel: "Driver profile",
     title: "Create your driver profile."
@@ -276,33 +278,144 @@ export interface PricingPlan {
 
 export const pricingPlans: PricingPlan[] = [
   {
-    name: "Driver",
-    price: "Free forever",
-    audience: "Owner-operators and company drivers",
-    summary: "Find, request, schedule, and complete work without paying LogLoads.",
-    features: ["Loads ranked for your truck", "Plain-language match checks", "Request and booking status", "Mobile schedule and haul steps"],
-    cta: { href: "/sign-up?path=driver", label: "Create driver profile" }
-  },
-  {
-    name: "Fleet Free",
+    name: "Hauler",
     price: "Free",
-    audience: "Hauling businesses and fleets",
-    summary: "Keep trucks, drivers, equipment, and availability in one place and find work that fits your fleet, without a LogLoads subscription.",
-    included: "Truck and equipment records, driver seats, availability, and private partner work",
-    commitment: "No subscription, trial clock, or LogLoads truck limit",
-    features: ["Truck and equipment records", "Driver seats", "Availability", "Private partner work"],
-    cta: { href: "/sign-up?path=fleet", label: "Create fleet workspace" }
+    audience: "Haulers",
+    summary: "Find hauling work, list your trucks and availability, and message landings. No card and no paywall.",
+    features: ["Find hauling work", "List your trucks and availability", "Message landings"],
+    cta: { href: "/sign-up?path=driver", label: "Create hauler profile" }
   },
   {
-    name: "Host",
-    price: "Not yet published",
-    audience: "Landings, mills, and timber operations",
-    summary: "Prepare landings and post the hauling work you need trucks for. Pricing for landing organizations will be published before any paid feature is offered.",
-    features: ["Landing and work setup", "Choose who sees each posting", "Review requests from drivers and fleets", "Driver pay remains direct and whole"],
-    cta: { href: "/sign-up?path=host", label: "Create host workspace" },
-    note: "Workspace setup is free. Live publication requires separate pilot approval; creating an account does not activate billing."
+    name: "Fleet",
+    price: "Free",
+    audience: "Fleets",
+    summary: "The same tools for a hauling business with more than one truck. No subscription and no truck limit.",
+    features: ["More than one truck", "No subscription", "No truck limit"],
+    cta: { href: "/sign-up?path=fleet", label: "Create fleet profile" }
   }
 ]
+
+const PLAN_POSTS = "Unlimited job posts, inquiries and replies."
+
+export interface PublicFreePricingCard {
+  name: "Hauler" | "Fleet"
+  price: "Free"
+  summary: string
+  cta: { href: string; label: string }
+}
+
+export interface PublicLandingPlanCard {
+  activeLandings: string
+  caveats: string
+  invitations: string
+  name: string
+  positioning: string
+  posts: string
+  price: string
+  tag: "Not for sale yet"
+  teamMembers: string
+}
+
+export interface PublicPricingCopy {
+  body: string
+  description: string
+  eyebrow: "Pricing"
+  freeCards: [PublicFreePricingCard, PublicFreePricingCard]
+  homeBand: string
+  invitationNote: string
+  landingAction: { href: string; label: string }
+  planCards: PublicLandingPlanCard[]
+  /** Sits in the same not-for-sale band as the status line. */
+  priceCaveats: string
+  status: string
+  title: "Haulers and fleets are free."
+}
+
+function requireThreePlans(plans: LandingPlanCardFacts[]): [LandingPlanCardFacts, LandingPlanCardFacts, LandingPlanCardFacts] {
+  const [basic, pro, regional] = plans
+  if (plans.length !== 3 || !basic || !pro || !regional) {
+    throw new Error("LANDING_PLANS must stay Basic, Pro, Regional.")
+  }
+
+  return [basic, pro, regional]
+}
+
+/** November 2026 legal review §10 Q1. These sit with every public price. */
+const PRICE_CAVEATS =
+  "Prices and plan features can change before plans go on sale. Plan features are planned and are not all available yet."
+
+function publicMonthlyPrice(price: string): string {
+  return `${price}, plus applicable taxes`
+}
+
+function namedPublicPrices(
+  plans: [LandingPlanCardFacts, LandingPlanCardFacts, LandingPlanCardFacts],
+  lastJoin: "and" | "comma"
+): string {
+  const priced = plans.map((plan) => `${plan.name} ${publicMonthlyPrice(plan.price)}`)
+  const [basic, pro, regional] = priced
+  if (!basic || !pro || !regional) {
+    throw new Error("LANDING_PLANS must stay Basic, Pro, Regional.")
+  }
+
+  return lastJoin === "and" ? `${basic}, ${pro} and ${regional}` : `${basic}, ${pro}, ${regional}`
+}
+
+/** Public pricing strings. Dollar amounts come from `landingPlanCards()`, never from a page literal. */
+export function pricingPageCopy(): PublicPricingCopy {
+  const plans = requireThreePlans(landingPlanCards())
+  const [hauler, fleet] = pricingPlans
+  if (!hauler || !fleet) {
+    throw new Error("The free public pricing cards are incomplete.")
+  }
+
+  const sentencePrices = namedPublicPrices(plans, "and")
+  const bandPrices = namedPublicPrices(plans, "comma")
+
+  return {
+    body: `Landing plans are ${sentencePrices}. They are not for sale yet. ${PRICE_CAVEATS} LogLoads charges no per-load, percentage or transaction fees, and takes nothing from driver pay.`,
+    description: `LogLoads is a timber-hauling load board. Haulers and fleets use it free. Landing plans are ${sentencePrices}. They are not for sale yet. ${PRICE_CAVEATS}`,
+    eyebrow: "Pricing",
+    freeCards: [
+      { cta: hauler.cta, name: "Hauler", price: "Free", summary: hauler.summary },
+      { cta: fleet.cta, name: "Fleet", price: "Free", summary: fleet.summary }
+    ],
+    homeBand: `Haulers and fleets are free. Landing plans, not for sale yet: ${bandPrices}. ${PRICE_CAVEATS}`,
+    invitationNote: "Invitations you do not send expire at the reset. They do not roll over. Sponsored placement is not offered yet.",
+    landingAction: { href: "/sign-up?path=host", label: "Create a landing profile" },
+    planCards: plans.map((plan) => ({
+      activeLandings: plan.activeLandings,
+      caveats: PRICE_CAVEATS,
+      invitations: plan.invitations,
+      name: plan.name,
+      positioning: plan.positioning,
+      posts: PLAN_POSTS,
+      price: publicMonthlyPrice(plan.price),
+      tag: "Not for sale yet",
+      teamMembers: plan.teamMembers
+    })),
+    priceCaveats: PRICE_CAVEATS,
+    status: "Billing is not open. Nothing on this page charges you, and creating an account does not start a charge. Plan terms will be published before any plan is sold.",
+    title: "Haulers and fleets are free."
+  }
+}
+
+export interface ForLandingsPlanAllowance {
+  activeLandings: string
+  invitations: string
+  name: string
+  teamMembers: string
+}
+
+/** Plan names and allowances for /for-landings. Prices stay on /pricing. */
+export function forLandingsPlanAllowances(): ForLandingsPlanAllowance[] {
+  return landingPlanCards().map((plan) => ({
+    activeLandings: plan.activeLandings,
+    invitations: plan.invitations,
+    name: plan.name,
+    teamMembers: plan.teamMembers
+  }))
+}
 
 export const storyPages: Record<string, PublicStoryPage> = {
   "how-it-works": {
