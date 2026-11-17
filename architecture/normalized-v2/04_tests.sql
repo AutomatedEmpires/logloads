@@ -67,6 +67,10 @@ $$;
 create function pg_temp.stage38() returns boolean language sql stable as $$
   select to_regclass('marketplace.basins') is not null
 $$;
+-- 40 (phone-reveal pause) applied on top of 38.
+create function pg_temp.stage40() returns boolean language sql stable as $$
+  select to_regclass('marketplace.hauler_reveal_pauses') is not null
+$$;
 
 -- Runs p_sql and requires failure with SQLSTATE p_state AND a constraint name or message matching
 -- p_reason (case-insensitive regex), so a negative test cannot pass because an unrelated rule fired.
@@ -179,9 +183,10 @@ begin
   select count(*) into v_tables from pg_tables where schemaname = 'marketplace';
   -- Exact inventory per schema level: baseline 32; + 06 alignment 36 (incl. the schema_migrations ledger);
   -- + 11/12 Phase 3 (moderation holds, billing provider event ledger) 38; + 26 (team invitations and their landings,
-  -- landing scopes, saved jobs, notification outbox) 43; + 31 (unsubscribe signing keys and used tokens) 45; + 38 (basins) 46.
-  perform pg_temp.assert_true(v_tables = case when pg_temp.stage38() then 46 when pg_temp.stage31() then 45 when pg_temp.stage26() then 43 when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end,
-    format('expected %s tables in marketplace, found %s', case when pg_temp.stage38() then 46 when pg_temp.stage31() then 45 when pg_temp.stage26() then 43 when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end, v_tables));
+  -- landing scopes, saved jobs, notification outbox) 43; + 31 (unsubscribe signing keys and used tokens) 45; + 38 (basins) 46;
+  -- + 40 (phone-reveal pauses) 47.
+  perform pg_temp.assert_true(v_tables = case when pg_temp.stage40() then 47 when pg_temp.stage38() then 46 when pg_temp.stage31() then 45 when pg_temp.stage26() then 43 when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end,
+    format('expected %s tables in marketplace, found %s', case when pg_temp.stage40() then 47 when pg_temp.stage38() then 46 when pg_temp.stage31() then 45 when pg_temp.stage26() then 43 when pg_temp.phase3() then 38 when pg_temp.aligned() then 36 else 32 end, v_tables));
 
   select count(*) into v_views from pg_views where schemaname = 'marketplace';
   perform pg_temp.assert_true(v_views = 0, format('expected 0 views in marketplace, found %s', v_views));
@@ -203,9 +208,11 @@ begin
   -- + 35 125 (job_day14_visible, job_day14_visible_by_id, rotate_unsubscribe_key, prune_unsubscribe_tokens; it
   -- redefines two);
   -- + 38 134 (basin_counties_valid, basin_for_point, basin_for_landing, landing_basin_launched, create_basin,
-  -- set_basin_status, list_basins, basin_readiness, public_area_notice; it redefines two).
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
-    format('expected %s functions in marketplace, found %s', case when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- set_basin_status, list_basins, basin_readiness, public_area_notice; it redefines two);
+  -- + 40 138 (phone_reveal_pause_limit, open_hauler_reveal_pause, tg_hauler_reveal_pause,
+  -- admin_clear_hauler_reveal_pause).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage40() then 138 when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.stage40() then 138 when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec
