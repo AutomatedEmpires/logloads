@@ -111,11 +111,14 @@
 
 .submit { justify-self: start; }
 
-/* Below bp-lg the bottom tabs cover the last ~58 px of the viewport. Scroll-into-view keeps a report
-   control above that bar, and the tools keep enough room that the last control can rest above it. */
+/* Below bp-lg the bottom tabs (~58px) and the sticky interest bar cover the bottom of the viewport.
+   A two-line bar is about 1px border + 12px padding + a 24px note + 8px gap + a 48px control + 12px
+   padding, and focus needs 8px of clearance past that: 171px. The browser scrolls a control that was
+   below the fold after the focus event, and it uses this margin, so 176px keeps that control above the
+   bar instead of only clearing the tabs. */
 @container ll-app (max-width: 959px) {
   .toolBody :where(button, input, textarea, select, label) {
-    scroll-margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    scroll-margin-bottom: calc(176px + env(safe-area-inset-bottom, 0px));
   }
 
   .tools { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }

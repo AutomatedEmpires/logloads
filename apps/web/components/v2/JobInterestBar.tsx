@@ -82,8 +82,12 @@ export function JobInterestBar({ offer, summaryId, targetId }: { offer: Interest
       const element = event.target
       if (!(element instanceof HTMLElement) || !bar || bar.contains(element)) return
 
-      // The browser scrolls a control that was below the fold on the frame after focus. Measuring on
-      // the first frame misses that scroll, so a taller field row lands under the bar and stays there.
+      // The browser scrolls a control that was below the fold after this event, and it reads scroll-margin
+      // at that later time. Set the margin to the bar's real height first, so that scroll stops above the
+      // bar instead of only clearing the bottom tabs.
+      const obstruction = Math.ceil(Math.max(0, window.innerHeight - bar.getBoundingClientRect().top) + CLEARANCE_PX)
+      if (obstruction > 0) element.style.scrollMarginBottom = `${obstruction}px`
+
       requestAnimationFrame(() => {
         requestAnimationFrame(() => clearFocused(element))
       })
