@@ -312,9 +312,11 @@ expect_eq "31 changes no stored row in any marketplace table (the ledger aside)"
 expect_eq "31's new tables start empty: no signing key and no used token" "$(q "select (select count(*) from marketplace.notification_unsubscribe_keys) + (select count(*) from marketplace.notification_unsubscribe_uses);")" "0"
 expect_eq "33 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_33" "$BEFORE_33"
 expect_eq "35 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_35" "$AFTER_33"
+# R4 above writes a provider event after AFTER_35, so the basin comparison starts from the rows that exist now.
+BEFORE_38="$(all_data schema_migrations)"
 apply1 "$SCRIPT_DIR/38_v2_basins.sql"
 AFTER_38="$(all_data schema_migrations,basins)"
-expect_eq "38 changes no stored row in any marketplace table (the ledger and the new basin table aside)" "$AFTER_38" "$AFTER_35"
+expect_eq "38 changes no stored row in any marketplace table (the ledger and the new basin table aside)" "$AFTER_38" "$BEFORE_38"
 expect_eq "38's basin table starts empty" "$(q "select count(*) from marketplace.basins;")" "0"
 ANON_JOBS="$(q "begin; select set_config('request.jwt.claims', '{\"role\":\"anon\"}', true); set local role anon;
   select 'IDS ' || coalesce(string_agg(id::text, ',' order by id), '') from marketplace.job_postings; rollback;" | grep '^IDS ' | cut -c5-)"
