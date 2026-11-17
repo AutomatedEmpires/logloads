@@ -359,6 +359,14 @@ jobs:
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 37
 
+      - name: "Stage 38: 38_v2_basins.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 38
+
+      - name: "Stage 39: 39_v2_basins_tests.sql (and earlier suites again on the 38 schema)"
+        timeout-minutes: 16
+        run: bash tools/normalized-v2-ci/run-stage.sh 39
+
       - name: "Stage 10: 10_v2_migration_path_test.sh"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 10
@@ -601,6 +609,14 @@ jobs:
       - name: "Stage 37: 37_v2_day14_unsubscribe_concurrency_test.sh"
         timeout-minutes: 6
         run: bash tools/normalized-v2-ci/run-stage.sh 37
+
+      - name: "Stage 38: 38_v2_basins.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 38
+
+      - name: "Stage 39: 39_v2_basins_tests.sql (and earlier suites again on the 38 schema)"
+        timeout-minutes: 16
+        run: bash tools/normalized-v2-ci/run-stage.sh 39
 
       - name: "Stage 10: 10_v2_migration_path_test.sh"
         timeout-minutes: 6

@@ -29,7 +29,7 @@ import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, Marketpl
  * - `signedOut`: granted to `anon` and to no one else; the function's own token check is the whole access rule.
  */
 const REVIEWED_FUNCTIONS = {
-  anonymous: ["get_marketplace_job", "list_marketplace_jobs", "list_marketplace_jobs_page"],
+  anonymous: ["get_marketplace_job", "list_marketplace_jobs", "list_marketplace_jobs_page", "public_area_notice"],
   person: [
     "accept_team_invitation",
     "count_eligible_invitation_recipients",
@@ -65,6 +65,8 @@ const REVIEWED_FUNCTIONS = {
     "submit_expression_of_interest",
     "withdraw_interest"
   ],
+  /** Platform-admin calls that are not named admin_ (38, #324). Writers take a reason; the two reads do not. */
+  basin: ["basin_readiness", "create_basin", "list_basins", "set_basin_status"],
   staff: [
     "admin_grant_founding_hauler_badge",
     "admin_grant_founding_promotion",
@@ -98,7 +100,10 @@ const NEVER_CATALOGUED = [
   "hmac_sha256",
   "interest_queue",
   "issue_unsubscribe_token",
+  "basin_for_landing",
+  "basin_for_point",
   "job_confirmation_current",
+  "landing_basin_launched",
   "job_day14_visible",
   "job_day14_visible_by_id",
   "open_subscription_cycle",
@@ -276,7 +281,13 @@ describe("marketplaceCallStatement", () => {
 
   it("catalogues exactly the reviewed functions: an unreviewed name fails here (#269)", () => {
     const names = Object.keys(MARKETPLACE_FUNCTIONS).sort()
-    const reviewed = [...REVIEWED_FUNCTIONS.anonymous, ...REVIEWED_FUNCTIONS.person, ...REVIEWED_FUNCTIONS.staff, ...REVIEWED_FUNCTIONS.signedOut]
+    const reviewed = [
+      ...REVIEWED_FUNCTIONS.anonymous,
+      ...REVIEWED_FUNCTIONS.person,
+      ...REVIEWED_FUNCTIONS.staff,
+      ...REVIEWED_FUNCTIONS.basin,
+      ...REVIEWED_FUNCTIONS.signedOut
+    ]
 
     expect(new Set(reviewed).size).toBe(reviewed.length)
     expect(names).toEqual([...reviewed].sort())
