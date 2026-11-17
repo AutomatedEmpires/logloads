@@ -227,9 +227,11 @@ begin
   insert into marketplace.availability_reports (org_id, equipment_code, available_count, area_center, area_label, radius_miles, available_from, available_until)
   values (o_old, 'log_truck', 1, extensions.st_geogfromtext('SRID=4326;POINT(-121.5 44.3)'), 'Sisters', 80, current_date, current_date + 14);
   perform pg_temp.as_jwt('authenticated', 's38_gone');
-  insert into marketplace.availability_reports (org_id, equipment_code, available_count, area_center, area_label, radius_miles, available_from, available_until, withdrawn_at)
-  values (o_gone, 'log_truck', 1, extensions.st_geogfromtext('SRID=4326;POINT(-121.5 44.3)'), 'Sisters', 80, current_date, current_date + 14, now());
+  -- withdrawn_at is not in the insert grant; the owner records the withdrawal after the report exists.
+  insert into marketplace.availability_reports (org_id, equipment_code, available_count, area_center, area_label, radius_miles, available_from, available_until)
+  values (o_gone, 'log_truck', 1, extensions.st_geogfromtext('SRID=4326;POINT(-121.5 44.3)'), 'Sisters', 80, current_date, current_date + 14);
   perform pg_temp.as_jwt('harness');
+  update marketplace.availability_reports set withdrawn_at = now() where org_id = o_gone;
   alter table marketplace.availability_reports disable trigger user;
   update marketplace.availability_reports set reported_at = now() - interval '337 hours' where org_id = o_old;
   alter table marketplace.availability_reports enable trigger user;
