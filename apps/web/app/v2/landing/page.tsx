@@ -77,7 +77,7 @@ export default async function LandingOverviewPage({ searchParams }: { searchPara
   const organizationId = viewer.organizationId
   const [interests, jobs, landings, allowance] = await Promise.all([
     load(can("inquiry.respond"), "landing_overview.inquiries", () => pilotMarketplaceV2.listLandingInterests(viewer)),
-    // The desk's own read keeps a day-14 job, which the public read leaves out (#374); only this business's rows.
+    // The desk's own jobs in every status, so a paused or closed job still completes "Post a job" (#320, #374).
     load(true, "landing_overview.jobs", () => readOwnJobs(pilotMarketplaceV2, viewer)),
     load(can("job.publish"), "landing_overview.landings", () => pilotMarketplaceV2.listOwnLandings(viewer)),
     load(can("job.publish"), "landing_overview.allowance", () => pilotMarketplaceV2.landingAllowance(viewer))

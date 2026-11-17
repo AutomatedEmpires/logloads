@@ -103,8 +103,8 @@ beforeEach(() => {
 })
 
 describe("normalized adapter: port v3 groups (#244)", () => {
-  it("supports only the groups whose every method works (alerts #316, billing #306, jobs #247), and every group has methods", () => {
-    expect(adapter().supports).toEqual(marketplaceV2FeatureSupport(["alerts", "billing", "jobs"]))
+  it("supports only the groups whose every method works (alerts #316, billing #306, jobs #247, team #249), and every group has methods", () => {
+    expect(adapter().supports).toEqual(marketplaceV2FeatureSupport(["alerts", "billing", "jobs", "team"]))
 
     for (const feature of MARKETPLACE_V2_FEATURES) {
       expect(marketplaceV2FeatureMethods(feature).length, feature).toBeGreaterThan(0)
@@ -132,19 +132,21 @@ describe("normalized adapter: port v3 groups (#244)", () => {
       }
     }
 
-    // 51 methods in nine groups; alerts' eight, billing's two and jobs' six work.
+    // 51 methods in nine groups; alerts' eight, billing's two, jobs' six and team's nine work.
     expect(unbuilt).not.toContain("alerts")
+    expect(unbuilt).not.toContain("team")
     expect(refused).toBe(unbuilt.reduce((count, feature) => count + marketplaceV2FeatureMethods(feature).length, 0))
-    expect(refused).toBe(35)
+    expect(refused).toBe(26)
     expect(recorded).toEqual([])
     expect(principal).not.toHaveBeenCalled()
   })
 
   it("turns a group on only when its entry module says every method works", () => {
-    const team: NormalizedFeature<"team"> = { methods: () => unavailableMarketplaceV2Feature("team"), supported: true }
+    const notify: NormalizedFeature<"notify"> = { methods: () => unavailableMarketplaceV2Feature("notify"), supported: true }
 
-    expect(adapter({ team }).supports).toEqual({ ...adapter().supports, team: true })
-    expect(adapter().supports.team).toBe(false)
+    expect(adapter({ notify }).supports).toEqual({ ...adapter().supports, notify: true })
+    expect(adapter().supports.team).toBe(true)
+    expect(adapter().supports.notify).toBe(false)
   })
 
   it("never lets a group replace a method the adapter already defines", async () => {
