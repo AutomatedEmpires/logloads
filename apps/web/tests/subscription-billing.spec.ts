@@ -304,7 +304,7 @@ test("the August 3, 2026 Terms stay readable, unchanged, for agreements accepted
   await expectHealthyPage(page, clientErrors)
 })
 
-test("an active host sees percentage billing, direct driver pay, and no subscription checkout", async ({
+test("an active host sees the retired percentage record, direct driver pay, and no subscription checkout", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -318,12 +318,17 @@ test("an active host sees percentage billing, direct driver pay, and no subscrip
   ).toBeVisible()
   await expect(
     page.getByRole("heading", {
-      name: "5% of stated driver pay, added on top"
+      name: "Not charged on new loads"
     })
   ).toBeVisible()
   await expect(
-    page.getByText("Current percentage agreement active", { exact: false })
+    page.getByRole("heading", { name: "5% of stated driver pay, added on top" })
+  ).toHaveCount(0)
+  await expect(page.getByText("This fee is retired.", { exact: false })).toBeVisible()
+  await expect(
+    page.getByText("Historical percentage agreement on record", { exact: false })
   ).toBeVisible()
+  await expect(page.getByText("Current percentage agreement active")).toHaveCount(0)
   await expect(page.getByText("You state the driver is paid", { exact: true })).toBeVisible()
   await expect(page.getByText("LogLoads fee, on top")).toBeVisible()
   await expect(page.getByText("Your total cost")).toBeVisible()
@@ -400,7 +405,7 @@ test("a fleet sees included Fleet Free access with no paid-plan residue", async 
   await expectHealthyPage(page, clientErrors)
 })
 
-test("admin billing is percentage-first and subscription writes stay closed", async ({
+test("admin billing shows the retired percentage fee and subscription writes stay closed", async ({
   page
 }) => {
   const clientErrors = captureClientErrors(page)
@@ -429,7 +434,7 @@ test("admin billing is percentage-first and subscription writes stay closed", as
   await expect(page.getByText("Percentage organizations").first()).toBeVisible()
   await expect(
     page.getByText(
-      "Current host revenue is the 5% platform fee added on top of stated driver pay for completed loads.",
+      "The 5% platform fee is retired and is not current host revenue.",
       { exact: false }
     )
   ).toBeVisible()
