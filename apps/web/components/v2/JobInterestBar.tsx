@@ -69,16 +69,22 @@ export function JobInterestBar({ offer, summaryId, targetId }: { offer: Interest
       root.style.scrollPaddingBottom = `${Math.ceil(covered()) + CLEARANCE_PX}px`
     }
 
+    function clearFocused(element: HTMLElement) {
+      const barTop = bar.getBoundingClientRect().top
+      const rect = element.getBoundingClientRect()
+      if (rect.bottom > barTop - CLEARANCE_PX && rect.top < window.innerHeight) {
+        window.scrollBy({ behavior: "instant", top: rect.bottom - barTop + CLEARANCE_PX })
+      }
+    }
+
     function onFocusIn(event: FocusEvent) {
       const element = event.target
       if (!(element instanceof HTMLElement) || !bar || bar.contains(element)) return
 
+      // The browser scrolls a control that was below the fold on the frame after focus. Measuring on
+      // the first frame misses that scroll, so a taller field row lands under the bar and stays there.
       requestAnimationFrame(() => {
-        const barTop = bar.getBoundingClientRect().top
-        const rect = element.getBoundingClientRect()
-        if (rect.bottom > barTop - CLEARANCE_PX && rect.top < window.innerHeight) {
-          window.scrollBy({ behavior: "instant", top: rect.bottom - barTop + CLEARANCE_PX })
-        }
+        requestAnimationFrame(() => clearFocused(element))
       })
     }
 
