@@ -5,7 +5,7 @@ import { createHash } from "node:crypto"
 import { after } from "next/server"
 
 import {
-  postingFreshness,
+  postingFreshnessBand,
   type MarketplaceDraftLandingContext,
   type MarketplaceInterestView,
   type MarketplaceJobCardView,
@@ -296,7 +296,7 @@ type ConfirmableJob = Pick<MarketplaceJobCardView, "expiresAt" | "id" | "lastCon
 /** The listing's freshness band and confirmation age just before the poster acted; `null` for unreadable timestamps. */
 function freshnessBefore(job: ConfirmableJob, now: string) {
   try {
-    return { days_since_confirmed: confirmedAge(job, now), freshness_before: postingFreshness(job, now).band }
+    return { days_since_confirmed: confirmedAge(job, now), freshness_before: postingFreshnessBand(job, now) }
   } catch {
     return null
   }

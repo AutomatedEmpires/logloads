@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 import { haversineMiles, type Coordinates } from "./geo"
+import { MARKETPLACE_VERIFICATION_VALID_MONTHS } from "./v2/admin"
 
 /**
  * Marketplace V2 — the load-board domain from the Product Blueprint v1.0 and the UX & Functional
@@ -251,18 +252,116 @@ export interface MarketplaceVerification {
   reviewedOn: string | null
 }
 
-const REVIEWED_ON_FORMAT = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC", year: "numeric" })
+/**
+ * What a review never covered. Every state's `meaning` ends with these sentences, word for word (legal review
+ * 2026-11 §7.3 item 3). Changing them needs counsel's review of the mark wording.
+ */
+export const MARKETPLACE_VERIFICATION_LIMITS =
+  "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
+  "Check these yourself before you agree to a haul."
 
-/** Mark text that says what was checked, and the longer statement for its tooltip or detail line. */
-export function describeMarketplaceVerification(verification: MarketplaceVerification): { label: string; statement: string } {
+/**
+ * A review is shown as current through the same UTC calendar day `MARKETPLACE_VERIFICATION_VALID_MONTHS` (v2/admin,
+ * the one place the 12 months are set) later, then as "last reviewed" (legal review 2026-11 §7.3 item 4). The
+ * verification service also moves a lapsed business off `verified`; the wording checks the date itself, so a mark is
+ * never shown as current only because that job has not run.
+ *
+ * - `reviewed`: a dated review, at most `MARKETPLACE_VERIFICATION_VALID_MONTHS` old.
+ * - `review_lapsed`: a review that is older than that, or whose date is missing or unreadable, so it cannot be
+ *   shown to be current.
+ * - `not_reviewed`: no review on record. Neutral, never a finding about the business.
+ */
+export const MARKETPLACE_VERIFICATION_STATES = ["reviewed", "review_lapsed", "not_reviewed"] as const
+export type MarketplaceVerificationState = (typeof MARKETPLACE_VERIFICATION_STATES)[number]
+
+export interface MarketplaceVerificationDescription {
+  state: MarketplaceVerificationState
+  /** The whole mark, a sentence without its full stop. Screens show it as it is: never shortened to a word. */
+  label: string
+  /** The "what this means" text: what LogLoads looked at and when, then `MARKETPLACE_VERIFICATION_LIMITS`. */
+  meaning: string
+  /** The review's UTC calendar date (YYYY-MM-DD) when one is on record and readable; otherwise `null`. */
+  reviewedOn: string | null
+}
+
+const REVIEWED_ON_FORMAT = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC", year: "numeric" })
+const CALENDAR_DAY = /^(\d{4})-(\d{2})-(\d{2})(?:T[\d:.]+(?:Z|[+-]\d{2}:\d{2})?)?$/
+
+/** A real UTC calendar day from a stored date or timestamp; `null` for anything else, so a bad value is never shown as a date. */
+function reviewDay(value: string | null): { day: string; year: number; month: number; date: number } | null {
+  const match = value === null ? null : CALENDAR_DAY.exec(value)
+  if (!match) return null
+
+  const [year, month, date] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  const utc = new Date(Date.UTC(year, month - 1, date))
+  const real = utc.getUTCFullYear() === year && utc.getUTCMonth() === month - 1 && utc.getUTCDate() === date
+
+  return real ? { date, day: `${match[1]}-${match[2]}-${match[3]}`, month, year } : null
+}
+
+/** The last UTC day a review counts as current: the same day `months` later, or that month's last day when it is shorter. */
+function lastCurrentDay(review: { year: number; month: number; date: number }, months: number): string {
+  const first = new Date(Date.UTC(review.year, review.month - 1 + months, 1))
+  const daysInMonth = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
+
+  return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(review.date, daysInMonth))).toISOString().slice(0, 10)
+}
+
+/**
+ * The verification mark as LogLoads' own statement: attributed, dated and expiring (legal review 2026-11 §7,
+ * risks R4 and R10; UX-DEC-06). `label` is the whole sentence, so no screen can show a bare "Verified", and
+ * `meaning` says what was looked at, when, and what was not. `null` is "Not yet reviewed". A review is current
+ * through the same UTC day `MARKETPLACE_VERIFICATION_VALID_MONTHS` later; after that, or with no readable date, it
+ * is `review_lapsed`. The mark is wording only: it takes no part in filtering or ordering jobs.
+ */
+export function describeMarketplaceVerification(verification: MarketplaceVerification | null, now: string): MarketplaceVerificationDescription {
+  const instant = Date.parse(now)
+
+  if (Number.isNaN(instant)) {
+    throw new RangeError("now must be an ISO 8601 timestamp")
+  }
+
+  if (!verification) {
+    return {
+      label: "Not yet reviewed",
+      meaning: `LogLoads has not reviewed this business. That is not a mark against it. ${MARKETPLACE_VERIFICATION_LIMITS}`,
+      reviewedOn: null,
+      state: "not_reviewed"
+    }
+  }
+
   const scope = MARKETPLACE_VERIFICATION_SCOPE_LABELS[verification.scope]
-  const reviewed = verification.reviewedOn
-    ? REVIEWED_ON_FORMAT.format(new Date(`${verification.reviewedOn.slice(0, 10)}T00:00:00.000Z`))
-    : null
+  const looked = `LogLoads reviewed documents this business sent to show its ${scope.toLowerCase()}.`
+  const review = reviewDay(verification.reviewedOn)
+
+  if (!review) {
+    return {
+      label: `${scope} reviewed by LogLoads, date not on record`,
+      meaning: `${looked} The date of that review is not on record, so LogLoads does not show it as current. ${MARKETPLACE_VERIFICATION_LIMITS}`,
+      reviewedOn: null,
+      state: "review_lapsed"
+    }
+  }
+
+  const reviewed = REVIEWED_ON_FORMAT.format(new Date(`${review.day}T00:00:00.000Z`))
+  const today = new Date(instant).toISOString().slice(0, 10)
+
+  if (today > lastCurrentDay(review, MARKETPLACE_VERIFICATION_VALID_MONTHS)) {
+    return {
+      label: `${scope} last reviewed by LogLoads on ${reviewed}`,
+      meaning:
+        `On ${reviewed}, ${looked} That review is more than ${MARKETPLACE_VERIFICATION_VALID_MONTHS} months old, ` +
+        `so LogLoads no longer shows it as current. ${MARKETPLACE_VERIFICATION_LIMITS}`,
+      reviewedOn: review.day,
+      state: "review_lapsed"
+    }
+  }
 
   return {
-    label: `${scope} verified`,
-    statement: reviewed ? `${scope} reviewed by LogLoads on ${reviewed}.` : `${scope} reviewed by LogLoads.`
+    label: `${scope} reviewed by LogLoads on ${reviewed}`,
+    meaning: `On ${reviewed}, ${looked} ${MARKETPLACE_VERIFICATION_LIMITS}`,
+    reviewedOn: review.day,
+    state: "reviewed"
   }
 }
 
@@ -432,10 +531,11 @@ function agoLabel(days: number): string {
 /**
  * What a listing can honestly say about its own currency. Only an explicit poster confirmation can
  * produce a "confirmed" label; an edit is reported as an edit. Display bands, not an expiry policy
- * (Blueprint §16.2).
+ * (Blueprint §16.2). A confirmed label names the business that confirmed ("Confirmed by {landing} 3 days ago"):
+ * it is the poster's statement, never LogLoads' own (legal review 2026-11 §7.3 item 10, risk R10).
  */
 export function postingFreshness(
-  job: Pick<MarketplaceJobCardView, "lastModifiedAt" | "lastConfirmedAt" | "expiresAt">,
+  job: Pick<MarketplaceJobCardView, "lastModifiedAt" | "lastConfirmedAt" | "expiresAt" | "posterName">,
   now: string
 ): { band: PostingFreshness; label: string } {
   if (job.expiresAt && Date.parse(job.expiresAt) <= Date.parse(now)) {
@@ -444,12 +544,19 @@ export function postingFreshness(
 
   if (job.lastConfirmedAt) {
     const days = wholeDaysBetween(job.lastConfirmedAt, now)
+    // A confirmation always names someone: the business, or "the poster" when the view carries no name.
+    const by = job.posterName.trim().replace(/\s+/g, " ") || "the poster"
     return days < RECENT_CONFIRMATION_DAYS
-      ? { band: "confirmed_recently", label: `Poster confirmed available ${agoLabel(days)}` }
-      : { band: "confirmed_aging", label: `Last confirmed ${agoLabel(days)} — check with the poster` }
+      ? { band: "confirmed_recently", label: `Confirmed by ${by} ${agoLabel(days)}` }
+      : { band: "confirmed_aging", label: `Last confirmed by ${by} ${agoLabel(days)} — check with the poster` }
   }
 
   return { band: "unconfirmed", label: `Not confirmed by poster · edited ${agoLabel(wholeDaysBetween(job.lastModifiedAt, now))}` }
+}
+
+/** The band alone, for callers that show no label (reminders, analytics): it needs no name, and it matches `postingFreshness`. */
+export function postingFreshnessBand(job: Pick<MarketplaceJobCardView, "lastModifiedAt" | "lastConfirmedAt" | "expiresAt">, now: string): PostingFreshness {
+  return postingFreshness({ ...job, posterName: "" }, now).band
 }
 
 export function marketplaceJobAcceptsInterest(status: MarketplaceJobStatus): boolean {

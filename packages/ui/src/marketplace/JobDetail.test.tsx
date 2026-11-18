@@ -49,7 +49,11 @@ describe("JobDetail", () => {
     expect(road?.[1]).toContain("Road Gravel for the last 6 miles Access Chains Nov to Mar")
     expect(road?.[1]).toContain("The landing shares the exact site and access if they choose, after you've been in touch.")
     expect(weather?.[1]).toBe("Weather isn't shown in this preview yet. Check a forecast for Riverton, OR before you send a truck.")
-    expect(poster?.[1]).toContain("LogLoads hasn't verified this business.")
+    expect(poster?.[1]).toContain(
+      "Not yet reviewed. LogLoads has not reviewed this business. That is not a mark against it. " +
+        "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
+        "Check these yourself before you agree to a haul."
+    )
     expect(poster?.[1]).toContain("Listings never show the poster's phone number or email address.")
   })
 
@@ -67,7 +71,22 @@ describe("JobDetail", () => {
       render({ canExpressInterest: false, job: jobDetail({ posterVerification: { reviewedOn: "2026-10-14", scope: "business_identity" } }), now: NOW })
     )
 
-    expect(poster?.[1]).toContain("Business identity reviewed by LogLoads on Oct 14, 2026.")
+    expect(poster?.[1]).toContain(
+      "Business identity reviewed by LogLoads on Oct 14, 2026. " +
+        "On Oct 14, 2026, LogLoads reviewed documents this business sent to show its business identity. " +
+        "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
+        "Check these yourself before you agree to a haul."
+    )
+  })
+
+  it("shows a review older than 12 months as last reviewed, and says it is no longer current (#337)", () => {
+    const [, , , poster] = sections(
+      render({ canExpressInterest: false, job: jobDetail({ posterVerification: { reviewedOn: "2025-10-14", scope: "business_identity" } }), now: NOW })
+    )
+
+    expect(poster?.[1]).toContain("Business identity last reviewed by LogLoads on Oct 14, 2025.")
+    expect(poster?.[1]).toContain("That review is more than 12 months old, so LogLoads no longer shows it as current.")
+    expect(poster?.[1]).not.toMatch(/\bverified\b/i)
   })
 
   it("offers I'm interested only when the server resolved the capability", () => {

@@ -23,6 +23,7 @@ import {
   MARKETPLACE_INTEREST_STATUS_LABELS,
   MARKETPLACE_JOB_STATUS_LABELS,
   MARKETPLACE_RADIUS_BUFFER_MILES,
+  MARKETPLACE_VERIFICATION_LIMITS,
   marketplaceComparablePayUnits,
   marketplaceDistanceMiles,
   marketplaceEquipmentFit,
@@ -35,6 +36,7 @@ import {
   marketplaceJobClosedReason,
   marketplaceJobStatusSchema,
   postingFreshness,
+  postingFreshnessBand,
   configurationEquipmentCodes,
   offeredEquipmentFit,
   respondToInterestInputSchema,
@@ -46,6 +48,7 @@ import {
   type MarketplaceInterestView,
   type MarketplaceJobCardView
 } from "./marketplace-v2"
+import { MARKETPLACE_VERIFICATION_VALID_MONTHS } from "./v2/admin"
 
 const job = (overrides: Partial<MarketplaceJobCardView>): MarketplaceJobCardView => ({
   acceptingInterest: true,
@@ -97,28 +100,69 @@ describe("pay transparency (UX §8.4)", () => {
 
 describe("listing currency: modified vs confirmed vs expired", () => {
   const now = "2026-11-20T12:00:00.000Z"
+  const posterName = "North Pine Logging"
 
   it("never calls an edit a confirmation", () => {
-    const edited = postingFreshness({ expiresAt: null, lastConfirmedAt: null, lastModifiedAt: "2026-11-20T08:00:00.000Z" }, now)
+    const edited = postingFreshness({ expiresAt: null, lastConfirmedAt: null, lastModifiedAt: "2026-11-20T08:00:00.000Z", posterName }, now)
     expect(edited.band).toBe("unconfirmed")
     expect(edited.label).toBe("Not confirmed by poster · edited today")
-    expect(edited.label).not.toMatch(/confirmed available/)
+    expect(edited.label).not.toMatch(/confirmed (by North Pine|available)/i)
   })
 
   it("reports an explicit confirmation, and its age, only when one exists", () => {
-    expect(postingFreshness({ expiresAt: null, lastConfirmedAt: "2026-11-19T08:00:00.000Z", lastModifiedAt: "2026-11-01T00:00:00.000Z" }, now))
-      .toEqual({ band: "confirmed_recently", label: "Poster confirmed available 1 day ago" })
-    expect(postingFreshness({ expiresAt: null, lastConfirmedAt: "2026-11-01T08:00:00.000Z", lastModifiedAt: "2026-11-20T00:00:00.000Z" }, now).band)
+    expect(postingFreshness({ expiresAt: null, lastConfirmedAt: "2026-11-19T08:00:00.000Z", lastModifiedAt: "2026-11-01T00:00:00.000Z", posterName }, now))
+      .toEqual({ band: "confirmed_recently", label: "Confirmed by North Pine Logging 1 day ago" })
+    expect(postingFreshness({ expiresAt: null, lastConfirmedAt: "2026-11-01T08:00:00.000Z", lastModifiedAt: "2026-11-20T00:00:00.000Z", posterName }, now).band)
       .toBe("confirmed_aging")
   })
 
+  it("names the business that confirmed, in every confirmed label (legal review §7.3 item 10, #337)", () => {
+    const confirmed = (lastConfirmedAt: string) =>
+      postingFreshness({ expiresAt: null, lastConfirmedAt, lastModifiedAt: "2026-11-01T00:00:00.000Z", posterName }, now).label
+
+    expect(confirmed("2026-11-20T09:00:00.000Z")).toBe("Confirmed by North Pine Logging today")
+    expect(confirmed("2026-11-17T08:00:00.000Z")).toBe("Confirmed by North Pine Logging 3 days ago")
+    // Day 6 is the last recent day; from day 7 (RECENT_CONFIRMATION_DAYS) the label is the aging one.
+    expect(confirmed("2026-11-14T08:00:00.000Z")).toBe("Confirmed by North Pine Logging 6 days ago")
+    expect(confirmed("2026-11-13T08:00:00.000Z")).toBe("Last confirmed by North Pine Logging 7 days ago — check with the poster")
+    expect(confirmed("2026-11-11T08:00:00.000Z")).toBe("Last confirmed by North Pine Logging 9 days ago — check with the poster")
+
+    for (const at of ["2026-11-20T09:00:00.000Z", "2026-11-17T08:00:00.000Z", "2026-11-11T08:00:00.000Z"]) {
+      // Never an unattributed "Confirmed 3 days ago", and never LogLoads vouching for the listing.
+      expect(confirmed(at)).toMatch(/onfirmed by North Pine Logging /)
+      expect(confirmed(at)).not.toMatch(/verified|LogLoads/i)
+    }
+  })
+
+  it("never shows a confirmation that names nobody: a blank name falls back to the poster", () => {
+    for (const blank of ["", "   "]) {
+      expect(postingFreshness({ expiresAt: null, lastConfirmedAt: "2026-11-17T08:00:00.000Z", lastModifiedAt: "2026-11-01T00:00:00.000Z", posterName: blank }, now).label)
+        .toBe("Confirmed by the poster 3 days ago")
+    }
+    expect(postingFreshness({ expiresAt: null, lastConfirmedAt: "2026-11-17T08:00:00.000Z", lastModifiedAt: "2026-11-01T00:00:00.000Z", posterName: "  North Pine  Logging " }, now).label)
+      .toBe("Confirmed by North Pine Logging 3 days ago")
+  })
+
   it("expiry overrides any confirmation", () => {
-    expect(postingFreshness({ expiresAt: "2026-11-20T00:00:00.000Z", lastConfirmedAt: "2026-11-20T08:00:00.000Z", lastModifiedAt: "2026-11-20T08:00:00.000Z" }, now))
+    expect(postingFreshness({ expiresAt: "2026-11-20T00:00:00.000Z", lastConfirmedAt: "2026-11-20T08:00:00.000Z", lastModifiedAt: "2026-11-20T08:00:00.000Z", posterName }, now))
       .toEqual({ band: "expired", label: "Listing expired" })
   })
 
+  it("gives the same band without a name, for callers that show no label", () => {
+    const stamps = [
+      { expiresAt: null, lastConfirmedAt: null, lastModifiedAt: "2026-11-20T08:00:00.000Z" },
+      { expiresAt: null, lastConfirmedAt: "2026-11-19T08:00:00.000Z", lastModifiedAt: "2026-11-01T00:00:00.000Z" },
+      { expiresAt: null, lastConfirmedAt: "2026-11-13T08:00:00.000Z", lastModifiedAt: "2026-11-01T00:00:00.000Z" },
+      { expiresAt: "2026-11-20T00:00:00.000Z", lastConfirmedAt: "2026-11-20T08:00:00.000Z", lastModifiedAt: "2026-11-20T08:00:00.000Z" }
+    ]
+
+    expect(stamps.map((stamp) => postingFreshnessBand(stamp, now))).toEqual(["unconfirmed", "confirmed_recently", "confirmed_aging", "expired"])
+    for (const stamp of stamps) expect(postingFreshnessBand(stamp, now)).toBe(postingFreshness({ ...stamp, posterName }, now).band)
+    expect(() => postingFreshnessBand({ expiresAt: null, lastConfirmedAt: "last week", lastModifiedAt: "2026-11-20T08:00:00.000Z" }, now)).toThrow(RangeError)
+  })
+
   it("rejects malformed instants", () => {
-    expect(() => postingFreshness({ expiresAt: null, lastConfirmedAt: null, lastModifiedAt: "yesterday" }, now)).toThrow(RangeError)
+    expect(() => postingFreshness({ expiresAt: null, lastConfirmedAt: null, lastModifiedAt: "yesterday", posterName }, now)).toThrow(RangeError)
   })
 })
 
@@ -191,6 +235,42 @@ describe("discovery filters and ordering", () => {
         expect(ordered.slice(index + 1).every((after) => compareMarketplaceJobs(after, key, options) > 0)).toBe(true)
       }
     }
+  })
+
+  it("ignores the verification mark in every order: a mark never moves a job up (legal review §7.3 item 5, #337)", () => {
+    const near = { lat: 44.4, lng: -122.7 }
+    const origin = { approximatePoint: { lat: 44.2, lng: -122.5 }, label: "Vida, OR", stateCode: "OR" }
+    const marks = [
+      { reviewedOn: "2026-10-14", scope: "business_identity" as const },
+      { reviewedOn: "2024-10-14", scope: "business_identity" as const },
+      { reviewedOn: null, scope: "business_identity" as const },
+      null
+    ]
+    const facts = [
+      { id: "m1", lastModifiedAt: "2026-11-05T00:00:00.000Z", origin, title: "Vida run" },
+      { id: "m2", lastConfirmedAt: "2026-11-04T00:00:00.000Z", pay: { amountCents: 61_000, note: null, unit: "per_load" as const }, title: "Blue River run" },
+      { id: "m3", lastModifiedAt: "2026-11-05T00:00:00.000Z", origin, title: "Vida run" },
+      { id: "m4", lastModifiedAt: "2026-10-28T00:00:00.000Z", pay: { amountCents: null, note: null, unit: null }, title: "Pay not stated run" }
+    ]
+
+    for (const options of [{}, { sort: "newest" as const }, { near, sort: "nearest" as const }, { sort: "pay" as const }]) {
+      const unmarked = sortMarketplaceJobs(facts.map((fact) => job({ ...fact, posterVerification: null })), options).map((j) => j.id)
+
+      // Every way of handing the four marks to the four jobs gives the order of the unmarked list.
+      for (let shift = 0; shift < marks.length; shift += 1) {
+        const marked = facts.map((fact, index) => job({ ...fact, posterVerification: marks[(index + shift) % marks.length] ?? null }))
+        expect(sortMarketplaceJobs(marked, options).map((j) => j.id)).toEqual(unmarked)
+        expect(sortMarketplaceJobs([...marked].reverse(), options).map((j) => j.id)).toEqual(unmarked)
+      }
+    }
+
+    // Two listings that differ only in the mark: the id decides, whichever one is marked.
+    const twins = (first: boolean) => [
+      job({ id: "t1", posterVerification: first ? marks[0] ?? null : null }),
+      job({ id: "t2", posterVerification: first ? null : marks[0] ?? null })
+    ]
+    expect(sortMarketplaceJobs(twins(true)).map((j) => j.id)).toEqual(["t1", "t2"])
+    expect(sortMarketplaceJobs(twins(false)).map((j) => j.id)).toEqual(["t1", "t2"])
   })
 
   it("matches equipment labels in text search, not only codes", () => {
@@ -580,20 +660,128 @@ describe("native job authoring draft", () => {
   })
 })
 
-describe("verification marks name what was checked (#150)", () => {
-  it("says business identity and the review date, and nothing broader", () => {
-    const mark = describeMarketplaceVerification({ reviewedOn: "2026-10-14", scope: "business_identity" })
+describe("verification marks are attributed, dated, expiring statements (#150, #337)", () => {
+  const NOW = "2026-11-18T17:00:00.000Z"
+  const mark = (reviewedOn: string | null) => ({ reviewedOn, scope: "business_identity" as const })
+  const BARE = /^(business identity )?(verified|trusted|approved|vetted|safe|certified|background checked)\b|\b(verified|trusted|approved|vetted|certified|background.checked)$/i
+  const ENDORSEMENT = /\b(verified|trusted|approved|vetted|safe|certified|background.checked|endorse|recommend|guarantee)/i
+  const THIRD_PARTY = /FMCSA|DOT number|USDOT|court|insurer|SAFER|CSA score/i
 
-    expect(mark).toEqual({
-      label: "Business identity verified",
-      statement: "Business identity reviewed by LogLoads on Oct 14, 2026."
+  it("a current review: the label is the whole sentence, with who reviewed and the date", () => {
+    expect(describeMarketplaceVerification(mark("2026-10-14"), NOW)).toEqual({
+      label: "Business identity reviewed by LogLoads on Oct 14, 2026",
+      meaning:
+        "On Oct 14, 2026, LogLoads reviewed documents this business sent to show its business identity. " +
+        "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
+        "Check these yourself before you agree to a haul.",
+      reviewedOn: "2026-10-14",
+      state: "reviewed"
     })
-    expect(`${mark.label} ${mark.statement}`).not.toMatch(/insur|authority|licen|safety|equipment|employ/i)
   })
 
-  it("does not invent a date when none is on record", () => {
-    expect(describeMarketplaceVerification({ reviewedOn: null, scope: "business_identity" }).statement)
-      .toBe("Business identity reviewed by LogLoads.")
+  it("a review older than 12 months: a last-reviewed state that keeps its date and says it is no longer current", () => {
+    expect(describeMarketplaceVerification(mark("2025-10-14"), NOW)).toEqual({
+      label: "Business identity last reviewed by LogLoads on Oct 14, 2025",
+      meaning:
+        "On Oct 14, 2025, LogLoads reviewed documents this business sent to show its business identity. " +
+        "That review is more than 12 months old, so LogLoads no longer shows it as current. " +
+        "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
+        "Check these yourself before you agree to a haul.",
+      reviewedOn: "2025-10-14",
+      state: "review_lapsed"
+    })
+  })
+
+  it("no review: a neutral Not yet reviewed, with nothing that suggests a problem", () => {
+    const none = describeMarketplaceVerification(null, NOW)
+
+    expect(none).toEqual({
+      label: "Not yet reviewed",
+      meaning:
+        "LogLoads has not reviewed this business. That is not a mark against it. " +
+        "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
+        "Check these yourself before you agree to a haul.",
+      reviewedOn: null,
+      state: "not_reviewed"
+    })
+    expect(`${none.label} ${none.meaning}`).not.toMatch(/unverified|not verified|fail|reject|declin|warning|caution|risk|suspicious|flag/i)
+  })
+
+  it("holds the 12-month boundary to the calendar day (UTC)", () => {
+    expect(MARKETPLACE_VERIFICATION_VALID_MONTHS).toBe(12)
+    const state = (reviewedOn: string, now: string) => describeMarketplaceVerification(mark(reviewedOn), now).state
+
+    // Reviewed Nov 18, 2025: current through Nov 18, 2026 (exactly 12 months), lapsed from Nov 19.
+    expect(state("2025-11-18", "2026-11-17T23:59:59.999Z")).toBe("reviewed")
+    expect(state("2025-11-18", "2026-11-18T00:00:00.000Z")).toBe("reviewed")
+    expect(state("2025-11-18", "2026-11-18T23:59:59.999Z")).toBe("reviewed")
+    expect(state("2025-11-18", "2026-11-19T00:00:00.000Z")).toBe("review_lapsed")
+    expect(state("2025-11-18", "2027-11-18T00:00:00.000Z")).toBe("review_lapsed")
+    // The day is the UTC day, whatever offset the instant is written in.
+    expect(state("2025-11-18", "2026-11-18T20:00:00.000-08:00")).toBe("review_lapsed")
+    expect(state("2025-11-18", "2026-11-19T01:00:00.000+02:00")).toBe("reviewed")
+    // A leap-day review ends on Feb 28 of the next year, not Mar 1.
+    expect(state("2024-02-29", "2025-02-28T12:00:00.000Z")).toBe("reviewed")
+    expect(state("2024-02-29", "2025-03-01T00:00:00.000Z")).toBe("review_lapsed")
+    // A month-end review ends on the same day a year later.
+    expect(state("2025-12-31", "2026-12-31T23:00:00.000Z")).toBe("reviewed")
+    expect(state("2025-12-31", "2027-01-01T00:00:00.000Z")).toBe("review_lapsed")
+    // Reviewed today, or dated ahead of the clock by a day's skew, is current.
+    expect(state("2026-11-18", NOW)).toBe("reviewed")
+    expect(state("2026-11-19", NOW)).toBe("reviewed")
+  })
+
+  it("never shows an undated or unreadable review as current: it cannot be shown to be within 12 months", () => {
+    const undated = describeMarketplaceVerification(mark(null), NOW)
+
+    expect(undated).toEqual({
+      label: "Business identity reviewed by LogLoads, date not on record",
+      meaning:
+        "LogLoads reviewed documents this business sent to show its business identity. " +
+        "The date of that review is not on record, so LogLoads does not show it as current. " +
+        "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
+        "Check these yourself before you agree to a haul.",
+      reviewedOn: null,
+      state: "review_lapsed"
+    })
+    for (const unreadable of ["", "Oct 2026", "2026-13-01", "2026-02-30", "14/10/2026", "2026-10-14 or so"]) {
+      expect(describeMarketplaceVerification(mark(unreadable), NOW), unreadable).toEqual(undated)
+    }
+    // A full timestamp from a store is read by its UTC calendar date.
+    expect(describeMarketplaceVerification(mark("2026-10-14T23:30:00.000Z"), NOW).label).toBe("Business identity reviewed by LogLoads on Oct 14, 2026")
+  })
+
+  it("is never a bare word, an endorsement or third-party safety data, in any state (legal review §7.3 items 1 and 6)", () => {
+    const states = [
+      describeMarketplaceVerification(mark("2026-10-14"), NOW),
+      describeMarketplaceVerification(mark("2025-10-14"), NOW),
+      describeMarketplaceVerification(mark(null), NOW),
+      describeMarketplaceVerification(null, NOW)
+    ]
+
+    expect(states.map((described) => described.state)).toEqual(["reviewed", "review_lapsed", "review_lapsed", "not_reviewed"])
+    for (const { label, meaning, state } of states) {
+      expect(label, state).not.toMatch(BARE)
+      expect(label, state).not.toMatch(ENDORSEMENT)
+      expect(label, state).not.toMatch(/[.!]$/)
+      // The label names nothing LogLoads did not look at.
+      expect(label, state).not.toMatch(/insur|authority|licen|safety|equipment|employ/i)
+      expect(`${label} ${meaning}`, state).not.toMatch(THIRD_PARTY)
+      // "Safe" appears only inside "safety record", in the list of what was not checked.
+      expect(meaning.replace("safety record", ""), state).not.toMatch(ENDORSEMENT)
+      // Every state carries the limits, word for word, as its last sentences.
+      expect(meaning.endsWith(MARKETPLACE_VERIFICATION_LIMITS), state).toBe(true)
+    }
+    for (const { label } of states.slice(0, 3)) expect(label).toMatch(/^Business identity (last )?reviewed by LogLoads\b/)
+    expect(MARKETPLACE_VERIFICATION_LIMITS).toBe(
+      "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
+        "Check these yourself before you agree to a haul."
+    )
+  })
+
+  it("rejects a clock it cannot read instead of guessing whether a review is current", () => {
+    expect(() => describeMarketplaceVerification(mark("2026-10-14"), "today")).toThrow(RangeError)
+    expect(() => describeMarketplaceVerification(null, "")).toThrow(RangeError)
   })
 })
 
