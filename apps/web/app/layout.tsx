@@ -1,10 +1,11 @@
 import { ClerkProvider } from "@clerk/nextjs"
 import { Archivo, Inter } from "next/font/google"
-import type { ReactNode } from "react"
+import { Suspense, type ReactNode } from "react"
 
 import { AnalyticsProvider } from "@/components/analytics/AnalyticsProvider"
 import { resolvePublicAppUrl } from "@/lib/app-url"
 import { enabledFlag } from "@/lib/demo-mode"
+import { OfflineRuntime } from "@/lib/offline/runtime"
 
 import "./globals.css"
 import "./styles/public.css"
@@ -84,6 +85,9 @@ export default function RootLayout({
 				<body>
 					{children}
 					<AnalyticsProvider />
+					<Suspense fallback={null}>
+						<OfflineRuntime />
+					</Suspense>
 				</body>
 			</html>
 		</AuthBoundary>

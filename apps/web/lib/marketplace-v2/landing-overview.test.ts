@@ -130,6 +130,29 @@ describe("the new subscriber's checklist (#133 criterion 6)", () => {
     expect(checklistIncomplete(overviewChecklist({ jobs: [job("j9", "Theirs", { posterOrganizationId: OTHER })], landings: [landing(0)], organizationId: ORG }))).toBe(true)
   })
 
+  it("counts this business's own job in any status, even with no inquiry and no active job on the landing (#320)", () => {
+    for (const status of ["paused", "filled", "closed", "expired"] as const) {
+      const steps = overviewChecklist({
+        interests: [],
+        jobs: [job("j1", status, { acceptingInterest: false, status })],
+        landings: [landing(0)],
+        organizationId: ORG
+      })
+
+      expect(steps.find((step) => step.id === "job")?.done, status).toBe(true)
+      expect(checklistIncomplete(steps), status).toBe(false)
+    }
+
+    const rival = overviewChecklist({
+      interests: [],
+      jobs: [job("j9", "Theirs", { acceptingInterest: false, posterOrganizationId: OTHER, status: "paused" })],
+      landings: [landing(0)],
+      organizationId: ORG
+    })
+
+    expect(rival.find((step) => step.id === "job")?.done).toBe(false)
+  })
+
   it("counts a job the public cannot see when the business's own reads show it posted one (#209 review)", () => {
     const posted = (input: Partial<Parameters<typeof overviewChecklist>[0]>) =>
       !checklistIncomplete(overviewChecklist({ jobs: [], landings: [landing(0)], organizationId: ORG, ...input }))
@@ -171,6 +194,23 @@ describe("reading the business's own jobs (#374)", () => {
 
     expect((await readOwnJobs(port as never, viewer)).map((j) => j.id)).toEqual(["own", "day14"])
     expect(port.listOwnJobs).toHaveBeenCalledExactlyOnceWith(viewer)
+    expect(port.listJobs).not.toHaveBeenCalled()
+  })
+
+  it("passes a paused or closed desk job to the checklist, which the empty public list would miss (#320)", async () => {
+    const port = {
+      listJobs: vi.fn().mockResolvedValue([]),
+      listOwnJobs: vi.fn().mockResolvedValue([
+        view("paused", { acceptingInterest: false, status: "paused" }),
+        view("closed", { acceptingInterest: false, status: "closed" })
+      ]),
+      supportsPublishing: true
+    }
+    const jobs = await readOwnJobs(port as never, { organizationId: ORG, userId: "u1" })
+    const jobStep = overviewChecklist({ jobs, landings: [], organizationId: ORG, interests: [] }).find((step) => step.id === "job")
+
+    expect(jobs.map((item) => item.status)).toEqual(["paused", "closed"])
+    expect(jobStep?.done).toBe(true)
     expect(port.listJobs).not.toHaveBeenCalled()
   })
 
