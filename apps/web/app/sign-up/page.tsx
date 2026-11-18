@@ -8,6 +8,7 @@ import {
   safeEntryNext
 } from "@/lib/entry-routing"
 import { getSessionActor, homePathFor, isClerkConfigured } from "@/lib/session"
+import { signedInV2Destination } from "@/lib/signed-in-entry"
 
 export const dynamic = "force-dynamic"
 
@@ -29,6 +30,25 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
       intent ? `path=${intent}` : "",
       next ? `next=${encodeURIComponent(next)}` : ""
     ].filter(Boolean).join("&")
+
+    // With Marketplace V2 on, "Continue" goes where a fresh sign-in would (#378). The role intent and its legacy
+    // cockpit are not offered then: V2 never sends anyone to one.
+    const v2Destination = await signedInV2Destination(actor, next)
+
+    if (v2Destination) {
+      return (
+        <AuthenticatedEntryPage
+          currentHome={v2Destination}
+          displayName={actor.profile.fullName}
+          email={actor.profile.email}
+          intent={null}
+          mode="sign-up"
+          requestedHome={null}
+          requestedOrganization={null}
+          restartHref={restartQuery ? `/sign-up?${restartQuery}` : "/sign-up"}
+        />
+      )
+    }
 
     return (
       <AuthenticatedEntryPage

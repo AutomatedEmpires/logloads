@@ -1,14 +1,10 @@
 import type { Metadata } from "next"
 
 import { LegalPage } from "@/components/v3"
-import { legalPages } from "@/lib/v3"
+import { legalDocuments, legalMetadata } from "@/lib/legal"
 
-export const metadata: Metadata = {
-  title: "Terms of Service",
-  description:
-    "The terms governing your use of LogLoads, full direct driver pay, and safe timber hauling coordination."
-}
+export const metadata: Metadata = legalMetadata(legalDocuments.terms)
 
 export default function Page() {
-  return <LegalPage content={legalPages["terms"]!} />
+  return <LegalPage document={legalDocuments.terms} />
 }

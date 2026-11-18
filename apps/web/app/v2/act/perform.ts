@@ -215,7 +215,7 @@ export type OneTapInspection =
   | { kind: "invalid" }
   | { kind: "pending" }
   | { kind: "ready"; action: OneTapAction; replyBody: string | null }
-  | { kind: "used"; action: OneTapAction }
+  | { kind: "used"; action: OneTapAction; interestId: string | null }
 
 /** A read of the link. It does not claim the token and it does not call the store. */
 export function inspectOneTap(token: string, runtime: Pick<OneTapRuntime, "ledger" | "now" | "secret">): OneTapInspection {
@@ -227,7 +227,7 @@ export function inspectOneTap(token: string, runtime: Pick<OneTapRuntime, "ledge
 
   const recorded = runtime.ledger.read(read.link.tokenId)
 
-  if (recorded) return { action: recorded.action, kind: "used" }
+  if (recorded) return { action: recorded.action, interestId: read.link.interestId, kind: "used" }
   if (runtime.ledger.state(read.link.tokenId) === "pending") return { kind: "pending" }
   return { action: read.link.action, kind: "ready", replyBody: read.link.replyBody }
 }

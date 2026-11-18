@@ -40,29 +40,48 @@ describe("PayFigure (V2-DEC-02)", () => {
 })
 
 describe("VerificationIndicator (Gate 5, #150)", () => {
-  it("names the verified scope and the review month", () => {
-    const html = renderToStaticMarkup(<VerificationIndicator verification={{ reviewedOn: "2026-10-05", scope: "business_identity" }} />)
+  it("shows the whole dated sentence, with what it means behind it", () => {
+    const html = renderToStaticMarkup(<VerificationIndicator now={NOW} verification={{ reviewedOn: "2026-10-05", scope: "business_identity" }} />)
 
-    expect(textOf(html)).toBe("Business identity verified · Oct 2026")
-    expect(openingTag(html, /title=/)).toContain('title="Business identity reviewed by LogLoads on Oct 5, 2026."')
+    expect(textOf(html)).toBe("Business identity reviewed by LogLoads on Oct 5, 2026")
+    expect(openingTag(html, /title=/)).toContain('data-state="reviewed"')
+    expect(openingTag(html, /title=/)).toContain("On Oct 5, 2026, LogLoads reviewed documents this business sent to show its business identity.")
+    expect(openingTag(html, /title=/)).toContain(
+      "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
+        "Check these yourself before you agree to a haul."
+    )
     expect(html).toContain('aria-hidden="true"')
   })
 
-  it("names the scope without a date when no review date is on record", () => {
-    expect(textOf(renderToStaticMarkup(<VerificationIndicator verification={{ reviewedOn: null, scope: "business_identity" }} />))).toBe(
-      "Business identity verified"
+  it("shows a review older than 12 months as last reviewed, with its date (#337)", () => {
+    const html = renderToStaticMarkup(<VerificationIndicator now={NOW} verification={{ reviewedOn: "2025-11-01", scope: "business_identity" }} />)
+
+    expect(textOf(html)).toBe("Business identity last reviewed by LogLoads on Nov 1, 2025")
+    expect(openingTag(html, /title=/)).toContain('data-state="review_lapsed"')
+    // Nov 2, 2025 is exactly 12 months before the fixture's now: still current.
+    expect(textOf(renderToStaticMarkup(<VerificationIndicator now={NOW} verification={{ reviewedOn: "2025-11-02", scope: "business_identity" }} />))).toBe(
+      "Business identity reviewed by LogLoads on Nov 2, 2025"
     )
   })
 
-  it("never shows a generic Verified", () => {
-    const text = textOf(renderToStaticMarkup(<VerificationIndicator verification={{ reviewedOn: null, scope: "business_identity" }} />))
+  it("never shows an undated review as current", () => {
+    const html = renderToStaticMarkup(<VerificationIndicator now={NOW} verification={{ reviewedOn: null, scope: "business_identity" }} />)
 
-    expect(text).not.toMatch(/^Verified/)
-    expect(text).not.toBe("Business verified")
+    expect(textOf(html)).toBe("Business identity reviewed by LogLoads, date not on record")
+    expect(openingTag(html, /title=/)).toContain('data-state="review_lapsed"')
+  })
+
+  it("never shows a bare word such as Verified, in any state", () => {
+    for (const reviewedOn of ["2026-10-05", "2025-11-01", null]) {
+      const text = textOf(renderToStaticMarkup(<VerificationIndicator now={NOW} verification={{ reviewedOn, scope: "business_identity" }} />))
+
+      expect(text).toMatch(/^Business identity (last )?reviewed by LogLoads\b/)
+      expect(text).not.toMatch(/\b(verified|trusted|approved|vetted|safe|certified|background checked)\b/i)
+    }
   })
 
   it("renders nothing for null", () => {
-    expect(renderToStaticMarkup(<VerificationIndicator verification={null} />)).toBe("")
+    expect(renderToStaticMarkup(<VerificationIndicator now={NOW} verification={null} />)).toBe("")
   })
 })
 
@@ -73,7 +92,7 @@ describe("AvailabilityStatus (V2-DEC-03)", () => {
 
       expect(openingTag(html, /data-state=/)).toContain('data-state="unconfirmed"')
       expect(textOf(html)).toMatch(/^Not confirmed by poster/)
-      expect(textOf(html)).not.toMatch(/\b(Poster confirmed|Last confirmed|Confirmed)\b/)
+      expect(textOf(html)).not.toMatch(/\b(Last confirmed|Confirmed)\b/)
     }
   })
 
@@ -81,7 +100,7 @@ describe("AvailabilityStatus (V2-DEC-03)", () => {
     const html = renderToStaticMarkup(<AvailabilityStatus {...jobAvailabilityStatus(jobCard({ lastConfirmedAt: NOW }), NOW)} />)
 
     expect(openingTag(html, /data-state=/)).toContain('data-state="confirmed"')
-    expect(textOf(html)).toBe("Poster confirmed available today")
+    expect(textOf(html)).toBe("Confirmed by Example Timber Co today")
   })
 
   it("always carries words, never colour alone", () => {

@@ -64,7 +64,7 @@ describe("JobSummary (UX-07, #130)", () => {
   })
 
   it("says Confirmed only from the poster's confirmation (V2-DEC-03)", () => {
-    expect(text(render({ job: jobDetail({ lastConfirmedAt: NOW }), now: NOW }))).toContain("Poster confirmed available today")
+    expect(text(render({ job: jobDetail({ lastConfirmedAt: NOW }), now: NOW }))).toContain("Confirmed by Example Timber Co today")
   })
 
   it("carries the id a page observes, and the action it is given", () => {

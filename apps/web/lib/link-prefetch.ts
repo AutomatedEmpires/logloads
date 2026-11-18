@@ -18,10 +18,11 @@ export const STATICALLY_PRERENDERED_ROUTES: readonly string[] = [
   "/for-haulers",
   "/for-landings",
   "/how-it-works",
-  "/marketplace-rules",
   "/pilot",
+  "/posting-rules",
   "/pricing",
   "/privacy",
+  "/sms-terms",
   "/terms",
   "/trust"
 ]

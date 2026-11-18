@@ -79,7 +79,7 @@ export function JobDetail({
 }: JobDetailProps & Placement) {
   const estimates = estimatesText(job)
   const action = interestAction({ canExpressInterest, expressInterestHref, interestState, job, onExpressInterest })
-  const verification = job.posterVerification ? describeMarketplaceVerification(job.posterVerification).statement : null
+  const verification = describeMarketplaceVerification(job.posterVerification, now)
 
   return (
     <article aria-labelledby={jobTitleId(job.id)} className={cx(styles.detail, className)}>
@@ -119,7 +119,8 @@ export function JobDetail({
         </More>
 
         <More title={`About ${job.posterName}`}>
-          <p className={styles.text}>{verification ?? "LogLoads hasn't verified this business."}</p>
+          <p className={styles.text}>{verification.label}.</p>
+          <p className={styles.hint}>{verification.meaning}</p>
           <p className={styles.hint}>
             Listings never show the poster&apos;s phone number or email address. You reach them through LogLoads messages
             once you express interest.
