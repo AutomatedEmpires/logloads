@@ -1,12 +1,33 @@
 # FG01 First run: first-run and sign-in screens in Figma
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235), on 2026-11-11 for design audit 3 (#334), and on 2026-11-12 for LL-D12 (#352). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
+**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235), on 2026-11-11 for design audit 3 (#334), on 2026-11-12 for LL-D12 (#352), and on 2026-11-18 for the legal review consent boxes (#336, see [Legal review consent (#336)](#legal-review-consent-336)). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
 **Figma page:** [01 First run](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-37) in the LogLoads file (jackson.cole's team).
 **Built from:** the [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) page (FG00, #256, field layer #281).
 - Every instance on the page comes from 00 System. Since #352 the plan cards are 00 System PlanCard instances in the not-for-sale state, and page 05's local `Plan tag / Not for sale yet` (`305:2117`) is deleted.
 - Every solid fill and stroke outside an instance is bound to a variable.
 - There are no image fills, and all text is IBM Plex.
 - No new styles or variables were made, and no UI code changed.
+
+## Legal review consent (#336)
+
+Legal review P0 item 2 and §10 Q2 (`docs/legal/2026-11-legal-review.md`, PR #317) need a versioned acceptance. That means an unticked box, both documents linked, and a record of each version id, the time and the IP address. SMS consent must never be bundled into that box, and it goes on a different step (§4.4 item 1). Accounts must accept again after a material change, and so must the legacy `percentage-v1-2026-08-03` accounts.
+
+| What | Frames |
+|---|---|
+| **FR-02 Sign up with the Terms box.** "I agree to the LogLoads Terms of Service and have read the Privacy Policy", unticked, with both documents linked. The hint says "This box covers only the Terms. Texts are a separate choice, made later and off by default." It is added to every FR-02 frame: 390 [75:217](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=75-217), 768 [75:345](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=75-345) and 1440 [75:450](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=75-450). The box is ticked on the password error [75:554](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=75-554) and on the loading state [75:666](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=75-666). | New states: Terms not ticked [357:35307](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-35307) ("Tick the box to agree to the Terms of Service before you create an account.", with the email and password kept). Dark [357:35372](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-35372). |
+| **FR-11 Texts about your work (optional).** SMS consent on its own step, never in the Terms box. It has a mobile number field (US or Canadian), the disclosure from §4.4 item 1 above the boxes, and one unticked box per kind of text. The disclosure covers the program name, "Message frequency varies", "Msg & data rates may apply", "Reply STOP to stop, HELP for help", "Consent is not a condition of using LogLoads", and links to the SMS terms and the Privacy Policy. A Note says "LogLoads does not send texts yet. Your choices are saved, and no text is sent until texts open." The actions are "Text me a code" and "Skip, email me only". | 390 [358:16699](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-16699), 768 [358:16888](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-16888), 1440 [358:17032](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-17032). State: number not complete [358:17201](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-17201). |
+| **FR-12 Updated Terms** (re-acceptance at the next sign-in). It shows each document's version id and effective date with a Read action, then "From Dec 1, 2026, these Terms replace the version you accepted on Aug 3, 2026. You can still read the earlier version.", then the same unticked box. The hint says what is recorded: "the two versions, the time and your IP address". The actions are "Accept and continue" and "Sign out". It is a gate, so it has no tab bar and the desktop links are hidden. | 390 [358:17354](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-17354), 768 [358:17502](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-17502), 1440 [358:17641](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-17641). States: not ticked [358:17778](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-17778), offline [358:17925](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-17925), saving [358:18080](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-18080). Dark [358:18229](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-18229). |
+
+Notes for the build and for counsel:
+
+- **The record.** Clerk's own legal-consent checkbox does not store document version ids. The build needs a LogLoads acceptance record with the user, each version id, the time and the IP address (§10 Q2).
+- **Example values.** "Version 2026-12-01" and "Dec 1, 2026" are examples. The real version ids and the effective date come with the Terms rewrite and counsel's review (P0 item 1).
+- **Text kinds.** The three kinds on FR-11 ("A landing replies to my interest", "A landing invites me to a job", "It is time to confirm my trucks are still available") are a hauler-side proposal that mirrors page 07 S2's landing kinds. #291 has not named the kinds.
+- **Weekly number.** The legal review's "up to N a week" waits for #291 to set the weekly caps. Until then the copy says "Message frequency varies, and each kind has a weekly limit."
+- **Pending legal review.** The consent words are marked pending legal review (#291, #293). They stay off by default while the SMS budget is $0.
+- **No disabled buttons.** No button is disabled. An unticked box or an incomplete number shows its error when the button is pressed, and what the person typed is kept.
+
+The rows from FR-03 down moved 200 px down to make room for the taller FR-02 frames. FR-11 is at y = 19110 and FR-12 at y = 20740. Frame ids did not change.
 
 ## LL-D12 (#352)
 
@@ -56,7 +77,7 @@ Where a screen is already coded, the frame matches the code first. "Changed" lis
 
 ## What is on the page
 
-The page has 10 screens. Each one is drawn at 390, 768 and 1440 px, which makes 30 frames. There are also 12 states at 390 px: 8 for sign-in, sign-up and verify, and 4 field-error states for the setup forms. The rows run top to bottom: 390 px at x = 0, 768 px at x = 510, 1440 px at x = 1398, and the states to the right.
+The page has 12 screens. Each one is drawn at 390, 768 and 1440 px, which makes 36 frames. There are also 17 states at 390 px: 9 for sign-in, sign-up and verify (including Terms not ticked), 5 field-error states for the setup forms and FR-11, and 3 for FR-12 (not ticked, offline, saving). FR-11 and FR-12 were added in #336. The rows run top to bottom: 390 px at x = 0, 768 px at x = 510, 1440 px at x = 1398, and the states to the right.
 
 The annotation frame [FR-00](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=95-2557) (`95:2557`) sits to the left. It lists every screen with its route, spec reference, code source and frame ids.
 
@@ -97,6 +118,8 @@ The annotation frame [FR-00](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6
 | FR-01 Sign in · Dark | [307:3317](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=307-3317) |
 | FR-04 Choose a path · Dark | [307:3339](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=307-3339) |
 | FR-09 Plan · Dark | [307:3353](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=307-3353) |
+| FR-02 Sign up · Dark (#336) | [357:35372](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-35372) |
+| FR-12 Updated Terms · Dark (#336) | [358:18229](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=358-18229) |
 
 The error states keep what the person typed. The messages are the validation messages in `packages/contracts`.
 
