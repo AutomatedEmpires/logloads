@@ -15,6 +15,7 @@ import { shareFacts } from "./facts"
  */
 
 const mocks = vi.hoisted(() => ({
+  areaNotice: vi.fn(async (_jobId: string): Promise<string | null> => null),
   enabled: true,
   getActor: vi.fn(async (): Promise<{
     activeOrganization: { id: string } | null
@@ -40,6 +41,9 @@ vi.mock("@/lib/app-url", () => ({ resolvePublicAppUrl: () => "https://logloads.e
 vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
   pilotMarketplaceV2: { getJob: (jobId: string) => mocks.getJob(jobId) }
 }))
+vi.mock("@/lib/marketplace-v2/basins/notice", () => ({
+  shareJobAreaNotice: (jobId: string) => mocks.areaNotice(jobId)
+}))
 vi.mock("@/lib/marketplace-v2/v2-session", () => ({ getV2SessionActor: () => mocks.getActor() }))
 vi.mock("@/lib/analytics/beacons", async () => {
   const { createElement } = await import("react")
@@ -55,8 +59,8 @@ vi.mock("@/lib/analytics/beacons", async () => {
   }
 })
 
-import ShareCard, { alt, contentType, size } from "./opengraph-image"
-import SharePage, { generateMetadata } from "./page"
+import ShareCard, { alt, contentType, size } from "./[jobId]/opengraph-image"
+import SharePage, { generateMetadata } from "./[jobId]/page"
 
 const JOB_ID = "11111111-1111-4111-8111-111111111111"
 const LANDING_ORG = "22222222-aaaa-4aaa-8aaa-222222222222"
@@ -115,6 +119,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal("React", React)
   mocks.enabled = true
+  mocks.areaNotice.mockResolvedValue(null)
   mocks.getActor.mockResolvedValue(null)
   mocks.getJob.mockResolvedValue(job())
   vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "")
@@ -205,10 +210,31 @@ describe("the share page", () => {
   it("is a not-found page when the job is missing or Marketplace V2 is off", async () => {
     mocks.getJob.mockResolvedValue(null)
     await expect(pageHtml()).rejects.toThrow("NEXT_NOT_FOUND")
+    expect(mocks.areaNotice).toHaveBeenCalledWith(JOB_ID)
 
     mocks.enabled = false
     mocks.getJob.mockResolvedValue(job())
     await expect(pageHtml()).rejects.toThrow("NEXT_NOT_FOUND")
+  })
+
+  it("shows a closed basin with no job facts", async () => {
+    mocks.getJob.mockResolvedValue(null)
+    mocks.areaNotice.mockResolvedValue("not in your area yet")
+
+    const html = await pageHtml({ channel: "facebook" })
+
+    expect(html).toContain("Not in your area yet")
+    expect(html).toContain("This area is not open yet.")
+    expect(html).not.toContain("Oak saw logs")
+    expect(html).not.toContain("$475.00")
+    expect(html).not.toContain("Pole trailer")
+    expect(html).not.toContain("54 mi")
+    expect(html).not.toContain("Send interest")
+    expect(html).not.toContain("/sign-up")
+    expect(html).not.toContain(PLANTED_EMAIL)
+    expect(html).not.toContain(PLANTED_PHONE)
+    expect(html).not.toContain("Green gate")
+    expect(html).not.toContain("44.15432")
   })
 })
 
@@ -248,6 +274,30 @@ describe("preview metadata", () => {
     expect(facts.cardFreshness).not.toMatch(/today/i)
     expect(html).not.toContain(PLANTED_PHONE)
     expect(html).not.toContain("44.15432")
+  })
+
+  it("describes a closed basin without the listing", async () => {
+    mocks.getJob.mockResolvedValue(null)
+    mocks.areaNotice.mockResolvedValue("not in your area yet")
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ jobId: JOB_ID }) })
+    const serialized = JSON.stringify(metadata)
+
+    expect(metadata.title).toBe("Not in your area yet")
+    expect(metadata.description).toContain("This area is not open yet.")
+    expect(serialized).not.toContain("Oak saw")
+    expect(serialized).not.toContain("475")
+    expect(serialized).not.toContain(PLANTED_PHONE)
+    expect(serialized).not.toContain("opengraph-image")
+
+    const image = (await ShareCard({ params: Promise.resolve({ jobId: JOB_ID }) })) as unknown as { element: React.ReactElement }
+    const html = renderToStaticMarkup(image.element)
+
+    expect(html).toContain("Not in your area yet")
+    expect(html).not.toContain("$475")
+    expect(html).not.toContain("Pole")
+    expect(html).not.toContain("54")
+    expect(html).not.toContain(PLANTED_PHONE)
   })
 
   it("is not listed in the sitemap", () => {

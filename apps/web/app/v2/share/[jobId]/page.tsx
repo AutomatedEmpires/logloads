@@ -14,8 +14,15 @@ import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { jobPagePath, jobSharePath, jobShareUrl } from "@/lib/marketplace-v2/job-detail"
 import { getV2SessionActor } from "@/lib/marketplace-v2/v2-session"
 
-import { shareChannel, shareFacts, shareInterest, type ShareInterest } from "./facts"
-import { loadShareJob } from "./load"
+import {
+  SHARE_CLOSED_BODY,
+  SHARE_CLOSED_TITLE,
+  shareChannel,
+  shareFacts,
+  shareInterest,
+  type ShareInterest
+} from "../facts"
+import { resolveShare, type ShareResolution } from "../load"
 import styles from "./page.module.css"
 
 type Params = Promise<{ jobId: string }>
@@ -24,35 +31,41 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>
 export const dynamic = "force-dynamic"
 
 /**
- * The signed-out job page a shared link opens (#287). The first screen is the public facts: freshness, pay, basis,
- * trailer, distance, length and trucks. Send interest goes through sign-up and returns to the job. The preview card
- * is `opengraph-image.tsx`. Coordinates, access notes and contact details are not rendered. A closed basin shows no
- * job facts once #324 records that state; a job view here has no basin field to read yet.
+ * The signed-out job page a shared link opens (#287), at `/v2/share/[jobId]`. The first screen is the public facts:
+ * freshness, pay, basis, trailer, distance, length and trucks. Send interest goes through sign-up and returns to the
+ * job. The preview card is `opengraph-image.tsx`. Coordinates, access notes and contact details are not rendered.
+ * A closed basin (#324) shows the area notice and no job facts.
  */
-async function openJob(jobId: string) {
+async function resolveOrHide(jobId: string): Promise<Exclude<ShareResolution, { kind: "missing" }>> {
   if (!marketplaceV2Enabled()) notFound()
 
-  const job = await loadShareJob(jobId)
+  const resolved = await resolveShare(jobId)
 
-  if (!job) notFound()
+  if (resolved.kind === "missing") notFound()
 
-  return job
+  return resolved
 }
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  const hidden = { robots: { follow: false, index: false } } as const
+
   if (!marketplaceV2Enabled()) {
-    return { robots: { follow: false, index: false }, title: "Not found" }
+    return { ...hidden, title: "Not found" }
   }
 
   const { jobId } = await params
-  const job = await loadShareJob(jobId)
+  const resolved = await resolveShare(jobId)
 
-  if (!job) {
-    return { robots: { follow: false, index: false }, title: "Job not found" }
+  if (resolved.kind === "missing") {
+    return { ...hidden, title: "Job not found" }
   }
 
-  const facts = shareFacts(toPublicJobView(job), new Date().toISOString())
-  const path = jobSharePath(job)
+  if (resolved.kind === "closed") {
+    return { ...hidden, description: SHARE_CLOSED_BODY, title: SHARE_CLOSED_TITLE }
+  }
+
+  const facts = shareFacts(toPublicJobView(resolved.job), new Date().toISOString())
+  const path = jobSharePath(resolved.job)
   const image = {
     alt: facts.cardFreshness,
     height: 630,
@@ -61,6 +74,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   }
 
   return {
+    ...hidden,
     alternates: { canonical: path },
     description: facts.description,
     openGraph: {
@@ -71,7 +85,6 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
       type: "website",
       url: path
     },
-    robots: { follow: false, index: false },
     title: facts.title,
     twitter: {
       card: "summary_large_image",
@@ -109,10 +122,33 @@ function Fact({ children, label }: { children: string; label: string }) {
 export default async function SharePage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   const { jobId } = await params
   const query = await searchParams
-  const job = await openJob(jobId)
+  const resolved = await resolveOrHide(jobId)
   const actor = await getV2SessionActor()
-  const facts = shareFacts(toPublicJobView(job), new Date().toISOString())
   const signedIn = Boolean(actor)
+  const beacon = clientAnalyticsEnabled() ? (
+    <ShareLinkOpenedBeacon
+      channel={shareChannel(query.channel)}
+      jobId={resolved.kind === "job" ? resolved.job.id : jobId}
+      signedIn={signedIn}
+    />
+  ) : null
+
+  if (resolved.kind === "closed") {
+    return (
+      <div data-ds-page="job-share">
+        {beacon}
+        <PageHeader title={SHARE_CLOSED_TITLE} />
+        <PageContainer>
+          <Section variant="flush">
+            <p className={styles.note}>{SHARE_CLOSED_BODY}</p>
+          </Section>
+        </PageContainer>
+      </div>
+    )
+  }
+
+  const job = resolved.job
+  const facts = shareFacts(toPublicJobView(job), new Date().toISOString())
   const isPoster = Boolean(actor && !actor.workspaceSelectionInvalid && actor.activeOrganization?.id === job.posterOrganizationId)
   const action = shareInterest({
     acceptingInterest: facts.acceptingInterest,
@@ -123,9 +159,7 @@ export default async function SharePage({ params, searchParams }: { params: Para
 
   return (
     <div data-ds-page="job-share">
-      {clientAnalyticsEnabled() ? (
-        <ShareLinkOpenedBeacon channel={shareChannel(query.channel)} jobId={job.id} signedIn={signedIn} />
-      ) : null}
+      {beacon}
       <PageHeader breadcrumbs={[{ href: "/v2/work", label: "Find work" }, { label: facts.title }]} title={facts.title} />
       <PageContainer>
         <Section variant="flush">
