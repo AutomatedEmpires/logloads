@@ -32,18 +32,35 @@ export function jobIsListed(interest: Pick<MarketplaceInterestView, "job">): boo
   return !(interest.job.status === "closed" && interest.job.title === "Job no longer listed")
 }
 
+/** The job's link, or its title alone when the listing has no public page. */
+export function InquiryJobTitle({ className, interest }: { className?: string; interest: Pick<MarketplaceInterestView, "job"> }) {
+  // AppLink (#203): the job page renders per request, so the link is never prefetched.
+  return jobIsListed(interest) ? (
+    <AppLink className={className ?? styles.link} href={`/v2/work/${interest.job.slug}`}>{interest.job.title}</AppLink>
+  ) : (
+    <>{interest.job.title}</>
+  )
+}
+
 /**
  * The selected inquiry beside the list (06_DESIGN_SYSTEM.md §4 "Inquiry and conversation"): who it is with and
  * for which job, the facts of the offer, the ConversationThread and then the page's composer, or why replying is
  * closed. Presentational: the page decides which facts, actions and composer the viewer gets.
+ *
+ * Flow C (#328, Figma 07 Flows C3 `124:390`) gives the landing three more parts: `job`, the job card (pay and title)
+ * in place of the "For <job>" line; `factsTitle`, which frames the facts as a card ("They can bring"); and `notice`,
+ * what the last answer did, under the thread. The hauler's page passes none of them and is unchanged.
  */
 export function InquiryConversation({
   closedNote,
   composer,
   confirmation,
   facts,
+  factsTitle,
   headActions,
   interest,
+  job,
+  notice,
   viewerSide,
   viewerUserId
 }: {
@@ -51,15 +68,32 @@ export function InquiryConversation({
   composer: ReactNode
   confirmation?: ReactNode
   facts: InquiryFact[]
+  factsTitle?: string
   headActions?: ReactNode
   interest: MarketplaceInterestView
+  job?: ReactNode
+  notice?: ReactNode
   viewerSide: ViewerSide
   /** The session's own user, so the thread marks only their messages "You" and names colleagues. */
   viewerUserId?: string
 }) {
   const name = viewerSide === "landing" ? interest.haulerOrganization.name : interest.landingOrganization.name
   const titleId = `conversation-${interest.id}-title`
+  const factsId = `conversation-${interest.id}-facts`
   const status = inquiryStatus(interest, viewerSide)
+  const list = (
+    <dl aria-labelledby={factsTitle ? factsId : undefined} className={styles.facts}>
+      {facts.map((fact) => (
+        <div className={styles.fact} key={fact.label}>
+          <dt className={styles.label}>{fact.label}</dt>
+          <dd className={styles.value}>
+            {fact.value}
+            {fact.note ? <small className={styles.note}>{fact.note}</small> : null}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
 
   return (
     <section aria-labelledby={titleId} className={styles.conversation} id={CONVERSATION_ANCHOR}>
@@ -68,32 +102,28 @@ export function InquiryConversation({
           <div className={styles.headText}>
             <h2 className={styles.title} id={titleId}>{name}</h2>
             <p className={styles.sub}>
-              <span>
-                {viewerSide === "landing" ? "For " : null}
-                {/* AppLink (#203): the job page renders per request, so the link is never prefetched. */}
-                {jobIsListed(interest) ? (
-                  <AppLink className={styles.link} href={`/v2/work/${interest.job.slug}`}>{interest.job.title}</AppLink>
-                ) : interest.job.title}
-              </span>
+              {job ? null : (
+                <span>
+                  {viewerSide === "landing" ? "For " : null}
+                  <InquiryJobTitle interest={interest} />
+                </span>
+              )}
               <span className={styles.status} data-tone={status.tone}>{status.label}</span>
             </p>
           </div>
           {headActions ? <div className={styles.headActions}>{headActions}</div> : null}
         </div>
-        <dl className={styles.facts}>
-          {facts.map((fact) => (
-            <div className={styles.fact} key={fact.label}>
-              <dt className={styles.label}>{fact.label}</dt>
-              <dd className={styles.value}>
-                {fact.value}
-                {fact.note ? <small className={styles.note}>{fact.note}</small> : null}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        {job ? <div className={styles.job} data-flow-c="">{job}</div> : null}
+        {factsTitle ? (
+          <div className={styles.offer}>
+            <h3 className={styles.offerTitle} id={factsId}>{factsTitle}</h3>
+            {list}
+          </div>
+        ) : list}
       </header>
       {confirmation}
       <ConversationThread interest={interest} viewerSide={viewerSide} viewerUserId={viewerUserId} />
+      {notice}
       {composer ?? <p className={styles.closed}>{closedNote}</p>}
     </section>
   )
