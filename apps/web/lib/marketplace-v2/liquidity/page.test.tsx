@@ -103,23 +103,20 @@ describe("the board", () => {
     expect(textOf(html)).toContain("Targets: a median first reply under 2 hours, and stale jobs under 10% of active jobs.")
   })
 
-  it("states which figures are not measured yet, and shows no zero in their place", async () => {
-    mocks.load.mockResolvedValue({ board: liquidityBoard([counts({ activeJobs: null, inquiries: null })]), kind: "ready" })
+  it("says in words when a basin has nothing to compute a share from, and shows no zero in its place", async () => {
+    mocks.load.mockResolvedValue({
+      board: liquidityBoard([counts({ activeJobs: 0, haulersAvailable: 0, inquiries: { answered: 0, medianFirstReplyMinutes: null, received: 0 }, jobsConfirmed: 0 })]),
+      kind: "ready"
+    })
 
     const html = await render()
-    const text = textOf(html)
 
-    expect(html).toMatch(/role="note"/)
-    expect(text).toContain("Not measured yet: Active jobs, Inquiries per job, Answered, Median first reply and Stale jobs.")
-    expect(html.match(/data-state="unmeasured"/g)).toHaveLength(5)
-    expect(html).toMatch(/data-label="Active jobs"[^>]*data-state="unmeasured"[^>]*>Not measured yet</)
-    expect(html).toMatch(/data-label="Confirmed in 14 days"[^>]*data-state="value"[^>]*>19</)
-  })
-
-  it("shows no note when every figure is measured", async () => {
-    mocks.load.mockResolvedValue({ board: liquidityBoard([counts()]), kind: "ready" })
-
-    expect(await render()).not.toMatch(/role="note"/)
+    expect(html).toMatch(/data-label="Active jobs"[^>]*data-state="value"[^>]*>0</)
+    expect(html).toMatch(/data-label="Inquiries per job"[^>]*data-state="none"[^>]*>No active jobs</)
+    expect(html).toMatch(/data-label="Answered"[^>]*data-state="none"[^>]*>No inquiries</)
+    expect(html).toMatch(/data-label="Median first reply"[^>]*data-state="none"[^>]*>No replies</)
+    expect(html).toMatch(/data-label="Stale jobs"[^>]*data-state="none"[^>]*>No active jobs</)
+    expect(html).not.toContain("data-target")
   })
 
   it("says so when no basin is recorded, with no table", async () => {

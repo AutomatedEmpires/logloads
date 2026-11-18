@@ -16,7 +16,7 @@
 
 .table td { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
-.table td[data-state="none"], .table td[data-state="unmeasured"] { color: var(--ll-color-text-muted); }
+.table td[data-state="none"] { color: var(--ll-color-text-muted); }
 
 .name { display: block; font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); overflow-wrap: anywhere; }
 

@@ -4,8 +4,8 @@ import type { BasinStatus } from "@logloads/contracts"
  * The per-basin liquidity board (#326): what LogLoads staff read to judge whether a basin has enough work and enough
  * trucks. One row per basin (#324), counts and shares only. Pure: the store read is `./normalized.ts`.
  *
- * The targets are the issue's. A figure the store does not report is `null` in the counts and "Not measured yet" on
- * the board; it is never shown as a zero, and nothing is derived from it.
+ * The targets are the issue's. A share with nothing to compute it from (no active jobs, no inquiries, no replies) says
+ * so in words; it is never shown as a zero.
  */
 
 /** A job or an availability report counts as current when it was confirmed within this many days. */
@@ -27,18 +27,18 @@ export interface BasinLiquidityCounts {
   jobsConfirmed: number
   /** Hauling businesses whose availability was confirmed in the last 14 days. */
   haulersAvailable: number
-  /** Every active, unexpired job, stale ones included. `null` while the store does not report it. */
-  activeJobs: number | null
-  /** Inquiries on the active jobs. `null` while the store does not report them. */
-  inquiries: { received: number; answered: number; medianFirstReplyMinutes: number | null } | null
+  /** Every active, unexpired job, stale ones included. */
+  activeJobs: number
+  /** Inquiries on the active jobs that were not withdrawn, and the median whole minutes to a landing's first response. */
+  inquiries: { received: number; answered: number; medianFirstReplyMinutes: number | null }
 }
 
 /**
- * One cell. `value`: a figure. `none`: measured, but there is nothing to compute it from. `unmeasured`: the store
- * does not report it. `target` is set only on the two figures that have one.
+ * One cell. `value`: a figure. `none`: there is nothing to compute it from. `target` is set only on the two figures
+ * that have one.
  */
 export interface LiquidityReading {
-  state: "value" | "none" | "unmeasured"
+  state: "value" | "none"
   text: string
   target?: "met" | "missed"
 }
@@ -66,13 +66,10 @@ export type BasinLiquidityRow = Record<LiquidityColumnKey, LiquidityReading> & {
 
 export interface LiquidityBoard {
   rows: BasinLiquidityRow[]
-  /** Headings of the columns no basin has a figure for, in column order. Empty when the board is complete. */
-  unmeasured: string[]
 }
 
 const STATUS_LABELS: Readonly<Record<BasinStatus, string>> = { closed: "Closed", open: "Open", pilot: "Pilot" }
 
-const UNMEASURED: LiquidityReading = { state: "unmeasured", text: "Not measured yet" }
 const NO_ACTIVE_JOBS: LiquidityReading = { state: "none", text: "No active jobs" }
 
 const value = (text: string): LiquidityReading => ({ state: "value", text })
@@ -106,25 +103,19 @@ export function liquidityRow(counts: BasinLiquidityCounts): BasinLiquidityRow {
   const { activeJobs, inquiries } = counts
 
   const staleShare = (): LiquidityReading => {
-    if (activeJobs === null) return UNMEASURED
     if (activeJobs === 0) return NO_ACTIVE_JOBS
 
     const tenths = shareTenths(activeJobs - counts.jobsConfirmed, activeJobs)
     return { state: "value", target: tenths < STALE_SHARE_TARGET * 1000 ? "met" : "missed", text: percentText(tenths) }
   }
 
-  const inquiriesPerJob = (): LiquidityReading => {
-    if (activeJobs === null || inquiries === null) return UNMEASURED
-    return activeJobs === 0 ? NO_ACTIVE_JOBS : value((inquiries.received / activeJobs).toFixed(1))
-  }
+  const inquiriesPerJob = (): LiquidityReading =>
+    activeJobs === 0 ? NO_ACTIVE_JOBS : value((inquiries.received / activeJobs).toFixed(1))
 
-  const answeredShare = (): LiquidityReading => {
-    if (inquiries === null) return UNMEASURED
-    return inquiries.received === 0 ? { state: "none", text: "No inquiries" } : value(percentText(shareTenths(inquiries.answered, inquiries.received)))
-  }
+  const answeredShare = (): LiquidityReading =>
+    inquiries.received === 0 ? { state: "none", text: "No inquiries" } : value(percentText(shareTenths(inquiries.answered, inquiries.received)))
 
   const medianFirstReply = (): LiquidityReading => {
-    if (inquiries === null) return UNMEASURED
     if (inquiries.medianFirstReplyMinutes === null) return { state: "none", text: "No replies" }
 
     return {
@@ -135,7 +126,7 @@ export function liquidityRow(counts: BasinLiquidityCounts): BasinLiquidityRow {
   }
 
   return {
-    activeJobs: activeJobs === null ? UNMEASURED : value(String(activeJobs)),
+    activeJobs: value(String(activeJobs)),
     answeredShare: answeredShare(),
     haulersAvailable: value(String(counts.haulersAvailable)),
     id: counts.id,
@@ -153,12 +144,5 @@ export function liquidityRow(counts: BasinLiquidityCounts): BasinLiquidityRow {
 
 /** The board in the store's order (state, then name). */
 export function liquidityBoard(counts: readonly BasinLiquidityCounts[]): LiquidityBoard {
-  const rows = counts.map(liquidityRow)
-
-  return {
-    rows,
-    unmeasured: rows.length === 0
-      ? []
-      : LIQUIDITY_COLUMNS.filter((column) => rows.every((row) => row[column.key].state === "unmeasured")).map((column) => column.label)
-  }
+  return { rows: counts.map(liquidityRow) }
 }

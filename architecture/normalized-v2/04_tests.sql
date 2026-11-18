@@ -71,6 +71,10 @@ $$;
 create function pg_temp.stage40() returns boolean language sql stable as $$
   select to_regclass('marketplace.hauler_reveal_pauses') is not null
 $$;
+-- 42 (liquidity board) applied on top of 40.
+create function pg_temp.stage42() returns boolean language sql stable as $$
+  select to_regprocedure('marketplace.basin_liquidity_board()') is not null
+$$;
 
 -- Runs p_sql and requires failure with SQLSTATE p_state AND a constraint name or message matching
 -- p_reason (case-insensitive regex), so a negative test cannot pass because an unrelated rule fired.
@@ -210,9 +214,10 @@ begin
   -- + 38 134 (basin_counties_valid, basin_for_point, basin_for_landing, landing_basin_launched, create_basin,
   -- set_basin_status, list_basins, basin_readiness, public_area_notice; it redefines two);
   -- + 40 138 (phone_reveal_pause_limit, open_hauler_reveal_pause, tg_hauler_reveal_pause,
-  -- admin_clear_hauler_reveal_pause).
-  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage40() then 138 when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
-    format('expected %s functions in marketplace, found %s', case when pg_temp.stage40() then 138 when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
+  -- admin_clear_hauler_reveal_pause);
+  -- + 42 139 (basin_liquidity_board).
+  perform pg_temp.assert_true(v_funcs = case when pg_temp.stage42() then 139 when pg_temp.stage40() then 138 when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end,
+    format('expected %s functions in marketplace, found %s', case when pg_temp.stage42() then 139 when pg_temp.stage40() then 138 when pg_temp.stage38() then 134 when pg_temp.stage35() then 125 when pg_temp.stage33() then 121 when pg_temp.stage31() then 114 when pg_temp.stage26() then 109 when pg_temp.reviewed() then 86 when pg_temp.hardened() then 82 when pg_temp.phase3() then 74 when pg_temp.aligned() then 63 else 44 end, v_funcs));
 
   -- No function in `marketplace` may be executable by PUBLIC.
   select count(*) into v_pub_exec

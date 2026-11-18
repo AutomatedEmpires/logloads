@@ -613,7 +613,7 @@ begin
 
   -- Stage 39 runs this suite again after 38, whose ledger adds 38.
   perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations)
-                       in ('06,11,12,16,18,23,26,29,31,33,35', '06,11,12,16,18,23,26,29,31,33,35,38', '06,11,12,16,18,23,26,29,31,33,35,38,40'),
+                       in ('06,11,12,16,18,23,26,29,31,33,35', '06,11,12,16,18,23,26,29,31,33,35,38', '06,11,12,16,18,23,26,29,31,33,35,38,40', '06,11,12,16,18,23,26,29,31,33,35,38,40,42'),
     'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33 and 35 in order (and 38 when stage 39 runs this suite again)');
 
   raise notice 'ALL DAY-14 DIRECT READ, UNSUBSCRIBE PRUNE AND KEY ROTATION (35-R, 35-P, 35-K) TESTS PASSED.';

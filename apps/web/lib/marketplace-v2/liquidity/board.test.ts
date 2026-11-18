@@ -12,7 +12,7 @@ import {
 
 /**
  * #326: what the staff board says for one basin. The targets are the issue's: a median first reply under 2 hours and
- * stale jobs under 10% of active jobs. A figure the store does not report is "Not measured yet", never a zero.
+ * stale jobs under 10% of active jobs. A share with nothing to compute it from says so, never a zero.
  */
 
 const BASIN = "11111111-1111-4111-8111-111111111111"
@@ -108,19 +108,6 @@ describe("one basin's row", () => {
     expect(row.medianFirstReply).toEqual({ state: "none", text: "No replies" })
   })
 
-  it("marks what the store does not report, and derives nothing from it", () => {
-    const row = liquidityRow(counts({ activeJobs: null, inquiries: null }))
-    const unmeasured = { state: "unmeasured", text: "Not measured yet" }
-
-    expect(row.activeJobs).toEqual(unmeasured)
-    expect(row.inquiriesPerJob).toEqual(unmeasured)
-    expect(row.answeredShare).toEqual(unmeasured)
-    expect(row.medianFirstReply).toEqual(unmeasured)
-    expect(row.staleShare).toEqual(unmeasured)
-    expect(row.jobsConfirmed).toEqual({ state: "value", text: "19" })
-    expect(row.haulersAvailable).toEqual({ state: "value", text: "7" })
-  })
-
   it("never shows a share outside 0 to 100% when two counts were read a moment apart", () => {
     const row = liquidityRow(counts({ activeJobs: 3, inquiries: { answered: 5, medianFirstReplyMinutes: 10, received: 4 }, jobsConfirmed: 4 }))
 
@@ -135,21 +122,14 @@ describe("one basin's row", () => {
 })
 
 describe("the board", () => {
-  it("keeps the store's order and is complete when every figure is reported", () => {
+  it("keeps the store's order", () => {
     const board = liquidityBoard([counts({ name: "Coast Range" }), counts({ id: "33333333-3333-4333-8333-333333333333", name: "Willamette Valley" })])
 
     expect(board.rows.map((row) => row.name)).toEqual(["Coast Range", "Willamette Valley"])
-    expect(board.unmeasured).toEqual([])
-  })
-
-  it("lists the columns no basin has a figure for, in column order", () => {
-    const board = liquidityBoard([counts({ activeJobs: null, inquiries: null })])
-
-    expect(board.unmeasured).toEqual(["Active jobs", "Inquiries per job", "Answered", "Median first reply", "Stale jobs"])
   })
 
   it("is empty with no basins", () => {
-    expect(liquidityBoard([])).toEqual({ rows: [], unmeasured: [] })
+    expect(liquidityBoard([])).toEqual({ rows: [] })
   })
 
   it("has one column per figure, each with a heading", () => {

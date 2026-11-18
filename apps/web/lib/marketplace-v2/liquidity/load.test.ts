@@ -16,10 +16,10 @@ const STAFF = { audience: "logloads-app", issuer: "https://clerk.basin.test", su
 const MEMBER = { audience: "logloads-app", issuer: "https://clerk.basin.test", subject: "landing_owner" }
 
 const COUNTS: BasinLiquidityCounts = {
-  activeJobs: null,
+  activeJobs: 14,
   haulersAvailable: 5,
   id: "11111111-1111-4111-8111-111111111111",
-  inquiries: null,
+  inquiries: { answered: 9, medianFirstReplyMinutes: 80, received: 12 },
   jobsConfirmed: 12,
   name: "Lane",
   stateCode: "OR",

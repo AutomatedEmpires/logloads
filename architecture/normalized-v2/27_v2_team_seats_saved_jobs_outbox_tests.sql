@@ -859,7 +859,7 @@ begin
   -- then 33, then 35.
   perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations)
                        in ('06,11,12,16,18,23,26', '06,11,12,16,18,23,26,29', '06,11,12,16,18,23,26,29,31', '06,11,12,16,18,23,26,29,31,33',
-                           '06,11,12,16,18,23,26,29,31,33,35', '06,11,12,16,18,23,26,29,31,33,35,38', '06,11,12,16,18,23,26,29,31,33,35,38,40'),
+                           '06,11,12,16,18,23,26,29,31,33,35', '06,11,12,16,18,23,26,29,31,33,35,38', '06,11,12,16,18,23,26,29,31,33,35,38,40', '06,11,12,16,18,23,26,29,31,33,35,38,40,42'),
     'the migration ledger records 06, 11, 12, 16, 18, 23, 26 in order (and 29, 31, 33 and 35 after them when stages 30, 32, 34 and 36 run this suite again)');
 
   raise notice 'ALL SEAT INVITATION, LANDING SCOPE, SAVED JOB AND NOTIFICATION OUTBOX (26-A..26-D) TESTS PASSED.';

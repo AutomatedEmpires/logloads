@@ -7,19 +7,13 @@ import { MarketplaceStoreError } from "../port"
 import type { BasinLiquidityCounts } from "./board"
 
 /**
- * The liquidity board's read on the normalized store (#326).
+ * The liquidity board's read on the normalized store (#326): one call to `basin_liquidity_board` (stage 42), as the
+ * signed-in person, in a read-only transaction. The function checks `is_platform_admin` in the database, so a person
+ * who is not LogLoads staff is refused (42501) and gets no row. However many basins there are, it is one statement.
  *
- * It runs as the signed-in person in one read-only transaction and calls only the stage 38 staff functions (#324):
- * `list_basins`, then `basin_readiness` for each basin. Both check `is_platform_admin` in the database, so a person
- * who is not LogLoads staff is refused (42501) before any basin is read.
- *
- * What it cannot read yet: every active job (stale ones included), inquiries per job, the share answered and the
- * median first reply. `marketplace.basins` and `basin_for_landing` are closed to the `authenticated` role, so those
- * need one staff function in a new schema stage. Until it exists they are `null` here, and this read makes one
- * `basin_readiness` call per basin; that function replaces the whole loop with a single call.
- *
- * Only counts leave this module: a basin's boundary and county list are dropped, and no row names a person, a
- * business, a job or a point.
+ * The function returns counts only, and only these fields are mapped: nothing here names a person, a business, a
+ * job or a point. A row that could not be true (more confirmed jobs than active jobs, more answers than inquiries, a
+ * median with no answer) is refused instead of shown, since every count comes from one snapshot.
  */
 
 function record(value: unknown): Record<string, unknown> {
@@ -46,39 +40,39 @@ function count(value: unknown): number {
   return value
 }
 
+function counts(value: unknown): BasinLiquidityCounts {
+  const row = record(value)
+  const status = basinStatusSchema.safeParse(row.status)
+  const activeJobs = count(row.active_jobs)
+  const jobsConfirmed = count(row.jobs_confirmed)
+  const received = count(row.interests)
+  const answered = count(row.interests_answered)
+  const median = row.median_first_reply_minutes === null ? null : count(row.median_first_reply_minutes)
+
+  if (!status.success || jobsConfirmed > activeJobs || answered > received || (median === null) !== (answered === 0)) {
+    throw new MarketplaceStoreError()
+  }
+
+  return {
+    activeJobs,
+    haulersAvailable: count(row.haulers_available),
+    id: text(row.basin_id),
+    inquiries: { answered, medianFirstReplyMinutes: median, received },
+    jobsConfirmed,
+    name: text(row.name),
+    stateCode: text(row.state_code),
+    status: status.data,
+    verifiedLandings: count(row.verified_landings)
+  }
+}
+
 export function normalizedLiquidity(db: MarketplaceDb) {
   return {
+    /** One row of counts per basin, in state and name order. */
     async board(principal: MarketplacePrincipal): Promise<BasinLiquidityCounts[]> {
-      return db.asUser(principal, async (calls) => {
-        const basins = (await calls.call("list_basins", {})).map((value) => {
-          const row = record(value)
-          const status = basinStatusSchema.safeParse(row.status)
+      const rows = await db.asUser(principal, (calls) => calls.call("basin_liquidity_board", {}))
 
-          if (!status.success) throw new MarketplaceStoreError()
-          return { id: text(row.basin_id), name: text(row.name), stateCode: text(row.state_code), status: status.data }
-        })
-        const board: BasinLiquidityCounts[] = []
-
-        for (const basin of basins) {
-          const [value] = await calls.call("basin_readiness", { p_basin_id: basin.id })
-          const row = record(value)
-
-          // Counts for another basin are never shown under this one's name.
-          if (row.basin_id !== basin.id) throw new MarketplaceStoreError()
-
-          board.push({
-            ...basin,
-            activeJobs: null,
-            haulersAvailable: count(row.haulers_available),
-            inquiries: null,
-            // `basin_readiness.active_jobs` counts only jobs confirmed in the last 14 days (38_v2_basins.sql).
-            jobsConfirmed: count(row.active_jobs),
-            verifiedLandings: count(row.verified_landings)
-          })
-        }
-
-        return board
-      })
+      return rows.map(counts)
     }
   }
 }
