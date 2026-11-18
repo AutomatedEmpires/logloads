@@ -15,7 +15,7 @@ import { shareFacts } from "./facts"
  */
 
 const mocks = vi.hoisted(() => ({
-  areaNotice: vi.fn(async (_jobId: string): Promise<string | null> => null),
+  areaNotice: vi.fn<(jobId: string) => Promise<string | null>>(async () => null),
   enabled: true,
   getActor: vi.fn(async (): Promise<{
     activeOrganization: { id: string } | null
