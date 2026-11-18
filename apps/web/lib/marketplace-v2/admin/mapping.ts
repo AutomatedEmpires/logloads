@@ -104,7 +104,8 @@ const reportRowSchema = z
     details: z.string().nullable(),
     id: uuid,
     reason: z.string(),
-    reporter_user_id: uuid,
+    // Null for a report LogLoads filed itself: a phone-reveal pause (44, #403).
+    reporter_user_id: uuid.nullable(),
     resolution_note: z.string().nullable(),
     reviewed_at: nullableTimestamp,
     status: z.enum(MARKETPLACE_REPORT_STATUSES),

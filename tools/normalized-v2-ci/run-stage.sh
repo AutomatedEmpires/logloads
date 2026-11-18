@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
-# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..43>
+# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..45>
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
@@ -845,6 +845,31 @@ SUITES
     PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
     echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
     [[ "$PASSES" -ge 17 ]] || { echo "STAGE 43: only $PASSES PASS notices; expected at least 17" >&2; exit 1; }
+    ;;
+  44)
+    SHARED_AUDITS="$(q "select count(*) from marketplace.audit_events a join marketplace.expressions_of_interest e on e.id = a.entity_id join marketplace.job_postings j on j.id = e.job_id where a.action = 'landing_private.shared' and a.entity_table = 'expressions_of_interest' and j.landing_id is not null;")"
+    run_migration "$DIR/44_v2_reveal_ledger.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations','notification_unsubscribe_keys','notification_unsubscribe_uses','basins','hauler_reveal_pauses','phone_reveal_events'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38, 40, 42, 44 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23,26,29,31,33,35,38,40,42,44' from marketplace.schema_migrations;"
+    check "44: the reveal ledger has row-level security and no policy, and starts with one row per shared audit row ($SHARED_AUDITS)" "select c.relrowsecurity and not exists (select 1 from pg_policies p where p.schemaname = 'marketplace' and p.tablename = 'phone_reveal_events') and (select count(*) = $SHARED_AUDITS from marketplace.phone_reveal_events) from pg_class c where c.oid = 'marketplace.phone_reveal_events'::regclass;"
+    check "44: the ledger is append-only (row and truncate triggers) and the report queue has the pause trigger" "select (select count(*) = 2 from pg_trigger t where t.tgrelid = 'marketplace.phone_reveal_events'::regclass and t.tgname in ('phone_reveal_events_append_only', 'phone_reveal_events_no_truncate') and not t.tgisinternal) and exists (select 1 from pg_trigger t where t.tgrelid = 'marketplace.abuse_reports'::regclass and t.tgname = 'reveal_pause_report_resolved' and not t.tgisinternal);"
+    check "44: a pause names exactly one subject, and a reporter may be missing only on a reveal-pause report" "select exists (select 1 from pg_constraint where conname = 'hauler_reveal_pauses_one_subject_ck') and exists (select 1 from pg_constraint where conname = 'abuse_reports_system_reporter_ck') and to_regclass('marketplace.hauler_reveal_pauses_one_open_person_uq') is not null;"
+    check "44: authenticated can call the staff list and clear and the two views; anon and service_role cannot" "select bool_and(has_function_privilege('authenticated', f, 'EXECUTE') and not has_function_privilege('anon', f, 'EXECUTE') and not has_function_privilege('service_role', f, 'EXECUTE')) from unnest(array['marketplace.admin_clear_reveal_pause(uuid,text)', 'marketplace.list_reveal_pauses()', 'marketplace.hauler_job_access(uuid,uuid)', 'marketplace.landing_interest_disclosure(uuid,uuid)']) f;"
+    check "44: no client role can call the ledger, window, opener or trigger functions" "select bool_and(not has_function_privilege(r, p.oid, 'EXECUTE')) from pg_proc p cross join unnest(array['anon', 'authenticated', 'service_role']) r where p.pronamespace = 'marketplace'::regnamespace and p.proname in ('lock_reveal_subjects', 'reveal_paused', 'reveal_window', 'open_reveal_pause', 'audit_share_outcome', 'tg_reveal_pause_report_resolved', 'tg_phone_reveal_events_append_only');"
+    check "44-V: the two job reads are stable, public, and return poster_verified_at" "select bool_and(p.provolatile = 's' and has_function_privilege('anon', p.oid, 'EXECUTE') and has_function_privilege('authenticated', p.oid, 'EXECUTE') and not has_function_privilege('service_role', p.oid, 'EXECUTE') and 'poster_verified_at' = any (p.proargnames)) and count(*) = 2 from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.proname in ('get_marketplace_job', 'list_marketplace_jobs_page');"
+    check "44 adds one table and eleven functions: 150 functions and 48 tables" "select (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace') = 150 and (select count(*) from pg_tables where schemaname = 'marketplace') = 48;"
+    check "31-U still holds: unsubscribe_with_token is the only volatile marketplace function anon can execute" "select count(*) = 1 and bool_and(p.proname = 'unsubscribe_with_token') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.provolatile = 'v' and has_function_privilege('anon', p.oid, 'EXECUTE');"
+    ;;
+  45)
+    run_sql "$DIR/45_v2_reveal_ledger_tests.sql"
+    grep -q "ALL REVEAL LEDGER (44) TESTS PASSED" "$LOG" || { echo "STAGE 45: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no s44 organizations left)" "select count(*) = 0 from marketplace.organizations where slug like 's44-%';"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 55 ]] || { echo "STAGE 45: only $PASSES PASS notices; expected at least 55" >&2; exit 1; }
+    echo "== 45_v2_reveal_ledger_race.sh" | tee -a "$LOG"
+    bash "$DIR/45_v2_reveal_ledger_race.sh" 2>&1 | tee -a "$LOG"
+    grep -q "ALL REVEAL LEDGER RACES PASSED" "$LOG" || { echo "STAGE 45: the two-session races did not pass" >&2; exit 1; }
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac

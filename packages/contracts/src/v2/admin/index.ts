@@ -59,7 +59,8 @@ export interface MarketplaceAdminReportView {
   reason: string
   details: string | null
   status: MarketplaceReportStatus
-  reporterUserId: MarketplaceId
+  /** `null` for a report LogLoads filed itself, such as a phone-reveal pause (44, #403). */
+  reporterUserId: MarketplaceId | null
   createdAt: string
   reviewedAt: string | null
   resolutionNote: string | null

@@ -177,6 +177,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 42
 
+      - name: "Stage 44: 44_v2_reveal_ledger.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 44
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:

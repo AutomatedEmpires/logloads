@@ -40,6 +40,7 @@ const REVIEWED_FUNCTIONS = {
     "get_marketplace_interest",
     "get_org_entitlement_state",
     "get_viewer_marketplace_access",
+    "hauler_job_access",
     "invite_team_member",
     "list_authoring_landings",
     "list_hauler_equipment_options",
@@ -48,6 +49,7 @@ const REVIEWED_FUNCTIONS = {
     "list_my_team_invitations",
     "list_saved_jobs",
     "list_team_invitations",
+    "landing_interest_disclosure",
     "mark_notifications_read",
     "post_hauler_interest_reply",
     "publish_job_posting",
@@ -67,8 +69,11 @@ const REVIEWED_FUNCTIONS = {
   ],
   /** Platform-admin calls that are not named admin_ (38, #324). Writers take a reason; the reads do not. 42 (#326) adds the liquidity board, a read. */
   basin: ["basin_liquidity_board", "basin_readiness", "create_basin", "list_basins", "set_basin_status"],
+  /** A platform-admin read that is not named admin_ and takes no reason (44, #403): moderators and support only. */
+  staffReads: ["list_reveal_pauses"],
   staff: [
     "admin_clear_hauler_reveal_pause",
+    "admin_clear_reveal_pause",
     "admin_grant_founding_hauler_badge",
     "admin_grant_founding_promotion",
     "admin_moderate_job_posting",
@@ -119,6 +124,14 @@ const NEVER_CATALOGUED = [
   "open_hauler_reveal_pause",
   "phone_reveal_pause_limit",
   "tg_hauler_reveal_pause",
+  // 44 (#403): the reveal ledger, window, opener and triggers. Owner only.
+  "audit_share_outcome",
+  "lock_reveal_subjects",
+  "open_reveal_pause",
+  "reveal_paused",
+  "reveal_window",
+  "tg_phone_reveal_events_append_only",
+  "tg_reveal_pause_report_resolved",
   "write_audit"
 ]
 
@@ -291,6 +304,7 @@ describe("marketplaceCallStatement", () => {
       ...REVIEWED_FUNCTIONS.person,
       ...REVIEWED_FUNCTIONS.staff,
       ...REVIEWED_FUNCTIONS.basin,
+      ...REVIEWED_FUNCTIONS.staffReads,
       ...REVIEWED_FUNCTIONS.signedOut
     ]
 
@@ -384,6 +398,14 @@ describe("marketplaceCallStatement", () => {
       revoke_team_invitation: "p_invitation_id uuid",
       set_job_posting_status: "p_job_id uuid, p_status text",
       set_membership_landing_scope: "p_landing_ids uuid[], p_membership_id uuid"
+    })
+    // 44 (#403): the share flag on respond_to_interest, the reveal-pause list and clear, and the two disclosure views.
+    expect(signatures).toMatchObject({
+      admin_clear_reveal_pause: "p_pause_id uuid, p_reason text",
+      hauler_job_access: "p_job_id uuid, p_org_id uuid",
+      landing_interest_disclosure: "p_interest_id uuid, p_org_id uuid",
+      list_reveal_pauses: "",
+      respond_to_interest: "p_body text, p_interest_id uuid, p_reply_id uuid, p_share_private_details boolean, p_status text"
     })
     expect(signatures.save_job_posting_draft).toBe(
       "p_description text, p_destination_label text, p_draft_job_id uuid, p_duration_days integer, p_equipment_codes text[], " +

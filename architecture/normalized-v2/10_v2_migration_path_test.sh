@@ -34,7 +34,8 @@
 #       basin recorded, anon still reads exactly the jobs that take new interest.
 #   40  changes no stored row either (it adds the empty hauler_reveal_pauses table, four functions and two triggers).
 #   42  changes no stored row either (it adds one function and nothing else).
-#   42  changes no stored row either (it adds one function and nothing else).
+#   44  changes no stored row either. It adds the reveal ledger, which starts with one row per landing_private.shared
+#       audit row already on record, a column and a check on the empty pause table, and a check on abuse_reports.
 # =============================================================================
 set -euo pipefail
 
@@ -334,6 +335,12 @@ BEFORE_42="$(all_data schema_migrations)"
 apply1 "$SCRIPT_DIR/42_v2_basin_liquidity.sql"
 AFTER_42="$(all_data schema_migrations)"
 expect_eq "42 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_42" "$BEFORE_42"
-expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38, 40 and 42 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33,35,38,40,42"
+BEFORE_44="$(all_data schema_migrations)"
+SHARED_44="$(q "select count(*) from marketplace.audit_events a join marketplace.expressions_of_interest e on e.id = a.entity_id join marketplace.job_postings j on j.id = e.job_id where a.action = 'landing_private.shared' and a.entity_table = 'expressions_of_interest' and j.landing_id is not null;")"
+apply1 "$SCRIPT_DIR/44_v2_reveal_ledger.sql"
+AFTER_44="$(all_data schema_migrations,phone_reveal_events)"
+expect_eq "44 changes no stored row in any marketplace table (the ledger and the new reveal ledger aside)" "$AFTER_44" "$BEFORE_44"
+expect_eq "44's reveal ledger starts with the share history already in the audit log" "$(q "select count(*) from marketplace.phone_reveal_events;")" "$SHARED_44"
+expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38, 40, 42 and 44 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33,35,38,40,42,44"
 x "drop schema if exists marketplace cascade;"
 echo "MIGRATION PATH TEST PASSED."
