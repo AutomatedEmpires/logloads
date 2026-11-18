@@ -38,7 +38,8 @@ export const MIGRATION_CHAIN = Object.freeze([
   { file: "33_v2_port_v3_functions.sql", ledger: "33", stage: 33 },
   { file: "35_v2_day14_direct_reads_unsubscribe_keys.sql", ledger: "35", stage: 35 },
   { file: "38_v2_basins.sql", ledger: "38", stage: 38 },
-  { file: "40_v2_reveal_pause.sql", ledger: "40", stage: 40 }
+  { file: "40_v2_reveal_pause.sql", ledger: "40", stage: 40 },
+  { file: "42_v2_basin_liquidity.sql", ledger: "42", stage: 42 }
 ].map((entry) => Object.freeze(entry)))
 
 export const LEDGER_CHAIN = Object.freeze(MIGRATION_CHAIN.filter((entry) => entry.ledger).map((entry) => entry.ledger))
