@@ -34,3 +34,18 @@ export async function findWorkAreaNotice(search: FindWorkSearch): Promise<string
 
   return notice === NOT_IN_YOUR_AREA_YET ? notice : null
 }
+
+const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The closed-area sentence for one shared job (#287, #324). Null on the pilot store, for an id that is not a job
+ * id, and when the job is missing or its basin is pilot or open. The exact sentence means the job is real and its
+ * area is not open, so the share page can say that without showing the listing.
+ */
+export async function shareJobAreaNotice(jobId: string): Promise<string | null> {
+  if (marketplaceV2AdapterKind() !== "normalized" || !JOB_ID.test(jobId)) return null
+
+  const notice = await normalizedBasins(noticeDb()).areaNotice({ jobId })
+
+  return notice === NOT_IN_YOUR_AREA_YET ? notice : null
+}

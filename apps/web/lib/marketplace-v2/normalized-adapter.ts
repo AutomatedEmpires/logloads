@@ -6,7 +6,10 @@ import {
   LANDING_STATUS_CHANGE_REFUSAL,
   landingActivationRefusal,
   landingStatusChangeAllowed,
+  MARKETPLACE_JOB_SORTS,
   MARKETPLACE_MEMBER_ROLES,
+  MARKETPLACE_OTHER_PRODUCT,
+  MARKETPLACE_PRODUCTS,
   MARKETPLACE_V2_FEATURES,
   marketplaceFeatureCapabilities,
   marketplaceJobPublicationIssues,
@@ -15,6 +18,7 @@ import {
   validateMarketplaceJobDraft,
   type MarketplaceAvailabilityAttestation,
   type MarketplaceCapability,
+  type MarketplaceInterestSide,
   type MarketplaceJobDetailView,
   type MarketplaceJobDraft,
   type MarketplaceJobFilters,
@@ -32,7 +36,7 @@ import { normalizedBilling } from "./billing"
 import { normalizedBoosts } from "./boosts"
 import { normalizedInvites } from "./invites"
 import { normalizedJobs } from "./jobs"
-import { marketplaceInterestPage, marketplaceJobPage } from "./keyset-pages"
+import { keysetFingerprint, keysetLimit } from "./keyset-pages"
 import type { MarketplaceCalls, MarketplaceDb, MarketplacePrincipal } from "./normalized-db"
 import { normalizedHaulerFleetMethods } from "./normalized-fleet"
 import { normalizedHaulerProfileMethods } from "./normalized-hauler"
@@ -57,7 +61,6 @@ import {
   listingReportRow,
   organizationSlug,
   publishArguments,
-  refineDiscovery,
   respondArguments,
   storeLandingStatus,
   submittedInterestId,
@@ -70,6 +73,7 @@ import { normalizedNotify } from "./notify"
 import {
   MarketplaceRefusalError,
   MarketplaceStoreError,
+  type MarketplacePage,
   type MarketplaceV2Account,
   type MarketplaceV2FeaturePorts,
   type MarketplaceV2Port,
@@ -85,7 +89,10 @@ import { normalizedTrucks } from "./trucks"
  * business: an inquiry or job of another business the same person also belongs to is refused here, so switching
  * business stays a deliberate act (AGENTS.md §7.3).
  *
- * Public discovery (`listJobs`, `getJob`) runs anonymously, so it returns exactly what an anonymous visitor may see.
+ * Public discovery (`listJobs`, `listJobPage`, `getJob`) runs anonymously, so it returns exactly what an anonymous
+ * visitor may see. Lists are filtered, ordered, counted and paged by the store (stage 33; #280, #362): Find Work by
+ * `list_marketplace_jobs_page`, inquiries by the paged `list_marketplace_interests` with `count_marketplace_interests`,
+ * and one inquiry by `get_marketplace_interest`. Nothing here reads a whole list to filter, sort or search it.
  * Nothing here reads or writes the pilot `operating_state` document, loads, slots, trips or fees.
  */
 
@@ -201,6 +208,198 @@ function publishableDraft(draft: MarketplaceJobDraft): MarketplaceJobDraft {
   return validation.draft
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Pages read by the store (stage 33; #280, #362; quality bar B4)
+// ---------------------------------------------------------------------------------------------------------------
+//
+// The store filters, orders, counts and resumes. A page asks it for one row more than it shows: that row only says
+// whether there is a next page. The cursor handed to the page holds the store's own position (for a job, the
+// `page_cursor` of the last row shown; for an inquiry, its order time exactly as the store wrote it, and its id), how
+// many rows came before, and a fingerprint of the query it was made for. A cursor shown with any other query (other
+// filters, another sort, another business or side), or one that is not exactly a position the store could have
+// written, is not used: the list starts again. So nothing a reader can put in a cursor reaches SQL except as a value
+// of the right shape, and every page is still read with the reader's own authority. The cursor grants nothing.
+
+/** `list_marketplace_jobs_page` returns at most this many rows; the unpaged list (`listJobs`) asks for them all. */
+const JOB_LIST_LIMIT = 200
+/** Cursors of this adapter's pages. The pilot's in-memory pages use version 1 (keyset-pages.ts) and are not read here. */
+const PAGE_CURSOR_VERSION = 2
+/** Longer cursors are refused unread. A job cursor with the longest title (140 characters) stays well under it. */
+const PAGE_CURSOR_MAX_LENGTH = 2048
+const PAGE_CURSOR_TEXT = /^[A-Za-z0-9_-]+$/
+/** Every named product; "Other" is any stated product outside this list (`matchesProduct`, packages/contracts). */
+const NAMED_PRODUCTS = MARKETPLACE_PRODUCTS.filter((product) => product !== MARKETPLACE_OTHER_PRODUCT)
+const FILTER_TEXT_LIMIT = 160
+/** The store clamps a radius to 5 to 500 miles; this only keeps the number an integer it can take. */
+const RADIUS_MILES_MAX = 500
+/** A `numeric` as the store prints it: digits, never an exponent. */
+const STORE_NUMBER = /^-?\d{1,40}(?:\.\d{1,40})?$/
+/** A `timestamptz` as `to_jsonb` prints it, with up to six fractional digits. */
+const STORE_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/
+
+const sameId = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0
+const isStoreInstant = (value: unknown): value is string => typeof value === "string" && STORE_INSTANT.test(value) && !Number.isNaN(Date.parse(value))
+
+/** A real calendar date (YYYY-MM-DD), or `null`. */
+function calendarDate(value: string): string | null {
+  const day = value.slice(0, 10)
+  const instant = new Date(`${day}T00:00:00.000Z`)
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(instant.getTime()) && instant.toISOString().slice(0, 10) === day ? day : null
+}
+
+/**
+ * Discovery filters as `list_marketplace_jobs_page` takes them, without the page (`p_after`, `p_limit`), or `null`
+ * when the filters can match nothing (a poster that is not a business, an unknown pay basis, a start date that is not
+ * a date), so nothing is asked. Every filter and the sort go to the store; none is applied here.
+ *
+ * - The typed place goes as latitude and longitude; the store snaps it to the public 0.1° grid and measures to each
+ *   job's public point. A place that is not on the map is no place: no distance filter, and "nearest" is "newest".
+ * - "Other" is every stated product outside the named list.
+ * - The viewer's setups go as they are; the store keeps a job when one setup has every piece of equipment it lists.
+ */
+function jobSearchArguments(filters: MarketplaceJobFilters) {
+  const taken = jobFilterArguments(filters)
+  const startsBy = filters.startsBy ? calendarDate(filters.startsBy) : null
+
+  if (!taken || (filters.startsBy && startsBy === null)) {
+    return null
+  }
+
+  const place = filters.near ?? null
+  const near = place && Number.isFinite(place.lat) && Number.isFinite(place.lng) && Math.abs(place.lat) <= 90 && Math.abs(place.lng) <= 180 ? place : null
+  const radius = near && typeof filters.radiusMiles === "number" && Number.isFinite(filters.radiusMiles)
+    ? Math.min(Math.max(Math.round(filters.radiusMiles), 0), RADIUS_MILES_MAX)
+    : null
+  const product = typeof filters.product === "string" ? filters.product.trim().slice(0, FILTER_TEXT_LIMIT) : ""
+  const other = product.toLowerCase() === MARKETPLACE_OTHER_PRODUCT.toLowerCase()
+  const sort = MARKETPLACE_JOB_SORTS.find((known) => known === filters.sort) ?? "newest"
+
+  return {
+    p_accepting_only: taken.p_accepting_only,
+    p_equipment: taken.p_equipment,
+    p_equipment_setups: filters.equipmentSetups ? filters.equipmentSetups.map((setup) => [...setup]) : null,
+    p_lat: near ? near.lat : null,
+    p_lng: near ? near.lng : null,
+    p_org_id: taken.p_org_id,
+    p_pay_unit: taken.p_pay_unit,
+    p_product: product && !other ? product : null,
+    p_product_excluded: other ? [...NAMED_PRODUCTS] : null,
+    p_query: taken.p_query,
+    p_radius_miles: radius,
+    p_sort: sort === "nearest" && !near ? "newest" : sort,
+    p_starts_by: startsBy
+  }
+}
+
+type JobSearchArguments = NonNullable<ReturnType<typeof jobSearchArguments>>
+
+function encodePageCursor(fingerprint: string, key: unknown): string {
+  return Buffer.from(JSON.stringify({ k: key, q: fingerprint, v: PAGE_CURSOR_VERSION }), "utf8").toString("base64url")
+}
+
+/** The key in `cursor` when it was made for `fingerprint` and is well formed; otherwise `null`. Never throws. */
+function readPageCursor<K>(cursor: string, fingerprint: string, readKey: (value: unknown) => K | null): K | null {
+  if (cursor.length > PAGE_CURSOR_MAX_LENGTH || !PAGE_CURSOR_TEXT.test(cursor)) return null
+
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { k?: unknown; q?: unknown; v?: unknown } | null
+    if (!parsed || typeof parsed !== "object" || parsed.v !== PAGE_CURSOR_VERSION || parsed.q !== fingerprint) return null
+    return readKey(parsed.k)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Stage 33's `page_cursor`: the sort, the five order keys as text (the first and fourth are flags), the title, the id.
+ * A type alias, not an interface, so it is a `jsonb` argument as it stands.
+ */
+type StoreJobCursor = {
+  i: string
+  k: string[]
+  s: string
+  t: string
+}
+
+/** Exactly a cursor the store could have written, or `null`: the store casts each part, and refuses anything else. */
+function storeJobCursor(value: unknown): StoreJobCursor | null {
+  if (!value || typeof value !== "object") return null
+  const { i, k, s, t } = value as Record<string, unknown>
+
+  if (!isUuid(i) || typeof t !== "string" || t.length > 400 || !MARKETPLACE_JOB_SORTS.some((known) => known === s)) return null
+  if (!Array.isArray(k) || k.length !== 5) return null
+  if (!k.every((part, index) => typeof part === "string" && (index === 0 || index === 3 ? part === "0" || part === "1" : STORE_NUMBER.test(part)))) return null
+
+  return { i, k: [...(k as string[])], s: s as string, t }
+}
+
+/** Where a job page ended: the store's cursor of its last row (`c`) and how many jobs came before the next page (`n`). */
+interface JobPageKey {
+  c: StoreJobCursor
+  n: number
+}
+
+function readJobPageKey(value: unknown, sort: string): JobPageKey | null {
+  if (!value || typeof value !== "object") return null
+  const { c, n } = value as Record<string, unknown>
+  const cursor = storeJobCursor(c)
+  return cursor && cursor.s === sort && isCount(n) ? { c: cursor, n } : null
+}
+
+/** What a `list_marketplace_jobs_page` row carries beside the job: the whole search's count and the row's cursor. */
+function jobPageFacts(row: unknown): { cursor: StoreJobCursor; matching: number } {
+  const { page_cursor: cursor, total_count: matching } = (row && typeof row === "object" ? row : {}) as Record<string, unknown>
+  const position = storeJobCursor(cursor)
+
+  if (!position || !isCount(matching)) {
+    // A drift between the SQL and this adapter. The detail stays out of the message shown to people.
+    throw new MarketplaceStoreError(undefined, "22000")
+  }
+
+  return { cursor: position, matching }
+}
+
+/** Where an inquiry page ended: the last row's order time as the store wrote it, its id, and the rows before the next page. */
+interface InterestPageKey {
+  at: string
+  id: string
+  n: number
+}
+
+function readInterestPageKey(value: unknown): InterestPageKey | null {
+  if (!value || typeof value !== "object") return null
+  const { at, id, n } = value as Record<string, unknown>
+  return isStoreInstant(at) && isUuid(id) && isCount(n) ? { at, id, n } : null
+}
+
+const INTEREST_QUEUES: Record<MarketplaceInterestSide, readonly string[]> = {
+  hauler: ["active", "replied", "closed"],
+  landing: ["new", "responded", "closed"]
+}
+
+/** `count_marketplace_interests` rows → how many inquiries the side has: its three tabs, each exactly once. */
+function interestTotal(rows: readonly unknown[], side: MarketplaceInterestSide): number {
+  const queues = INTEREST_QUEUES[side]
+  const totals = new Map<string, number>()
+
+  for (const row of rows) {
+    const { queue, total } = (row && typeof row === "object" ? row : {}) as Record<string, unknown>
+
+    if (typeof queue !== "string" || !queues.includes(queue) || totals.has(queue) || !isCount(total)) {
+      throw new MarketplaceStoreError(undefined, "22000")
+    }
+
+    totals.set(queue, total)
+  }
+
+  if (totals.size !== queues.length) {
+    throw new MarketplaceStoreError(undefined, "22000")
+  }
+
+  return [...totals.values()].reduce((sum, total) => sum + total, 0)
+}
+
 export function createNormalizedMarketplaceV2({ db, features, now = () => new Date(), principal }: NormalizedMarketplaceDependencies): MarketplaceV2Port {
   async function asViewer<T>(viewer: MarketplaceV2Viewer, work: (calls: MarketplaceCalls) => Promise<T>, options: { readOnly: boolean }): Promise<T> {
     if (!viewer || !isUuid(viewer.organizationId) || typeof viewer.userId !== "string" || !viewer.userId) {
@@ -291,21 +490,54 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
   }
 
   /**
-   * Public discovery in one anonymous read. `exact` is false when the function filled its row limit: more jobs may
-   * match than it returned, so a count of these is a floor, never the total (#280).
+   * The day-14 rule on what the store returned (see `lifecycleOf`): a job waiting for its poster's confirmation is left
+   * out, and the rest take new interest only when the rule says so. Stage 31 already leaves such a job out of both job
+   * lists, so this drops nothing unless the store is a version or a moment behind.
    */
-  async function discover(filters: MarketplaceJobFilters): Promise<{ jobs: MarketplaceJobDetailView[]; exact: boolean }> {
-    const args = jobFilterArguments(filters)
+  function onFindWork(rows: readonly unknown[]): MarketplaceJobDetailView[] {
+    const at = now()
+    return rows.map(jobViewFromRow).filter((job) => waitingForConfirmation(job, at) === null).map((job) => withNewInterestRule(job, at))
+  }
 
-    if (!args) {
-      return { exact: true, jobs: [] }
+  const jobFingerprint = (search: JobSearchArguments) =>
+    keysetFingerprint({ ...search, list: "jobs", p_org_id: search.p_org_id ? search.p_org_id.toLowerCase() : null })
+
+  /**
+   * One page of public discovery in one anonymous read (#280, #362): the store applies every filter and the sort,
+   * counts the whole search and resumes after the cursor. Each row already has the job's public detail fields, so
+   * there is never one read per job. Only when nothing is left after a cursor is the search read once more, for its
+   * count alone.
+   */
+  async function jobPage(filters: MarketplaceJobFilters, page: { after?: string | null; limit?: number } | undefined): Promise<MarketplacePage<MarketplaceJobDetailView>> {
+    const search = jobSearchArguments(filters)
+    const after = page?.after ?? null
+
+    if (!search) {
+      return { items: [], nextCursor: null, restarted: after !== null, start: 0, total: { count: 0, exact: true } }
     }
 
-    const rows = await db.asAnon((calls) => calls.call("list_marketplace_jobs", args))
-    const at = now()
-    // The day-14 rule first, so "accepting only" and the count both see it.
-    const listed = rows.map(jobViewFromRow).filter((job) => waitingForConfirmation(job, at) === null).map((job) => withNewInterestRule(job, at))
-    return { exact: rows.length < args.p_limit, jobs: refineDiscovery(listed, filters) }
+    const limit = keysetLimit(page?.limit)
+    const fingerprint = jobFingerprint(search)
+    const key = after ? readPageCursor(after, fingerprint, (value) => readJobPageKey(value, search.p_sort)) : null
+    const { counted, rows } = await db.asAnon(async (calls) => {
+      const rows = await calls.call("list_marketplace_jobs_page", { ...search, p_after: key ? key.c : null, p_limit: limit + 1 })
+      const counted = rows.length > 0 || !key ? rows : await calls.call("list_marketplace_jobs_page", { ...search, p_after: null, p_limit: 1 })
+      return { counted, rows }
+    })
+    const matching = counted.length > 0 ? jobPageFacts(counted[0]).matching : 0
+    const shown = rows.slice(0, limit)
+    const items = onFindWork(shown)
+    // Jobs the day-14 rule left out here come off the count, which is then a floor: other pages may hold more of them.
+    const leftOut = shown.length - items.length
+    const start = Math.min(key ? key.n : 0, matching)
+
+    return {
+      items,
+      nextCursor: rows.length > limit ? encodePageCursor(fingerprint, { c: jobPageFacts(shown.at(-1)).cursor, n: start + shown.length } satisfies JobPageKey) : null,
+      restarted: after !== null && key === null,
+      start,
+      total: { count: Math.max(matching - leftOut, 0), exact: leftOut === 0 }
+    }
   }
 
   return {
@@ -348,7 +580,8 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
         const waiting = jobRow ? waitingForConfirmation(jobViewFromRow(jobRow), now()) : null
 
         if (waiting) {
-          const standing = await calls.call("list_marketplace_interests", { p_job_id: args.p_job_id, p_org_id: viewer.organizationId, p_side: "hauler" })
+          // The statuses of the business's inquiries on this job; their messages are not read.
+          const standing = await calls.call("list_marketplace_interests", { p_job_id: args.p_job_id, p_org_id: viewer.organizationId, p_side: "hauler", p_with_replies: false })
 
           if (standing.map(interestViewFromRow).every((interest) => interest.status === "withdrawn")) {
             throw new MarketplaceRefusalError(waiting.label, "23514")
@@ -357,10 +590,11 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
 
         const [submitted] = await calls.call("submit_expression_of_interest", args)
         const id = submittedInterestId(submitted)
-        const rows = await calls.call("list_marketplace_interests", { p_job_id: args.p_job_id, p_org_id: viewer.organizationId, p_side: "hauler" })
-        const view = rows.map(interestViewFromRow).find((interest) => interest.id === id)
+        // The one inquiry, by id (stage 33). It must be the one just stored, for the viewer's own hauling business.
+        const [stored] = await calls.call("get_marketplace_interest", { p_interest_id: id })
+        const view = stored === undefined ? null : interestViewFromRow(stored)
 
-        if (!view) {
+        if (!view || !sameId(view.id, id) || !sameId(view.haulerOrganization.id, viewer.organizationId)) {
           throw new MarketplaceStoreError()
         }
 
@@ -420,8 +654,9 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
         return null
       }
 
+      // A business has at most one inquiry on a job, so one row is asked for.
       const rows = await asViewer(viewer, (calls) =>
-        calls.call("list_marketplace_interests", { p_job_id: jobId, p_org_id: viewer.organizationId, p_side: "hauler" }), read)
+        calls.call("list_marketplace_interests", { p_job_id: jobId, p_limit: 1, p_org_id: viewer.organizationId, p_side: "hauler" }), read)
 
       return rows.length > 0 ? interestViewFromRow(rows[0]) : null
     },
@@ -432,15 +667,20 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
       return rows.map(interestViewFromRow)
     },
 
+    // The unpaged list (similar jobs, a business's public jobs): the first 200 of the search in the store's order, in
+    // one anonymous read. Find Work itself reads pages (`listJobPage`).
     async listJobs(filters) {
-      return (await discover(filters ?? {})).jobs
+      const search = jobSearchArguments(filters ?? {})
+
+      if (!search) {
+        return []
+      }
+
+      return onFindWork(await db.asAnon((calls) => calls.call("list_marketplace_jobs_page", { ...search, p_after: null, p_limit: JOB_LIST_LIMIT })))
     },
 
-    // #280: one anonymous read per page, never one per job: `list_marketplace_jobs` already returns each job's public
-    // detail fields. Until stage 30 (#294) gives it a cursor, the page is cut from that one read.
     async listJobPage(filters, page) {
-      const { exact, jobs } = await discover(filters ?? {})
-      return marketplaceJobPage(jobs, filters ?? {}, page, { exact })
+      return jobPage(filters ?? {}, page)
     },
 
     async listLandingInterests(viewer) {
@@ -449,17 +689,52 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
       return rows.map(interestViewFromRow)
     },
 
-    // #280 (audit K1): one read as the session's person, with the function's own side checks (interest.reply for the
-    // hauler, inquiry.respond for the landing). It has no limit yet, so every inquiry is read and the count is exact;
-    // stage 30 (#294) moves the limit and the cursor into SQL.
+    // #280 (audit K1), #362: one page and the side's count in one transaction as the session's person, with the
+    // functions' own side checks (interest.reply for the hauler, inquiry.respond for the landing) and landing scope.
+    // The store orders, limits and resumes (the hauler's inquiries by last activity, the landing's by arrival, newest
+    // first, then by id); the count is the sum of the side's three tabs.
     async listInterestPage(viewer, side, page) {
       if (side !== "hauler" && side !== "landing") {
         throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "22023")
       }
 
-      const rows = await asViewer(viewer, (calls) =>
-        calls.call("list_marketplace_interests", { p_org_id: viewer.organizationId, p_side: side }), read)
-      return marketplaceInterestPage(rows.map(interestViewFromRow), { organizationId: viewer.organizationId, side }, page, { exact: true })
+      const limit = keysetLimit(page?.limit)
+      const after = page?.after ?? null
+
+      return asViewer(viewer, async (calls) => {
+        const fingerprint = keysetFingerprint({ list: "interests", organizationId: viewer.organizationId.toLowerCase(), side })
+        const key = after ? readPageCursor(after, fingerprint, readInterestPageKey) : null
+        const rows = await calls.call("list_marketplace_interests", {
+          p_after_at: key ? key.at : null,
+          p_after_id: key ? key.id : null,
+          p_limit: limit + 1,
+          p_org_id: viewer.organizationId,
+          p_side: side
+        })
+        const matching = interestTotal(await calls.call("count_marketplace_interests", { p_org_id: viewer.organizationId, p_side: side }), side)
+        const shown = rows.slice(0, limit).map((row) => ({ row, view: interestViewFromRow(row) }))
+        // Whatever the store returned, no page and no count includes an inquiry that is not the business's own on this side.
+        const items = shown.map(({ view }) => view).filter((view) => sameId((side === "hauler" ? view.haulerOrganization : view.landingOrganization).id, viewer.organizationId))
+        const leftOut = shown.length - items.length
+        const start = Math.min(key ? key.n : 0, matching)
+        const last = shown.at(-1)
+        let nextCursor: string | null = null
+
+        if (rows.length > limit && last) {
+          // The order time exactly as the store wrote it (microseconds), so the next page resumes on the same instant.
+          const written = (last.row as Record<string, unknown>)[side === "hauler" ? "updated_at" : "created_at"]
+          const at = isStoreInstant(written) ? written : side === "hauler" ? last.view.updatedAt : last.view.createdAt
+          nextCursor = encodePageCursor(fingerprint, { at, id: last.view.id, n: start + shown.length } satisfies InterestPageKey)
+        }
+
+        return {
+          items,
+          nextCursor,
+          restarted: after !== null && key === null,
+          start,
+          total: { count: Math.max(matching - leftOut, 0), exact: leftOut === 0 }
+        }
+      }, read)
     },
 
     async postHaulerReply(viewer, input) {
@@ -695,13 +970,17 @@ export function createNormalizedMarketplaceV2({ db, features, now = () => new Da
         // One transaction: the reason is posted and the inquiry withdrawn together, or neither. The status is read
         // first so a declined inquiry gets withdraw_interest's own refusal before any reason is written, and an
         // already withdrawn one is left as it is without posting the reason again.
-        const [current] = (await calls.call("list_marketplace_interests", {
-          p_job_id: parties.jobId,
+        // This one inquiry on the hauler's side, with the list's own check of that side (interest.reply), and without
+        // its messages: only the status is needed.
+        const [stored] = await calls.call("list_marketplace_interests", {
+          p_interest_id: target,
           p_org_id: viewer.organizationId,
-          p_side: "hauler"
-        })).map(interestViewFromRow).filter((interest) => interest.id === target)
+          p_side: "hauler",
+          p_with_replies: false
+        })
+        const current = stored === undefined ? null : interestViewFromRow(stored)
 
-        if (!current) {
+        if (!current || !sameId(current.id, target) || !sameId(current.haulerOrganization.id, viewer.organizationId)) {
           throw new MarketplaceRefusalError(INQUIRY_NOT_FOUND, "42501")
         }
 

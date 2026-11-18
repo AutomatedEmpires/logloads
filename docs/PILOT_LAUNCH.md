@@ -1,8 +1,8 @@
 # LogLoads — Marketplace Pilot Plan
 
-> **Status:** PLAN, revised 2026-11-01 for the adopted load-board model. **No pilot described here is
-> operating.** Nothing in this document activates a membership, a founding offer, a boost, targeted
-> invitations, email, billing, or a public launch.
+> **Status:** PLAN, revised 2026-11-01 for the adopted load-board model. Stage 1 was revised 2026-11-18 for the
+> per-basin pilot and the staff rules (#340). **No pilot described here is operating.** Nothing in this document
+> activates a membership, a founding offer, a boost, targeted invitations, email, billing, or a public launch.
 >
 > **Authority:** [`DECISIONS.md`](./DECISIONS.md) (2026-11-01),
 > [`product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md`](./product/LOGLOADS_PRODUCT_BLUEPRINT_v1.0.md) §8, §13–§15,
@@ -75,17 +75,64 @@ Every item must be true before any real business is invited. None is true today.
 7. The V2 events in §5 are instrumented with the privacy rules in [`OBSERVABILITY.md`](./OBSERVABILITY.md).
 8. Abuse reporting and moderation for postings and messages.
 9. Published pilot terms and privacy notice. Transportation-law review of the actual
-   advertising/introduction workflow (Blueprint §15).
+   advertising/introduction workflow (Blueprint §15). The agent-written
+   [`legal/2026-11-legal-review.md`](./legal/2026-11-legal-review.md) lists the changes due before the pilot
+   opens (its gate A) and the questions for counsel. It is not counsel's review.
 
 ### Stage 1 — Founder-assisted cohort (free)
 
-- A small cluster of timber regions with enough landings and hauling businesses for recurring interactions.
-- No charge is collected, because commercial activation (Stage 3) is not approved. **Open founder decision:**
-  whether early landing participants are told they will move to the founding offer when billing activates.
-  Do not promise free or discounted terms until that decision exists.
-- The founder onboards each landing personally and confirms its postings are genuine.
-- Haulers are recruited by invitation or organic sign-up. Outreach is lawful and consented — no bulk
-  purchased lists.
+The pilot runs in many regions at once and opens **basin by basin** (`DECISIONS.md`, 2026-11-10 and COM-1).
+
+**Staff rules.** Everyone acting for LogLoads follows
+[`docs/ops/pilot-staff-rules.md`](./ops/pilot-staff-rules.md). It is a draft for counsel and is followed as
+written until counsel changes it. In short:
+
+- Staff **may** teach a user to use the product, and may confirm that a landing's postings are genuine.
+- Staff **never** contact a hauler about a specific landing's job, pick or suggest haulers for a job, pass
+  messages or contact details between the two sides, suggest or negotiate a rate, or speak for either side.
+  Doing any of these by hand is arranging transportation, which is what a freight broker does (legal review
+  §3.2 and §3.3 item 9, risk R1).
+- Staff read users' messages only for a report, a fraud or abuse check, or a legal duty, and every read is
+  logged. Staff never forward message content, never promise a particular removal or a time to act, and send
+  any law-enforcement request to counsel before releasing anything (legal review §6.5 and §9.4).
+
+There is no manual matching in this pilot (lead decision, 2026-11-11, on
+[#120](https://github.com/AutomatedEmpires/logloads/issues/120#issuecomment-6809385516)).
+
+**Opening a basin.**
+
+1. A basin is a named area in one state, with a boundary or a county list. Its status is `closed`, `pilot` or
+   `open`, and a new basin starts `closed`. The list of basins and their boundaries is a lead decision (COM-1).
+2. Only LogLoads platform staff record a basin or change its status. Each change needs a written reason of 5
+   to 500 characters, and the change and its reason are audited
+   (`architecture/normalized-v2/38_v2_basins.sql`).
+3. Before a basin leaves `closed`, staff read its readiness counts: hauling businesses with availability
+   confirmed in the last 14 days, active landings of identity-reviewed businesses, and active jobs. A basin
+   defined only by a county list counts no haulers, so give it a boundary first. The starting gate is at least
+   20 such hauling businesses and at least 4 independent landing organizations ready to post (COM-1). The
+   readiness count is per landing, so check the 4 organizations by hand. The legal review (§1) also says each basin's state needs its own review
+   before that basin opens; the lead decides when that is met.
+4. Use `pilot` for a basin in this stage. `pilot` and `open` both put the basin's jobs on the board. What moves
+   a basin from `pilot` to `open` is not decided.
+5. Set a basin back to `closed`, with a reason, when it should stop taking new interest. Never change a
+   basin's status to help one landing fill one job.
+
+What users see: accounts, profiles, landings and drafts work everywhere. While no basin is recorded, the gate
+is off and discovery is unchanged. Once any basin exists, Find Work, search and new interest accept only jobs
+in a `pilot` or `open` basin, and a closed or unmatched area shows the notice "not in your area yet" (#324).
+The basin gate lives in the normalized schema, which is not an active store yet (Stage 0, item 4).
+
+**Running the cohort.**
+
+- Each open basin needs enough landings and hauling businesses for recurring interactions.
+- No charge is collected, because commercial activation (Stage 3) is not approved. Early landings may be told
+  what COM-2 in `DECISIONS.md` allows: the pilot is free and takes no card, the three plan prices are not for
+  sale yet, and nothing is charged unless they later choose a plan at a checkout that shows the terms. Do not
+  promise the founding offer, a discount, a free period after billing opens or a price lock.
+- The founder onboards each landing personally and confirms its postings are genuine. LogLoads never calls a
+  job "verified".
+- Haulers are recruited to join LogLoads, by invitation or organic sign-up, and never for a particular
+  landing's job. Outreach is lawful and consented — no bulk purchased lists.
 - Weekly review of the §5 metrics and of qualitative feedback on posting clarity, availability freshness, and
   usefulness.
 

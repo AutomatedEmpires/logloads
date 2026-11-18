@@ -22,18 +22,18 @@ import { MarketplaceRefusalError, MarketplaceStoreError } from "../port"
  * `marketplaceFoundingOfferSummary` in packages/services/src/v2/billing/.
  *
  * `foundingOffer` reads `promotion_redemptions` and `promotions` (01, 16) through the `founding_offer` table statement
- * (`MARKETPLACE_QUERIES`), because no stage 01–26 function returns it. Row-level security shows a redemption to the
- * business's owners only (`promotion_redemptions_read`), so anyone else is refused instead of being told there is no
- * offer. It shows a promotion only while it is open (`promotions_read`), so a closed promotion's terms come back as
- * `terms: null`.
+ * (`MARKETPLACE_QUERIES`), because no schema function returns it. Since stage 31 (31-F; decision of 2026-11-11 on
+ * #294) row-level security shows a redemption to every active member of the business (`promotion_redemptions_read`):
+ * they all hold `plan.view`, and the offer is part of what the plan costs. So every member reads it here (#362), as
+ * they read the plan; a person who is not a member is refused instead of being told there is no offer. The same stage
+ * shows a member the promotion their business redeemed after it closes (`promotions_read`); terms the store does not
+ * return still read as `terms: null`.
  *
  * Port v3 (#244) entry module, wired into `normalized-adapter.ts`. Every method works, so the group is supported.
  */
 
 /** `get_viewer_marketplace_access` found no active membership of the active business. */
 const NOT_AVAILABLE = "This business is not available to your account."
-/** Only owners can read a redemption (`promotion_redemptions_read`); everyone else is told so, never "no offer". */
-export const FOUNDING_OFFER_OWNER_ONLY = "Only the business's owner can see its founding offer."
 
 /**
  * The `get_org_entitlement_state` columns the landing allowance does not read. A drift between the SQL and this
@@ -120,9 +120,8 @@ export const normalizedBilling: NormalizedFeature<"billing"> = {
             throw new MarketplaceRefusalError(NOT_AVAILABLE, "42501")
           }
 
-          if (viewerAccessRow(access).role !== "owner") {
-            throw new MarketplaceRefusalError(FOUNDING_OFFER_OWNER_ONLY, "42501")
-          }
+          // Any active member may read it (31-F). The row is still parsed, so one that drifted from the SQL fails loudly.
+          viewerAccessRow(access)
 
           const [row] = await calls.query("founding_offer", [viewer.organizationId])
 
