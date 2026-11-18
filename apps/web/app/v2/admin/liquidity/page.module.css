@@ -1,0 +1,41 @@
+/* The basin liquidity board (#326). Layout only: header, section, notices and states are design-system components.
+   Semantic --ll-* tokens only; measures the AppShell's "ll-app" container. The table follows the hauler capacity
+   board (UX 02 §6.4 "Tables"): a table from bp-lg, stacked rows with their labels below. */
+
+.board { display: grid; gap: var(--ll-space-4); min-width: 0; }
+
+.table { width: 100%; border-collapse: collapse; font-size: var(--ll-text-md); color: var(--ll-color-text); }
+
+.caption { padding-bottom: var(--ll-space-3); text-align: left; font-size: var(--ll-text-sm); line-height: var(--ll-leading-normal); color: var(--ll-color-text-muted); }
+
+.table th, .table td { padding: var(--ll-space-3) var(--ll-space-4) var(--ll-space-3) 0; text-align: left; vertical-align: top; border-top: 1px solid var(--ll-color-border); }
+
+.table th:last-child, .table td:last-child { padding-right: 0; }
+
+.table thead th { font-size: var(--ll-text-xs); font-weight: var(--ll-weight-semibold); color: var(--ll-color-text-muted); border-top: 0; vertical-align: bottom; }
+
+.table td { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.table td[data-state="none"], .table td[data-state="unmeasured"] { color: var(--ll-color-text-muted); }
+
+.name { display: block; font-weight: var(--ll-weight-semibold); color: var(--ll-color-text); overflow-wrap: anywhere; }
+
+.detail { display: block; font-size: var(--ll-text-sm); font-weight: var(--ll-weight-regular); color: var(--ll-color-text-muted); }
+
+/* Whether a target is met, in words. The colour only repeats what the words say. */
+.mark { display: block; font-size: var(--ll-text-sm); font-weight: var(--ll-weight-semibold); }
+
+.table td[data-target="met"] .mark { color: var(--ll-color-status-positive); }
+
+.table td[data-target="missed"] .mark { color: var(--ll-color-status-critical); }
+
+.targets { margin: 0; max-width: 75ch; font-size: var(--ll-text-sm); line-height: var(--ll-leading-normal); color: var(--ll-color-text-muted); }
+
+@container ll-app (max-width: 959px) {
+  .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .table, .table caption, .table tbody, .table tr, .table th, .table td { display: block; width: 100%; }
+  .table tr { padding: var(--ll-space-3) 0; border-top: 1px solid var(--ll-color-border); }
+  .table th, .table td { padding: var(--ll-space-1) 0; border-top: 0; }
+  .table td::before { content: attr(data-label) ": "; color: var(--ll-color-text-muted); font-size: var(--ll-text-sm); font-weight: var(--ll-weight-regular); }
+  .mark { display: inline; margin-left: var(--ll-space-2); }
+}
