@@ -73,7 +73,7 @@ export function JobSummary({ job, now, fit, action, className }: JobSummaryProps
       <div className={styles.head}>
         <p className={styles.poster}>
           <span>{job.posterName}</span>
-          <VerificationIndicator now={now} verification={job.posterVerification} />
+          <VerificationIndicator className={styles.posterMark} now={now} verification={job.posterVerification} />
         </p>
         {job.sponsored ? <SponsoredIndicator /> : null}
         <h2 className={styles.title} id={jobTitleId(job.id)}>{job.title}</h2>
