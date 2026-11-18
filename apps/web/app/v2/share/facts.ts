@@ -29,6 +29,11 @@ const NAMED_CHANNELS: ReadonlySet<string> = new Set(["sms", "facebook", "copy_li
 const TITLE_FALLBACK = "Timber haul"
 const POSTER_FALLBACK = "the poster"
 
+/** The same words as Find Work's closed-basin state (#324). The share test locks these to that state. */
+export const SHARE_CLOSED_TITLE = "Not in your area yet"
+export const SHARE_CLOSED_BODY =
+  "LogLoads opens each area when landings and haulers there are both ready. This area is not open yet."
+
 /** Drops contact details and quality claims from text a poster wrote. Generated facts are not passed through it. */
 export function scrubPublicText(value: string): string {
   return value.replace(EMAIL, " ").replace(PHONE, " ").replace(QUALITY_CLAIM, " ").replace(/\s+/g, " ").trim()

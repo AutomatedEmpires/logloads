@@ -385,8 +385,9 @@ const footerColumns: Array<{ heading: string; links: Array<[string, string]> }> 
     links: [
       ["Terms", "/terms"],
       ["Privacy", "/privacy"],
-      ["Marketplace Rules", "/marketplace-rules"],
-      ["Acceptable Use", "/acceptable-use"]
+      ["Posting Rules", "/posting-rules"],
+      ["Acceptable Use", "/acceptable-use"],
+      ["SMS Terms", "/sms-terms"]
     ]
   }
 ]
