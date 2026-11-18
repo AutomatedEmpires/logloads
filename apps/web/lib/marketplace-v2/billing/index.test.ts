@@ -8,11 +8,12 @@ import type { NormalizedFeatureContext } from "../normalized-adapter"
 import type { MarketplaceCalls } from "../normalized-db"
 import { MARKETPLACE_QUERIES, marketplaceQueryStatement } from "../normalized-queries"
 import { MarketplaceRefusalError, MarketplaceStoreError, type MarketplaceV2Viewer } from "../port"
-import { FOUNDING_OFFER_OWNER_ONLY, foundingOfferFromRow, normalizedBilling } from "./index"
+import { foundingOfferFromRow, normalizedBilling } from "./index"
 
 /**
  * The founding-offer read (#248, #306): one `promotion_redemptions` row of the founding program, left-joined to its
  * promotion, as the `founding_offer` statement returns it (`to_jsonb`), and the method that reads it as the viewer.
+ * Since stage 31 (31-F, decision of 2026-11-11 on #294) every active member of the business may read it (#362).
  * The plan read (`planAllowanceFromRow`) is covered in normalized-adapter-port-v3.test.ts.
  */
 
@@ -135,8 +136,8 @@ describe("founding offer read model (billing #248)", () => {
 })
 
 describe("foundingOffer through the founding_offer statement (billing #306)", () => {
-  it("reads the active business's offer as its owner, in one read-only transaction", async () => {
-    const { port, recorded } = billing([accessRow("owner")], [redemptionRow()])
+  it.each(["owner", "manager", "staff", "driver"])("reads the active business's offer as its %s, in one read-only transaction (31-F, #362)", async (role) => {
+    const { port, recorded } = billing([accessRow(role)], [redemptionRow()])
 
     await expect(port.foundingOffer(viewer)).resolves.toEqual({
       cyclesApplied: 2,
@@ -151,23 +152,16 @@ describe("foundingOffer through the founding_offer statement (billing #306)", ()
     ])
   })
 
-  it("is null for an owner whose business has no founding offer", async () => {
-    await expect(billing([accessRow("owner")], []).port.foundingOffer(viewer)).resolves.toBeNull()
+  it.each(["owner", "manager", "staff", "driver"])("is null for a %s whose business has no founding offer", async (role) => {
+    await expect(billing([accessRow(role)], []).port.foundingOffer(viewer)).resolves.toBeNull()
   })
 
-  it.each(["manager", "staff", "driver"])("refuses a %s instead of saying there is no offer, and never reads it", async (role) => {
-    const { port, recorded } = billing([accessRow(role)], [redemptionRow()])
+  it("refuses a person who is not a member of the active business instead of saying there is no offer, and never reads it", async () => {
+    const { port, recorded } = billing([], [redemptionRow()])
     const outcome = await port.foundingOffer(viewer).catch((error: unknown) => error)
 
     expect(outcome).toBeInstanceOf(MarketplaceRefusalError)
-    expect(outcome).toMatchObject({ code: "42501", message: FOUNDING_OFFER_OWNER_ONLY })
-    expect(recorded.some((entry) => entry.kind === "query")).toBe(false)
-  })
-
-  it("refuses a person who is not a member of the active business, and never reads it", async () => {
-    const { port, recorded } = billing([], [redemptionRow()])
-
-    await expect(port.foundingOffer(viewer)).rejects.toMatchObject({ code: "42501" })
+    expect(outcome).toMatchObject({ code: "42501" })
     expect(recorded.some((entry) => entry.kind === "query")).toBe(false)
   })
 
@@ -176,14 +170,16 @@ describe("foundingOffer through the founding_offer statement (billing #306)", ()
       .rejects.toBeInstanceOf(MarketplaceStoreError)
   })
 
-  it("is a catalogued owner-only statement of the founding program, bound to the active business", () => {
+  it("is a catalogued statement of the founding program, bound to the active business and its active members", () => {
     const { text } = MARKETPLACE_QUERIES.founding_offer
 
     expect(marketplaceQueryStatement("founding_offer", [ORG])).toEqual({ text, values: [ORG] })
     expect(() => marketplaceQueryStatement("founding_offer", ["not-a-uuid"])).toThrow(TypeError)
     expect(text).toContain(`pr.program = '${MARKETPLACE_FOUNDING_OFFER_PROGRAM}'`)
     expect(text).toContain("pr.org_id = $1::text::uuid")
-    expect(text).toContain("marketplace.has_org_role(pr.org_id, array['owner']::text[])")
+    // The explicit membership check keeps a billing admin, who may read every redemption, to a business they belong to.
+    expect(text).toContain("marketplace.has_org_role(pr.org_id, array['owner', 'manager', 'staff', 'driver']::text[])")
+    expect(text).not.toContain("array['owner']::text[]")
     // Only columns the M2 grant (16) lets `authenticated` read; never who granted it.
     expect(text).not.toMatch(/granted_by|provider_coupon_ref/)
   })

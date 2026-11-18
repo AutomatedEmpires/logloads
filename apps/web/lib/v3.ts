@@ -6,16 +6,13 @@ import { readState, services } from "./services"
 import { requireCockpitActor, type Cockpit, type SessionActor } from "./session"
 import { loadSlug } from "./v3-shared"
 
-export type {
-  LegalPageContent,
-  PublicStoryPage
-} from "./v3-shared"
+export type { PublicStoryPage } from "./v3-shared"
+// The legal pages' text moved to ./legal (#329). Import it from "@/lib/legal".
 export {
   fitLabel,
   fitTone,
   formatDateTime,
   formatHuman,
-  legalPages,
   loadProductLabel,
   loadSlug,
   pricingPlans,
