@@ -65,8 +65,8 @@ const REVIEWED_FUNCTIONS = {
     "submit_expression_of_interest",
     "withdraw_interest"
   ],
-  /** Platform-admin calls that are not named admin_ (38, #324). Writers take a reason; the two reads do not. */
-  basin: ["basin_readiness", "create_basin", "list_basins", "set_basin_status"],
+  /** Platform-admin calls that are not named admin_ (38, #324). Writers take a reason; the reads do not. 42 (#326) adds the liquidity board, a read. */
+  basin: ["basin_liquidity_board", "basin_readiness", "create_basin", "list_basins", "set_basin_status"],
   staff: [
     "admin_clear_hauler_reveal_pause",
     "admin_grant_founding_hauler_badge",

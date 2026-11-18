@@ -1,10 +1,40 @@
 # FG07 Flows: flows A to E as prototypes
 
-**Status:** TARGET. Drawn for the lead's audit and then founder review on 2026-11-10 (#300, strategy item P0-9), then revised on 2026-11-12 for design audit 3 and the lead's page 07 decisions (#334), and again on 2026-11-12 for LL-D12 (#352). These screens are not approved. Approval is a founder comment on the design issue that begins with `approved` (AE-Control `policy/designops.md`).
+**Status:** TARGET. Drawn for the lead's audit and then founder review on 2026-11-10 (#300, strategy item P0-9), then revised on 2026-11-12 for design audit 3 and the lead's page 07 decisions (#334), again on 2026-11-12 for LL-D12 (#352), and on 2026-11-18 for the legal review message safety and consent changes (#336, see [Legal review changes (#336)](#legal-review-changes-336)). These screens are not approved. Approval is a founder comment on the design issue that begins with `approved` (AE-Control `policy/designops.md`).
 **Figma page:** [07 Flows](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=106-2) in the LogLoads file.
 **Sources:** the strategy and field design bar ([#235 comment](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6784066522)), the founder decisions of 2026-11-10 ([#235 comment](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6784468462)), quality bar v1 ([#235 comment](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6783016152)), design audit 2 (#285), the lead's page 07 decisions on #334, the reconfirm interval on #114, the signed-link rules on #292, the SMS rules on #291 and #293, `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`, and the draft copy deck from #274. No UI code changed.
 
 Link base: `https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=` plus the node id with `-` in place of `:`.
+
+## Legal review changes (#336)
+
+These come from legal review P0 items 2, 8, 11 and 15, §6.5, §9.3 and §10 Q2 and Q6 (`docs/legal/2026-11-legal-review.md`, PR #317).
+
+**Message safety (flow C)**
+
+| What | Frames |
+|---|---|
+| **Report and block on every thread.** In the top bar of each Granite Creek Hauling thread. At 390 they are two icon buttons (Flag and Prohibit from 00 System), with the accessible names "Report Granite Creek Hauling" and "Block Granite Creek Hauling". At 768 and 1440 they are labelled buttons. | C3 `124:390`, C3 768 `124:439`, C3 1440 `313:1254`, C3 Dark `315:1751`, C3b `124:463`, C4 `124:509`, C5 `124:541`, C7 `124:577`, C-offline `124:609`, C-error `124:641` |
+| **Links in a first message are not clickable.** The hauler's first note now holds a link ("Photos of the truck: example.com/granite-creek-trucks"). It is shown as plain text, not link-styled, and under it the line "Links in a first message are not clickable." with the 00 System `x.link-off` icon. | The same thread frames |
+| **The composer's first-use line.** "LogLoads staff can read messages when a report or a safety check requires it." This is a 00 System Note above the reply box, shown the first time a person opens the composer (§6.5). | C3b 390 `124:463`, new C3b 768 [368:2106](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=368-2106) and C3b 1440 [368:2196](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=368-2196) |
+| **C8 Report a business.** A sheet at 390 and a centred dialog at 768 and 1440, over the thread. Five reasons, one choice each: "This is not really that company" (§9.3 item 9), "Asking for money or private details", "Spam or selling something", "Rude, threatening or harassing" and "Something else". Then an optional "What happened" box and "Also block Granite Creek Hauling". The body says "LogLoads staff will read this thread to check it. We tell you what we decide, but not what Granite Creek Hauling tells us." (§6.5 item 3). | 390 [369:2202](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=369-2202), 768 [369:2891](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=369-2891), 1440 [369:3020](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=369-3020), Dark [369:3186](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=369-3186) |
+| C8-error: no reason chosen; what was typed stays | [369:2349](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=369-2349) |
+| C8-offline: the report waits and sends once | [369:2492](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=369-2492) |
+| C9 Report sent: the reporter learns the outcome, not the other side's words | [369:2532](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=369-2532) |
+| C10 Block a business: one confirm, with a danger "Block" button | [369:2655](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=369-2655) |
+| C11 Blocked: "You blocked Granite Creek Hauling", with Unblock; Report stays | [369:2695](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=369-2695) |
+
+**Consent and publish (flows A and B)**
+
+- **Unbundled sign-up.** A3 (email, `111:205`) and A3-error (`315:1388`) said "By going on, you agree to the Terms and the Privacy Policy." in the bottom bar. A3b (phone, `111:179`) added "Message and data rates may apply." That bundled the Terms with SMS and relied on "by going on" (§10 Q2, §4.4 item 1). The summary is now off on A3 and A3-error.
+- **A3b SMS box.** On A3b the bar says "Texting you a code does not sign you up for other texts. Msg & data rates may apply." It has its own unticked box: "Text me when Oak Landing replies about this job", with the §4.4 disclosure and links to the SMS terms and the Privacy Policy. The consent words are pending legal review. The number hint no longer promises a text when Oak Landing replies.
+- **A5 Terms box.** The Terms box moved to A5 (`111:313`, now 1084 px tall): "I agree to the LogLoads Terms of Service and have read the Privacy Policy", unticked, with both documents linked. The Terms box and the SMS box are now on different steps.
+- **Tap count.** Flow A is now 8 taps and 2 typed fields, which meets the 8-tap target. The canvas labels and the flow A notes are updated.
+- **Posting Rules.** "Publishing is subject to the LogLoads Posting Rules." sits under the publish statement on B5 (`118:414`), B5 768 (`131:969`), B5 1440 (`313:1204`), B5 Dark (`315:1710`) and B-error (`118:589`), as on page 03.
+
+A3b and B-error grew, to 926 and 961 px, so the content clears the pinned bar. C3 and its Dark copy are 875 px, C4 is 891 and C7 is 851.
+
+**Check** (read-only script over the 30 new and changed frames, 2026-11-18): no text under 14 px, no control under 44 px, no disabled control, no "Preview" text, no raw fill, no text outside its frame, and no overlapping frames on the page. C3 390, A3b, C8 390 and C8 1440 were also checked by screenshot. Nothing was checked in Present mode on a phone.
 
 ## LL-D12 (#352)
 
@@ -56,7 +86,7 @@ The full audit 3 report is not on the issue. The #334 body names four majors on 
 
 ## What is on the page
 
-- 76 frames: 58 screens at 390 px (51 from #300 and 7 new states), 6 key screens at 768 px, 6 at 1440 px, 5 Dark copies at 390 px, and the share card at 1200 × 630.
+- 87 frames: 64 screens at 390 px (51 from #300, 7 states from #334 and 6 from #336), 8 key screens at 768 px, 8 at 1440 px, 6 Dark copies at 390 px, and the share card at 1200 × 630. #336 added C3b at 768 and 1440, C8 at 390, 768, 1440 and Dark, and C8-error, C8-offline, C9, C10 and C11.
 - The #300 prototype links and 8 flow starting points, plus links on the new frames: A2 → A3 (email), A-waiting → A-expired, D1b → D2, E1b → E2. The 1440 and Dark frames keep the links of the frames they copy. Press Present on the page and pick a flow.
 - One notes panel per flow with the tap count and the target.
 - The panel "Field parts: replaced by 00 System (#334, #352)" (`106:3`). No local Field part is left; the panel says what is still built from variables.
@@ -67,7 +97,7 @@ The example is one story. Oak Landing in Sweet Home, OR posts "Oak saw logs to C
 
 | Flow | Target | Drawn | Meets it |
 |---|---|---|---|
-| A. Hauler from a shared link, first time | 8 taps, under 90 s | 7 taps and 2 typed fields (email, business name) on the email path; the phone path is the same count | Yes for taps. The time is not measured. |
+| A. Hauler from a shared link, first time | 8 taps, under 90 s | 8 taps and 2 typed fields (email, business name) on the email path, including the Terms box on A5 (#336). The phone path adds the optional SMS box. | Yes for taps. The time is not measured. |
 | A. Returning hauler | 2 taps | 2 taps: open the link, Send interest | Yes |
 | B. Landing posts its first job | Under 5 minutes | About 20 taps and 3 typed fields over 3 steps, then Publish. About 2 minutes at 4 s a tap and 15 s a typed field. | Yes on paper. Not timed with a real landing. |
 | C. Landing answers an inquiry | 2 taps from the message | 2 taps to reply with a ready reply, 2 taps to decline. A typed reply is 3 taps and 1 typed field. | Yes |
@@ -85,11 +115,11 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | A0 Share card | `111:38` | Open Graph image, 1200 × 630: pay, basis, trailer, distance and "Confirmed Nov 9 by Oak Landing" |
 | A1 Text with the shared link | `111:94` | The link preview as it shows in a text. Tap 1. |
 | A2 Job page, signed out | `111:153` | Freshness, pay, basis, trailer, distance, length and trucks in the first 560 px. Tap 2: Send interest. |
-| A3 Sign up with an email | `111:205` | Taps 3 and 4: the email, then "Email me a link". The main path. |
-| A3b Sign up with a phone (secondary) | `111:179` | The phone path, same count. Consent words pending legal review. |
+| A3 Sign up with an email | `111:205` | Taps 3 and 4: the email, then "Email me a link". The main path. No Terms line here since #336; the Terms box is on A5. |
+| A3b Sign up with a phone (secondary) | `111:179` | The phone path. Its own unticked SMS box (#336). Consent words pending legal review. |
 | A4 Check your email | `111:255` | Tap 5: open the emailed link |
 | A4b Enter the code (phone path) | `111:232` | The phone path's code step |
-| A5 Confirm your trucks | `111:313` | Taps 6 and 7: business name, then Send interest. Truck, count and start day are filled in from the job. |
+| A5 Confirm your trucks | `111:313` | Taps 6 to 8: business name, the unticked Terms box (#336), then Send interest. Truck, count and start day are filled in from the job. |
 | A6 Interest sent | `111:356` | The ending: what was sent, what happens next (an email when they reply), and "Take back my interest" |
 | A7 Job page, returning hauler | `111:423` | Signed in. The bottom bar says what will be sent. 2 taps in all. |
 | A-offline | `111:488` | The saved job still shows, and the send waits for signal |
