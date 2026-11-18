@@ -390,8 +390,7 @@ export interface MarketplaceTeamPort {
   /** Limit a seated manager or staff member to some landings, or none (`MarketplaceTeamScopeInput`; `set_membership_landing_scope`). */
   setMemberLandingScope(viewer: MarketplaceV2Viewer, input: unknown): Promise<void>
   /**
-   * End a member's access at once (§4.11). Never the sole owner. No stage 01–26 function removes a membership, so this
-   * needs a schema change before any adapter supports it.
+   * End a member's access at once (§4.11, `remove_team_member`). Never the sole owner.
    */
   removeTeamMember(viewer: MarketplaceV2Viewer, membershipId: string): Promise<void>
   /** Seat invitations sent to the person's verified email (`list_my_team_invitations`). */

@@ -30,6 +30,8 @@
 #   35  changes no stored row either (it adds four functions, two restrictive policies, a column that is null on every
 #       existing key and an index, and redefines two functions); on the existing data, anon then reads directly
 #       exactly the jobs that take new interest (job_takes_new_interest).
+#   38  changes no stored row either (it adds the empty basins table and nine functions, and redefines two). With no
+#       basin recorded, anon still reads exactly the jobs that take new interest.
 # =============================================================================
 set -euo pipefail
 
@@ -310,10 +312,16 @@ expect_eq "31 changes no stored row in any marketplace table (the ledger aside)"
 expect_eq "31's new tables start empty: no signing key and no used token" "$(q "select (select count(*) from marketplace.notification_unsubscribe_keys) + (select count(*) from marketplace.notification_unsubscribe_uses);")" "0"
 expect_eq "33 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_33" "$BEFORE_33"
 expect_eq "35 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_35" "$AFTER_33"
+# R4 above writes a provider event after AFTER_35, so the basin comparison starts from the rows that exist now.
+BEFORE_38="$(all_data schema_migrations)"
+apply1 "$SCRIPT_DIR/38_v2_basins.sql"
+AFTER_38="$(all_data schema_migrations,basins)"
+expect_eq "38 changes no stored row in any marketplace table (the ledger and the new basin table aside)" "$AFTER_38" "$BEFORE_38"
+expect_eq "38's basin table starts empty" "$(q "select count(*) from marketplace.basins;")" "0"
 ANON_JOBS="$(q "begin; select set_config('request.jwt.claims', '{\"role\":\"anon\"}', true); set local role anon;
   select 'IDS ' || coalesce(string_agg(id::text, ',' order by id), '') from marketplace.job_postings; rollback;" | grep '^IDS ' | cut -c5-)"
 expect_eq "35-R: on the existing data anon reads directly exactly the jobs that take new interest" \
   "$ANON_JOBS" "$(q "select coalesce(string_agg(id::text, ',' order by id), '') from marketplace.job_postings where marketplace.job_takes_new_interest(id);")"
-expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33 and 35 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33,35"
+expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35 and 38 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33,35,38"
 x "drop schema if exists marketplace cascade;"
 echo "MIGRATION PATH TEST PASSED."
