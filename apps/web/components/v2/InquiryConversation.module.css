@@ -16,8 +16,11 @@
   font-size: var(--ll-text-md);
 }
 
+/* One track no wider than the card: a child's own width (a long button label) must not widen it past the frame,
+   where `overflow: hidden` would clip every part of the conversation at 320 px. */
 .conversation {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--ll-color-border);
@@ -65,7 +68,7 @@
   gap: 2px var(--ll-space-3);
   margin: 2px 0 0;
   color: var(--ll-color-text-secondary);
-  font-size: var(--ll-text-md);
+  font-size: var(--ll-text-base);
 }
 
 .status { font-weight: var(--ll-weight-semibold); }
@@ -112,7 +115,7 @@
 .value {
   min-width: 0;
   margin: 0;
-  font-size: var(--ll-text-md);
+  font-size: var(--ll-text-base);
   font-weight: var(--ll-weight-regular);
   line-height: var(--ll-leading-snug);
   text-align: start;
@@ -213,5 +216,281 @@
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     align-items: end;
     column-gap: var(--ll-space-4);
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+   Flow C (#328): the landing's thread and reply bar, Figma 07 Flows C3 `124:390`, C4 `124:509`, C7 `124:577`,
+   C-offline `124:609`, C-error `124:641` and C-denied `315:1506`. Body text 16 px, targets 48 px and 56 px for the
+   primary, key facts in text and text-secondary (field design bar, #235).
+   --------------------------------------------------------------------------------------------------------------- */
+
+/* The job card: the pay as the poster stated it, then the job. */
+.job {
+  display: grid;
+  gap: var(--ll-space-1);
+  padding: var(--ll-space-4);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-sunken);
+}
+
+.jobPay [data-part="amount"] { font-size: var(--ll-text-xl); }
+.jobPay [data-part="basis"] { color: var(--ll-color-text-secondary); font-size: var(--ll-text-base); }
+
+.jobTitle {
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-snug);
+  overflow-wrap: anywhere;
+}
+
+/* "They can bring": the hauler's offer as a card. */
+.offer {
+  display: grid;
+  gap: var(--ll-space-3);
+  padding: var(--ll-space-4);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-md);
+}
+
+.offerTitle {
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+  letter-spacing: normal;
+}
+
+/* What the last answer did (the server's redirect). */
+.answered {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-2);
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-space-5);
+  border-top: 1px solid var(--ll-color-border);
+  background: var(--ll-color-status-positive-bg);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.answered > svg { margin-top: 2px; color: var(--ll-color-status-positive); }
+
+/* The reply bar: the ready replies over the typed reply (MessageComposer draws its own top rule). */
+.replyBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* MessageComposer's form is a grid whose one track grows to the textarea's own width plus Send (about 280 px), wider
+   than a 320 px phone leaves it. Holding its track to the bar lets the textarea shrink, on both inquiry pages. */
+.conversation > form,
+.replyBar > form { grid-template-columns: minmax(0, 1fr); }
+
+.ready {
+  display: grid;
+  gap: var(--ll-space-3);
+  padding: var(--ll-space-4) var(--ll-space-5) 0;
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.readyLabel {
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-base);
+}
+
+.readyForm {
+  display: grid;
+  margin: 0;
+}
+
+/* Scoped to the form so it outranks the Button module's own sizing whatever the stylesheet order. A long reply wraps
+   inside the 56 px button instead of running past the card on a narrow phone. */
+.readyForm > .readyButton {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: var(--ll-c-button-h-lg);
+  padding-block: var(--ll-space-2);
+  white-space: normal;
+  text-align: center;
+}
+
+/* The typed reply sits in the same bar as the ready replies. */
+.ready + * { border-top: 0; }
+
+/* The held, waiting or failed answer, in the place of the bar. Colour helps; the title says what happened. */
+.held {
+  display: grid;
+  gap: var(--ll-space-3);
+  margin: var(--ll-space-4) var(--ll-space-5) var(--ll-space-5);
+  padding: var(--ll-space-4);
+  border: 1px solid var(--ll-color-border);
+  border-left: 4px solid var(--ll-color-status-positive);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-status-positive-bg);
+  color: var(--ll-color-text);
+}
+
+.held[data-phase="offline"] {
+  border-left-color: var(--ll-color-status-neutral);
+  background: var(--ll-color-surface-sunken);
+}
+
+.held[data-phase="error"] {
+  border-color: var(--ll-color-status-critical);
+  border-left-color: var(--ll-color-status-critical);
+  background: var(--ll-color-status-critical-bg);
+}
+
+.held:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.heldTitle {
+  margin: 0;
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+}
+
+.heldText {
+  margin: 0;
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+}
+
+.heldBody {
+  display: grid;
+  justify-items: end;
+  gap: var(--ll-space-1);
+  margin: 0;
+}
+
+.heldQuote {
+  max-width: 80%;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--ll-color-action-subtle-border);
+  border-radius: var(--ll-radius-lg);
+  border-bottom-right-radius: var(--ll-radius-xs);
+  background: var(--ll-color-surface);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.heldQuote :where(p) { margin: 0; }
+
+.heldState {
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-base);
+}
+
+.reasons {
+  display: grid;
+  gap: var(--ll-space-2);
+}
+
+.reasonsLabel {
+  margin: 0;
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+}
+
+.reasonChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ll-space-2);
+}
+
+.reasonChip {
+  box-sizing: border-box;
+  min-height: var(--ll-target-touch);
+  padding: 0 var(--ll-space-4);
+  border: 1px solid var(--ll-color-control-border);
+  border-radius: var(--ll-radius-pill);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+  font-family: inherit;
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+  cursor: pointer;
+}
+
+.reasonChip:hover { background: var(--ll-color-surface-subtle); }
+
+.reasonChip[aria-pressed="true"] {
+  border-color: var(--ll-color-selected-indicator);
+  background: var(--ll-color-selected-bg);
+  box-shadow: inset 0 0 0 1px var(--ll-color-selected-indicator);
+}
+
+.reasonChip:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.heldActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ll-space-2);
+}
+
+.heldActions > .heldPrimary { flex: 1 1 100%; }
+
+/* C-denied: the PermissionDenied panel in the place of the thread. */
+.denied {
+  display: grid;
+  justify-items: start;
+  gap: var(--ll-space-3);
+  padding: var(--ll-space-5);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-c-section-radius);
+  background: var(--ll-color-surface);
+}
+
+.deniedMark {
+  display: inline-grid;
+  place-items: center;
+  width: var(--ll-target-touch);
+  height: var(--ll-target-touch);
+  border-radius: var(--ll-radius-pill);
+  background: var(--ll-color-surface-sunken);
+  color: var(--ll-color-text-secondary);
+}
+
+.deniedTitle {
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--ll-text-xl);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+  letter-spacing: normal;
+}
+
+.deniedBody {
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+}
+
+.deniedActions {
+  display: grid;
+  gap: var(--ll-space-2);
+  width: 100%;
+}
+
+@container ll-app (min-width: 768px) {
+  .deniedActions {
+    display: flex;
+    flex-wrap: wrap;
   }
 }

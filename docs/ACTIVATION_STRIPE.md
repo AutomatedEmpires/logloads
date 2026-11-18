@@ -1,6 +1,7 @@
 # LogLoads — Stripe Activation Runbook (Current Marketplace Direction)
 
-> **Status:** **NO LIVE V2 BILLING AUTHORIZED.** Revised 2026-11-01. This replaces the earlier
+> **Status:** **NO LIVE V2 BILLING AUTHORIZED.** Revised 2026-11-01; the §3 counsel gate was added 2026-11-18
+> ([#345](https://github.com/AutomatedEmpires/logloads/issues/345)). This replaces the earlier
 > `percentage_v1` activation instructions, which sounded current. That runbook is preserved verbatim at
 > [`archive/2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md`](./archive/2026-legacy-commercial/ACTIVATION_STRIPE_2026-08-01.md)
 > as historical evidence only. It is **prohibited** as an execution plan.
@@ -43,7 +44,8 @@ automatically.
 
 **Founding offer.** The first 10 qualifying landing organizations in each launched state get 50% off their
 selected tier for their first 6 paid cycles: $74.50 / $149.50 / $249.50. Recognition for founding haulers is
-never a paid feature.
+never a paid feature. COM-1 ([`DECISIONS.md`](./DECISIONS.md), 2026-11-10) replaced the launched state with an open
+basin and left the offer's cohort, window and discount to the founder, so the offer stays disabled.
 
 **LogLoads never charges a percentage of hauling revenue, or per completed load, hired truck, or freight
 settlement.** Hauling agreements and carrier/driver payments happen outside the platform.
@@ -74,6 +76,17 @@ copy.
   update that keeps banning the retired Dispatch Pro copy ([`product/TRANSITION_PLAN.md`](./product/TRANSITION_PLAN.md)).
 
 ## 3. Before even test-mode checkout
+
+**Counsel gate (#345).** The draft billing terms, checkout disclosures, founding-offer disclosures and sales-tax
+questions are in [`legal/billing-terms-draft.md`](./legal/billing-terms-draft.md). It is TARGET and not legal advice.
+`packages/contracts/src/v2/billing/disclosures.ts` builds the checkout and founding-offer words from `LANDING_PLANS`
+and `BOOST_PACKAGES`, and marks every result `counselApproved: false`. Before any checkout is built on them:
+
+- licensed counsel signs off a version of the draft (its §6 questions and the §2 text);
+- the founder sets the founding-offer terms (COM-1) and the draft's other **[Founder]** items;
+- an accountant answers the draft's sales-tax questions (§5), Washington and Texas first.
+
+This gate sets up no Stripe Tax, checkout, live mode or billing activation. Items 1 to 7 below still apply.
 
 1. Get qualified transportation and advertising legal review of paid invitations, sponsored jobs, and
    business introductions. A subscription does not settle regulatory classification.
