@@ -1,4 +1,4 @@
-/* Button: ported from design-system/components.css ("Button"). Heights 36 / 44 / 48 px via --ll-c-button-h-*. */
+/* Button: ported from design-system/components.css ("Button"). Heights 48 / 48 / 56 px via --ll-c-button-h-*. */
 .button {
   display: inline-flex;
   align-items: center;
@@ -28,7 +28,7 @@
   box-shadow: none;
 }
 
-.button[data-size="sm"] { height: var(--ll-c-button-h-sm); padding: 0 12px; font-size: var(--ll-text-md); }
+.button[data-size="sm"] { height: var(--ll-c-button-h-sm); padding: 0 12px; font-size: var(--ll-text-base); }
 .button[data-size="lg"] { height: var(--ll-c-button-h-lg); padding: 0 22px; }
 
 .button[data-variant="primary"] { background: var(--ll-color-action); color: var(--ll-color-on-action); }
@@ -41,12 +41,28 @@
 .button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover { background: var(--ll-hover-overlay); }
 .button[data-variant="danger"]:not(:disabled, [aria-disabled="true"]):hover { background: var(--ll-color-status-critical-bg); }
 
+.button[data-variant="primary"]:not(:disabled, [aria-disabled="true"]):active { background: var(--ll-color-action-pressed); }
+.button[data-variant="secondary"]:not(:disabled, [aria-disabled="true"]):active {
+  background: var(--ll-color-surface-sunken);
+  border-color: var(--ll-color-text-secondary);
+}
+.button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):active { background: var(--ll-pressed-overlay); }
+.button[data-variant="danger"]:not(:disabled, [aria-disabled="true"]):active {
+  background: linear-gradient(var(--ll-pressed-overlay), var(--ll-pressed-overlay)), var(--ll-color-status-critical-bg);
+}
+
 .button[data-icon-only][data-size="sm"] { width: var(--ll-c-button-h-sm); padding: 0; }
 .button[data-icon-only][data-size="md"] { width: var(--ll-c-button-h-md); padding: 0; }
 .button[data-icon-only][data-size="lg"] { width: var(--ll-c-button-h-lg); padding: 0; }
 
+/* Loading stays at full opacity (aria-busy). A disabled control uses the neutral pair instead of a 50% fade. */
 .button:disabled,
-.button[aria-disabled="true"] { opacity: var(--ll-disabled-opacity); cursor: not-allowed; }
+.button[aria-disabled="true"]:not([aria-busy="true"]) {
+  background: var(--ll-color-surface-sunken);
+  color: var(--ll-color-text-muted);
+  border-color: var(--ll-color-border);
+  cursor: not-allowed;
+}
 .button[aria-busy="true"] { cursor: progress; }
 
 .label { overflow: hidden; text-overflow: ellipsis; }

@@ -27,16 +27,18 @@ function rule(css: string, selector: string): string {
 }
 
 describe("primitives contract (DS-03, #146)", () => {
-  it("sizes buttons at 36, 44 and 48 px through the component tokens", () => {
+  it("sizes buttons at 48, 48 and 56 px through the component tokens", () => {
     const css = read("Button.module.css")
 
     expect(rule(css, ".button")).toContain("height: var(--ll-c-button-h-md)")
     expect(rule(css, '.button[data-size="sm"]')).toContain("height: var(--ll-c-button-h-sm)")
     expect(rule(css, '.button[data-size="lg"]')).toContain("height: var(--ll-c-button-h-lg)")
-    expect(tokens).toMatch(/--ll-c-button-h-sm:\s*36px;/)
-    expect(tokens).toMatch(/--ll-c-button-h-md:\s*44px;/)
-    expect(tokens).toMatch(/--ll-c-button-h-lg:\s*48px;/)
-    expect(tokens).toMatch(/--ll-c-field-h:\s*44px;/)
+    expect(rule(css, '.button[data-variant="primary"]:not(:disabled, [aria-disabled="true"]):active')).toContain("background: var(--ll-color-action-pressed)")
+    expect(tokens).toMatch(/--ll-c-button-h-sm:\s*48px;/)
+    expect(tokens).toMatch(/--ll-c-button-h-md:\s*48px;/)
+    expect(tokens).toMatch(/--ll-c-button-h-lg:\s*56px;/)
+    expect(tokens).toMatch(/--ll-c-field-h:\s*48px;/)
+    expect(tokens).toMatch(/--ll-text-base:\s*1rem;/)
   })
 
   it.each([
@@ -52,7 +54,7 @@ describe("primitives contract (DS-03, #146)", () => {
 
   it("takes target sizes from --ll-target-*", () => {
     expect(rule(read("Button.module.css"), ".button")).toContain("min-width: var(--ll-target-min)")
-    expect(rule(read("Tabs.module.css"), ".tab")).toContain("min-height: var(--ll-target-min)")
+    expect(rule(read("Tabs.module.css"), ".tab")).toContain("min-height: var(--ll-target-touch)")
     expect(rule(read("Checkbox.module.css"), ".check")).toContain("min-height: var(--ll-target-touch)")
   })
 

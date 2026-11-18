@@ -1,9 +1,9 @@
 /* FormField: ported from design-system/components.css (.ll-field, .ll-input). */
 .field { display: grid; gap: var(--ll-space-1); min-width: 0; }
-.label { font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); }
+.label { display: flex; flex-wrap: wrap; column-gap: 0.35em; font-size: var(--ll-text-base); font-weight: var(--ll-weight-semibold); }
 .optional { font-weight: var(--ll-weight-regular); color: var(--ll-color-text-muted); }
-.hint { font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
-.error { font-size: var(--ll-text-sm); color: var(--ll-color-status-critical); font-weight: var(--ll-weight-medium); }
+.hint { font-size: var(--ll-text-base); color: var(--ll-color-text-muted); }
+.error { font-size: var(--ll-text-base); color: var(--ll-color-status-critical); font-weight: var(--ll-weight-medium); }
 
 /* Applied to a native input, select or textarea placed inside the field. */
 .control {
@@ -16,8 +16,10 @@
   background: var(--ll-color-surface);
   color: var(--ll-color-text);
   font-family: inherit;
-  font-size: 1rem; /* 16 px: stops iOS zooming into the field */
+  font-size: var(--ll-text-base); /* 16 px: stops iOS zooming into the field */
 }
+
+.control:active:not(:disabled) { background: var(--ll-color-surface-sunken); }
 
 /* box-shadow: none removes the app's legacy global :focus-visible halo (globals.css). */
 .control:focus-visible {

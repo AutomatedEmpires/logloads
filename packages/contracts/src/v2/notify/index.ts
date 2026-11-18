@@ -63,3 +63,50 @@ export interface MarketplaceEmailProviderEvent {
   /** When the provider says it happened; `null` uses the store's clock. */
   occurredAt: string | null
 }
+
+/**
+ * The class of each email, from the legal review §5.2. Job alerts and targeted invitations are commercial.
+ * A reconfirm reminder stays transactional only while it carries no promotion. The outbox check constraint
+ * stores `team_invitation`, `inquiry_reply` and `job_alert`; the other two are rendered when a later stage queues them.
+ */
+export const MARKETPLACE_EMAIL_TEMPLATE_CLASSES = {
+  inquiry_reply: "transactional",
+  job_alert: "commercial",
+  reconfirm_reminder: "transactional",
+  targeted_invitation: "commercial",
+  team_invitation: "transactional"
+} as const
+
+export type MarketplaceEmailTemplate = keyof typeof MARKETPLACE_EMAIL_TEMPLATE_CLASSES
+export type MarketplaceEmailClass = (typeof MARKETPLACE_EMAIL_TEMPLATE_CLASSES)[MarketplaceEmailTemplate]
+
+/** A team invitation may be sent at most this many times (the outbox's `send_count` check). */
+export const TEAM_INVITATION_SEND_CAP = 5
+
+/** A listing drops out of Find Work this many days after its last confirmation. */
+export const RECONFIRM_STALE_DAYS = 14
+
+/** What a commercial email must show, and what a team invitation uses for its "do not email me again" link. */
+export interface MarketplaceEmailFooter {
+  legalName: string
+  postalAddress: string
+  /** Why this person is getting this email, in a sentence. */
+  reason: string
+  unsubscribeUrl: string
+}
+
+/**
+ * Facts read at send time. The outbox row keeps ids; this is what the worker looked up, not a stored body.
+ * A name is included only when it was actually read. `promotion` set on a reconfirm reminder blocks the send.
+ */
+export interface MarketplaceEmailFacts {
+  template: MarketplaceEmailTemplate
+  /** 1 for the first message to this person about this subject. */
+  attempt: number
+  organizationName: string | null
+  landingName: string | null
+  /** Team invitations: how many sends this one is, including itself. Null for every other template. */
+  invitationSendCount: number | null
+  promotion: string | null
+  footer: MarketplaceEmailFooter | null
+}

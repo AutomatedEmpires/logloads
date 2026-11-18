@@ -170,6 +170,11 @@ async function firstJobPath(page: Page): Promise<string> {
   return href!
 }
 
+/** The link a visitor copies is the public share page, never the full job page or the request query. */
+function publicShareUrl(jobPath: string, pageUrl: string): string {
+  return new URL(jobPath.replace(/^\/v2\/work\//, "/v2/share/"), pageUrl).toString()
+}
+
 const inquiryRows = (page: Page) => page.locator("#main [data-ds-page] ul[aria-label$='inquiries'] > li")
 
 /**
@@ -1893,7 +1898,7 @@ test.describe("job detail: the decision summary, sections, sticky bar, share and
     const share = shareTool(page)
     await share.locator("summary").click()
     const field = share.getByRole("textbox", { name: "Public link to this job" })
-    const expected = new URL(jobPath, page.url()).toString()
+    const expected = publicShareUrl(jobPath, page.url())
     await expect(field).toHaveValue(expected)
     await expect(field).toHaveAttribute("readonly", "")
 
@@ -1966,7 +1971,7 @@ test.describe("job detail: the decision summary, sections, sticky bar, share and
       await expect(haul).toHaveAttribute("open", "")
 
       await shareTool(page).locator("summary").click()
-      await expect(shareTool(page).getByRole("textbox", { name: "Public link to this job" })).toHaveValue(new URL(jobPath, page.url()).toString())
+      await expect(shareTool(page).getByRole("textbox", { name: "Public link to this job" })).toHaveValue(publicShareUrl(jobPath, page.url()))
       await expect(shareTool(page).getByRole("button", { name: "Copy link" })).toHaveCount(0)
 
       const report = reportTool(page)
