@@ -12,9 +12,10 @@
  *   equipment_units   read: members; insert/update: owner, manager or staff (equipment_units_insert/_update)
  *   availability_reports  read: members; insert/update: owner, manager or staff here (availability_insert/_update);
  *                     tg_availability_guard snaps the area and stamps reported_at on every write
- *   promotion_redemptions  read: owners (promotion_redemptions_read), only the M2 column grant (16); the founding
- *                     offer (#248, #306)
- *   promotions        read: open promotions only (promotions_read), so a closed one's terms come back NULL
+ *   promotion_redemptions  read: every active member of the business since 31-F (promotion_redemptions_read), only
+ *                     the M2 column grant (16); the founding offer (#248, #306, #362)
+ *   promotions        read: open promotions, and since 31-F the one a member's business redeemed (promotions_read);
+ *                     terms the policy hides come back NULL
  *   job_postings      the poster's own jobs (#247). read: the landing desk (job_postings_read); update: owner,
  *                     manager or staff with a seat (job_postings_update), public columns only; tg_job_guard,
  *                     tg_job_hold_duplicate_guard and tg_landing_scope_guard decide again
@@ -283,8 +284,9 @@ with changed as (
 
   /**
    * The business's founding-operator redemption (one per business, `UNIQUE (program, org_id)`) with its promotion's
-   * terms. Owners only: the explicit role check keeps a billing admin, whom `promotion_redemptions_read` lets read
-   * every business's redemption, to the business they own. A promotion row-level security hides leaves its terms NULL.
+   * terms. Every active member, as `promotion_redemptions_read` allows since 31-F (decision of 2026-11-11, #294; #362).
+   * The explicit membership check keeps a billing admin, whom that policy lets read every business's redemption, to a
+   * business they belong to. A promotion row-level security hides leaves its terms NULL.
    */
   founding_offer: {
     args: ["uuid"],
@@ -295,7 +297,7 @@ select to_jsonb(f) as row from (
   left join marketplace.promotions p on p.id = pr.promotion_id and p.program = pr.program
   where pr.org_id = $1::text::uuid
     and pr.program = 'founding_landing'
-    and marketplace.has_org_role(pr.org_id, array['owner']::text[])
+    and marketplace.has_org_role(pr.org_id, ${MEMBER_ROLES})
 ) as f`
   },
 
