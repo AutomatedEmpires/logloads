@@ -1,7 +1,6 @@
 import { z } from "zod"
 
 import { haversineMiles, type Coordinates } from "./geo"
-import { MARKETPLACE_VERIFICATION_VALID_MONTHS } from "./v2/admin"
 
 /**
  * Marketplace V2 — the load-board domain from the Product Blueprint v1.0 and the UX & Functional
@@ -261,12 +260,19 @@ export const MARKETPLACE_VERIFICATION_LIMITS =
   "Check these yourself before you agree to a haul."
 
 /**
- * A review is shown as current through the same UTC calendar day `MARKETPLACE_VERIFICATION_VALID_MONTHS` (v2/admin,
- * the one place the 12 months are set) later, then as "last reviewed" (legal review 2026-11 §7.3 item 4). The
- * verification service also moves a lapsed business off `verified`; the wording checks the date itself, so a mark is
- * never shown as current only because that job has not run.
+ * The months a review is shown as current. It is `MARKETPLACE_VERIFICATION_VALID_MONTHS` (v2/admin), the one place
+ * the 12 months are decided, and a test holds the two together. It is repeated here, not imported, because this
+ * module is in the browser's script and that one is not: importing it put the admin schemas in every V2 page
+ * (performance budget, script size).
+ */
+const VERIFICATION_VALID_MONTHS = 12
+
+/**
+ * A review is shown as current through the same UTC calendar day 12 months later, then as "last reviewed" (legal
+ * review 2026-11 §7.3 item 4). The verification service also moves a lapsed business off `verified`; the wording
+ * checks the date itself, so a mark is never shown as current only because that job has not run.
  *
- * - `reviewed`: a dated review, at most `MARKETPLACE_VERIFICATION_VALID_MONTHS` old.
+ * - `reviewed`: a dated review, at most 12 months old.
  * - `review_lapsed`: a review that is older than that, or whose date is missing or unreadable, so it cannot be
  *   shown to be current.
  * - `not_reviewed`: no review on record. Neutral, never a finding about the business.
@@ -285,34 +291,33 @@ export interface MarketplaceVerificationDescription {
 }
 
 const REVIEWED_ON_FORMAT = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC", year: "numeric" })
-const CALENDAR_DAY = /^(\d{4})-(\d{2})-(\d{2})(?:T[\d:.]+(?:Z|[+-]\d{2}:\d{2})?)?$/
 
-/** A real UTC calendar day from a stored date or timestamp; `null` for anything else, so a bad value is never shown as a date. */
-function reviewDay(value: string | null): { day: string; year: number; month: number; date: number } | null {
-  const match = value === null ? null : CALENDAR_DAY.exec(value)
-  if (!match) return null
+/** A real UTC calendar day (YYYY-MM-DD) from a stored date or timestamp; `null` for anything else, so a bad value is never shown as a date. */
+function reviewDay(value: string | null): string | null {
+  const day = value !== null && /^\d{4}-\d\d-\d\d($|T)/.test(value) ? value.slice(0, 10) : ""
+  const ms = Date.parse(`${day}T00:00:00Z`)
 
-  const [year, month, date] = [Number(match[1]), Number(match[2]), Number(match[3])]
-  const utc = new Date(Date.UTC(year, month - 1, date))
-  const real = utc.getUTCFullYear() === year && utc.getUTCMonth() === month - 1 && utc.getUTCDate() === date
-
-  return real ? { date, day: `${match[1]}-${match[2]}-${match[3]}`, month, year } : null
+  // An engine may read Feb 30 as Mar 2; only a day that reads back as itself is real.
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === day ? day : null
 }
 
 /** The last UTC day a review counts as current: the same day `months` later, or that month's last day when it is shorter. */
-function lastCurrentDay(review: { year: number; month: number; date: number }, months: number): string {
-  const first = new Date(Date.UTC(review.year, review.month - 1 + months, 1))
-  const daysInMonth = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
+function lastCurrentDay(day: string, months: number): string {
+  const last = new Date(`${day}T00:00:00Z`)
+  const date = last.getUTCDate()
 
-  return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(review.date, daysInMonth))).toISOString().slice(0, 10)
+  last.setUTCMonth(last.getUTCMonth() + months)
+  // Feb 29 plus 12 months lands on Mar 1: step back to the month's last day.
+  if (last.getUTCDate() !== date) last.setUTCDate(0)
+
+  return last.toISOString().slice(0, 10)
 }
 
 /**
  * The verification mark as LogLoads' own statement: attributed, dated and expiring (legal review 2026-11 §7,
  * risks R4 and R10; UX-DEC-06). `label` is the whole sentence, so no screen can show a bare "Verified", and
  * `meaning` says what was looked at, when, and what was not. `null` is "Not yet reviewed". A review is current
- * through the same UTC day `MARKETPLACE_VERIFICATION_VALID_MONTHS` later; after that, or with no readable date, it
- * is `review_lapsed`. The mark is wording only: it takes no part in filtering or ordering jobs.
+ * through the same UTC day 12 months later; after that, or with no readable date, it is `review_lapsed`. The mark is wording only: it takes no part in filtering or ordering jobs.
  */
 export function describeMarketplaceVerification(verification: MarketplaceVerification | null, now: string): MarketplaceVerificationDescription {
   const instant = Date.parse(now)
@@ -343,25 +348,17 @@ export function describeMarketplaceVerification(verification: MarketplaceVerific
     }
   }
 
-  const reviewed = REVIEWED_ON_FORMAT.format(new Date(`${review.day}T00:00:00.000Z`))
-  const today = new Date(instant).toISOString().slice(0, 10)
-
-  if (today > lastCurrentDay(review, MARKETPLACE_VERIFICATION_VALID_MONTHS)) {
-    return {
-      label: `${scope} last reviewed by LogLoads on ${reviewed}`,
-      meaning:
-        `On ${reviewed}, ${looked} That review is more than ${MARKETPLACE_VERIFICATION_VALID_MONTHS} months old, ` +
-        `so LogLoads no longer shows it as current. ${MARKETPLACE_VERIFICATION_LIMITS}`,
-      reviewedOn: review.day,
-      state: "review_lapsed"
-    }
-  }
+  const reviewed = REVIEWED_ON_FORMAT.format(new Date(`${review}T00:00:00Z`))
+  const lapsed = new Date(instant).toISOString().slice(0, 10) > lastCurrentDay(review, VERIFICATION_VALID_MONTHS)
 
   return {
-    label: `${scope} reviewed by LogLoads on ${reviewed}`,
-    meaning: `On ${reviewed}, ${looked} ${MARKETPLACE_VERIFICATION_LIMITS}`,
-    reviewedOn: review.day,
-    state: "reviewed"
+    label: `${scope} ${lapsed ? "last " : ""}reviewed by LogLoads on ${reviewed}`,
+    meaning:
+      `On ${reviewed}, ${looked} ` +
+      (lapsed ? `That review is more than ${VERIFICATION_VALID_MONTHS} months old, so LogLoads no longer shows it as current. ` : "") +
+      MARKETPLACE_VERIFICATION_LIMITS,
+    reviewedOn: review,
+    state: lapsed ? "review_lapsed" : "reviewed"
   }
 }
 

@@ -708,8 +708,15 @@ describe("verification marks are attributed, dated, expiring statements (#150, #
   })
 
   it("holds the 12-month boundary to the calendar day (UTC)", () => {
-    expect(MARKETPLACE_VERIFICATION_VALID_MONTHS).toBe(12)
     const state = (reviewedOn: string, now: string) => describeMarketplaceVerification(mark(reviewedOn), now).state
+
+    // The wording's interval is the one the verification service lapses on (v2/admin), whatever that is set to.
+    const anniversary = new Date(Date.UTC(2025, 0 + MARKETPLACE_VERIFICATION_VALID_MONTHS, 15))
+    expect(MARKETPLACE_VERIFICATION_VALID_MONTHS).toBe(12)
+    expect(state("2025-01-15", anniversary.toISOString())).toBe("reviewed")
+    expect(state("2025-01-15", new Date(anniversary.getTime() + 86_400_000).toISOString())).toBe("review_lapsed")
+    expect(describeMarketplaceVerification(mark("2025-01-15"), "2026-06-01T00:00:00.000Z").meaning)
+      .toContain(`more than ${MARKETPLACE_VERIFICATION_VALID_MONTHS} months old`)
 
     // Reviewed Nov 18, 2025: current through Nov 18, 2026 (exactly 12 months), lapsed from Nov 19.
     expect(state("2025-11-18", "2026-11-17T23:59:59.999Z")).toBe("reviewed")
