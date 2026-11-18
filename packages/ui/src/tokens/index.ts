@@ -37,7 +37,7 @@ export const COLOR_TOKENS = Object.freeze([
   "--ll-color-border", "--ll-color-border-strong", "--ll-color-control-border", "--ll-color-rule",
   "--ll-color-text", "--ll-color-text-secondary", "--ll-color-text-muted", "--ll-color-text-inverse",
   "--ll-color-brand", "--ll-color-brand-pith",
-  "--ll-color-action", "--ll-color-action-hover", "--ll-color-on-action", "--ll-color-action-subtle", "--ll-color-action-subtle-border",
+  "--ll-color-action", "--ll-color-action-hover", "--ll-color-action-pressed", "--ll-color-on-action", "--ll-color-action-subtle", "--ll-color-action-subtle-border",
   "--ll-color-selected-bg", "--ll-color-selected-indicator", "--ll-color-nav-active",
   "--ll-color-accent", "--ll-color-sponsored-bg", "--ll-color-sponsored-text",
   "--ll-color-status-positive", "--ll-color-status-positive-bg", "--ll-color-status-warning", "--ll-color-status-warning-bg",
@@ -66,6 +66,29 @@ export const CONTRAST_PAIRS: ReadonlyArray<readonly [ColorToken, ColorToken]> = 
   ["--ll-color-status-critical", "--ll-color-surface"],
   ["--ll-color-text-inverse", "--ll-color-text"]
 ] as const)
+
+/** Surfaces a key fact (pay, basis, distance, duration, freshness) can sit on. Field bar: 7:1 (#281, #327). */
+const KEY_FACT_SURFACES = [
+  "--ll-color-page", "--ll-color-surface", "--ll-color-surface-subtle", "--ll-color-surface-sunken",
+  "--ll-color-selected-bg", "--ll-color-sponsored-bg"
+] as const satisfies readonly ColorToken[]
+
+const KEY_FACT_FOREGROUNDS = ["--ll-color-text", "--ll-color-text-secondary", "--ll-color-text-muted"] as const satisfies readonly ColorToken[]
+
+/**
+ * Key-fact pairs that must meet 7:1 in both themes. `text-muted` is included so a label used by mistake
+ * still clears the field bar. Primary labels on the action fills are included with them.
+ */
+export const KEY_FACT_PAIRS: ReadonlyArray<readonly [ColorToken, ColorToken]> = Object.freeze([
+  ...KEY_FACT_FOREGROUNDS.flatMap((foreground) => KEY_FACT_SURFACES.map((surface) => [foreground, surface] as const)),
+  ["--ll-color-text", "--ll-color-status-positive-bg"],
+  ["--ll-color-text", "--ll-color-status-warning-bg"],
+  ["--ll-color-text", "--ll-color-status-critical-bg"],
+  ["--ll-color-text", "--ll-color-status-neutral-bg"],
+  ["--ll-color-on-action", "--ll-color-action"],
+  ["--ll-color-on-action", "--ll-color-action-hover"],
+  ["--ll-color-on-action", "--ll-color-action-pressed"]
+])
 
 /** Non-text pairs that must meet 3:1 (WCAG 1.4.11): focus ring, selection indicator, control borders. */
 export const NON_TEXT_PAIRS: ReadonlyArray<readonly [string, ColorToken]> = Object.freeze([

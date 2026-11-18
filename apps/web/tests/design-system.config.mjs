@@ -56,7 +56,7 @@ const server = serverMode === "start"
 
 export default defineConfig({
   testDir: ".",
-  testMatch: "design-system.spec.ts",
+  testMatch: ["design-system.spec.ts", "field-conditions.spec.ts"],
   outputDir,
   // `next dev` compiles each route on its first request, so the local mode gets longer budgets.
   timeout: serverMode === "dev" ? 180_000 : 60_000,

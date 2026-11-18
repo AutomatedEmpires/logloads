@@ -26,29 +26,43 @@
   --ll-p-neutral-150: #e5e9e6;
   --ll-p-neutral-200: #dce2de;
   --ll-p-neutral-300: #c8d0cb;
+  --ll-p-neutral-350: #b7c0ba;
   --ll-p-neutral-400: #868f8a;
+  --ll-p-neutral-450: #6d7872;
   --ll-p-neutral-500: #5b6862;
+  --ll-p-neutral-600: #46524c;
   --ll-p-neutral-700: #34413b;
+  --ll-p-neutral-750: #2a3630;
+  --ll-p-neutral-800: #1e2a24;
   --ll-p-neutral-900: #16201c;
   --ll-p-neutral-950: #0e1512;
 
   --ll-p-forest-50: #eef5f1;
   --ll-p-forest-100: #dcebe3;
+  --ll-p-forest-200: #b5d9c5;
+  --ll-p-forest-300: #7cc4a0;
   --ll-p-forest-600: #2f7a5b;
   --ll-p-forest-700: #1c6448;
   --ll-p-forest-800: #16533b;
   --ll-p-forest-900: #103d2c;
+  --ll-p-forest-950: #0a2a1e;
 
   --ll-p-timber-50: #fbf6ee;
   --ll-p-timber-300: #d9bc8c;
   --ll-p-timber-500: #b68a4c;
   --ll-p-timber-700: #7f5a24;
   --ll-p-timber-800: #6b4a1b;
+  --ll-p-timber-900: #2c2112;
 
   --ll-p-amber-50: #fbf1df;
+  --ll-p-amber-200: #f3ddb4;
   --ll-p-amber-700: #8a5a12;
+  --ll-p-amber-800: #6b450e;
+  --ll-p-amber-900: #3a2508;
   --ll-p-red-50: #fbedeb;
+  --ll-p-red-200: #f2bcb4;
   --ll-p-red-700: #9b2f25;
+  --ll-p-red-900: #4a1612;
 
   /* ---------- 2. Semantic: colour ---------- */
   --ll-color-page: var(--ll-p-neutral-50);            /* app background behind sections */
@@ -57,18 +71,19 @@
   --ll-color-surface-sunken: var(--ll-p-neutral-100); /* wells, placeholders, inactive controls */
   --ll-color-border: var(--ll-p-neutral-150);         /* hairlines between rows and sections */
   --ll-color-border-strong: var(--ll-p-neutral-300);  /* decorative outlines: dashed placeholders, dividers in controls */
-  --ll-color-control-border: var(--ll-p-neutral-400); /* boundaries of inputs and buttons: 3.3:1 on surface (WCAG 1.4.11) */
+  --ll-color-control-border: var(--ll-p-neutral-450); /* boundaries of inputs and buttons: 4.03:1 on the sunken well (WCAG 1.4.11) */
   --ll-color-rule: var(--ll-p-neutral-900);           /* the single dark rule that opens a list */
 
   --ll-color-text: var(--ll-p-neutral-900);
   --ll-color-text-secondary: var(--ll-p-neutral-700);
-  --ll-color-text-muted: var(--ll-p-neutral-500);     /* labels and sources only; 5.8:1 on surface */
+  --ll-color-text-muted: var(--ll-p-neutral-600);     /* labels and sources; 7.18:1 or more on every light surface */
   --ll-color-text-inverse: var(--ll-p-neutral-0);
 
   --ll-color-brand: var(--ll-p-forest-700);           /* mark, wordmark accents */
   --ll-color-brand-pith: var(--ll-p-timber-500);      /* centre of the end-grain mark */
   --ll-color-action: var(--ll-p-forest-700);          /* primary buttons and links that act */
   --ll-color-action-hover: var(--ll-p-forest-800);
+  --ll-color-action-pressed: var(--ll-p-forest-900);  /* pressed fill of the primary button */
   --ll-color-on-action: var(--ll-p-neutral-0);
   --ll-color-action-subtle: var(--ll-p-forest-50);
   --ll-color-action-subtle-border: var(--ll-p-forest-100);
@@ -81,11 +96,11 @@
 
   --ll-color-accent: var(--ll-p-timber-500);          /* non-text only (3.1:1): monogram ring, pith */
   --ll-color-sponsored-bg: var(--ll-p-timber-50);
-  --ll-color-sponsored-text: var(--ll-p-timber-700);  /* 6.2:1 on surface, 5.8:1 on sponsored-bg */
+  --ll-color-sponsored-text: var(--ll-p-timber-800);  /* 7.45:1 on sponsored-bg */
 
   --ll-color-status-positive: var(--ll-p-forest-700);
   --ll-color-status-positive-bg: var(--ll-p-forest-50);
-  --ll-color-status-warning: var(--ll-p-amber-700);
+  --ll-color-status-warning: var(--ll-p-amber-800);   /* 7.55:1 on warning-bg */
   --ll-color-status-warning-bg: var(--ll-p-amber-50);
   --ll-color-status-critical: var(--ll-p-red-700);
   --ll-color-status-critical-bg: var(--ll-p-red-50);
@@ -100,7 +115,7 @@
   --ll-pressed-overlay: rgba(14, 21, 18, 0.06);
   --ll-disabled-opacity: 0.5;
   --ll-target-min: 24px;                /* WCAG 2.2 2.5.8 minimum */
-  --ll-target-touch: 44px;              /* default control height */
+  --ll-target-touch: 48px;              /* field-bar minimum target (#281) */
 
   /* ---------- 2. Semantic: typography ---------- */
   /* Self-hosted with next/font/local (apps/web/app/v2/_fonts/ibm-plex.ts); app/v2/layout.tsx sets --ll-font-*-face
@@ -110,11 +125,11 @@
   --ll-font-display: var(--ll-font-display-face, "IBM Plex Sans Condensed"), var(--ll-font-sans-face, "IBM Plex Sans"), "Arial Narrow", sans-serif;
   --ll-font-mono: var(--ll-font-mono-face, "IBM Plex Mono"), ui-monospace, "SFMono-Regular", Consolas, monospace;
 
-  --ll-text-2xs: 0.6875rem; /* 11px  mono labels */
+  --ll-text-2xs: 0.6875rem; /* 11px  code-like metadata only */
   --ll-text-xs: 0.75rem;    /* 12px  */
-  --ll-text-sm: 0.8125rem;  /* 13px  sources, meta */
-  --ll-text-md: 0.875rem;   /* 14px  secondary body */
-  --ll-text-base: 0.9375rem;/* 15px  body */
+  --ll-text-sm: 0.8125rem;  /* 13px  */
+  --ll-text-md: 0.875rem;   /* 14px  labels and metadata */
+  --ll-text-base: 1rem;     /* 16px  body and helper text */
   --ll-text-lg: 1.0625rem;  /* 17px  row titles */
   --ll-text-xl: 1.3125rem;  /* 21px  section and panel titles */
   --ll-text-2xl: 1.75rem;   /* 28px  page titles, row pay */
@@ -178,11 +193,11 @@
   --ll-ease: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---------- 3. Component tokens ---------- */
-  --ll-c-button-h-sm: 36px;
-  --ll-c-button-h-md: 44px;
-  --ll-c-button-h-lg: 48px;
+  --ll-c-button-h-sm: 48px;            /* 48 px minimum target */
+  --ll-c-button-h-md: 48px;
+  --ll-c-button-h-lg: 56px;            /* primary action, including the bottom bar */
   --ll-c-button-radius: var(--ll-radius-md);
-  --ll-c-field-h: 44px;
+  --ll-c-field-h: 48px;
   --ll-c-field-radius: var(--ll-radius-md);
   --ll-c-section-radius: var(--ll-radius-lg);
   --ll-c-section-pad: var(--ll-space-5);
@@ -195,12 +210,123 @@
   --ll-c-control-h: var(--ll-c-button-h-md);
 }
 
-/* Density override. Applies to any subtree, e.g. <div data-density="compact">. */
+/* Density override. Applies to any subtree, e.g. <div data-density="compact">.
+   Compact keeps 48 px controls; only the rows get denser. */
 :where(.ll-theme) [data-density="compact"], :where(.ll-theme)[data-density="compact"] {
   --ll-c-row-py: 12px;
   --ll-c-row-px: var(--ll-space-4);
   --ll-c-row-gap: var(--ll-space-1);
-  --ll-c-control-h: var(--ll-c-button-h-sm);
+  --ll-c-control-h: var(--ll-c-button-h-md);
+}
+
+/* Touch density (#281): set data-density="touch" on phone frames. Controls stay 48 px; rows get field padding. */
+:where(.ll-theme) [data-density="touch"], :where(.ll-theme)[data-density="touch"] {
+  --ll-c-row-py: 16px;
+  --ll-c-row-px: var(--ll-space-4);
+  --ll-c-row-gap: var(--ll-space-2);
+}
+
+/*
+ * Dark theme (#281, 2026-11-11): yes. data-theme="dark" always; data-theme="system" when the phone prefers dark.
+ * Layer 2 only. Page is neutral-950 and text is neutral-100 (no pure black or white). The primary action is
+ * forest-300 with a near-black label. The system block repeats these declarations; tokens.test.ts requires they match.
+ */
+:where(.ll-theme)[data-theme="dark"] {
+  --ll-color-page: var(--ll-p-neutral-950);
+  --ll-color-surface: var(--ll-p-neutral-900);
+  --ll-color-surface-subtle: var(--ll-p-neutral-800);
+  --ll-color-surface-sunken: var(--ll-p-neutral-950);
+  --ll-color-border: var(--ll-p-neutral-750);
+  --ll-color-border-strong: var(--ll-p-neutral-600);
+  --ll-color-control-border: var(--ll-p-neutral-400);
+  --ll-color-rule: var(--ll-p-neutral-100);
+
+  --ll-color-text: var(--ll-p-neutral-100);
+  --ll-color-text-secondary: var(--ll-p-neutral-300);
+  --ll-color-text-muted: var(--ll-p-neutral-350);
+  --ll-color-text-inverse: var(--ll-p-neutral-950);
+
+  --ll-color-brand: var(--ll-p-forest-300);
+  --ll-color-brand-pith: var(--ll-p-timber-300);
+  --ll-color-action: var(--ll-p-forest-300);
+  --ll-color-action-hover: var(--ll-p-forest-200);
+  --ll-color-action-pressed: var(--ll-p-forest-100);
+  --ll-color-on-action: var(--ll-p-neutral-950);
+  --ll-color-action-subtle: var(--ll-p-forest-950);
+  --ll-color-action-subtle-border: var(--ll-p-forest-800);
+  --ll-color-backdrop: rgba(14, 21, 18, 0.62);
+  --ll-color-caption-bg: rgba(14, 21, 18, 0.88);
+
+  --ll-color-selected-bg: var(--ll-p-forest-950);
+  --ll-color-selected-indicator: var(--ll-p-forest-300);
+  --ll-color-nav-active: var(--ll-p-forest-300);
+
+  --ll-color-accent: var(--ll-p-timber-300);
+  --ll-color-sponsored-bg: var(--ll-p-timber-900);
+  --ll-color-sponsored-text: var(--ll-p-timber-300);
+
+  --ll-color-status-positive: var(--ll-p-forest-200);
+  --ll-color-status-positive-bg: var(--ll-p-forest-900);
+  --ll-color-status-warning: var(--ll-p-amber-200);
+  --ll-color-status-warning-bg: var(--ll-p-amber-900);
+  --ll-color-status-critical: var(--ll-p-red-200);
+  --ll-color-status-critical-bg: var(--ll-p-red-900);
+  --ll-color-status-neutral: var(--ll-p-neutral-300);
+  --ll-color-status-neutral-bg: var(--ll-p-neutral-800);
+
+  --ll-focus-color: var(--ll-p-timber-300);
+  --ll-hover-overlay: rgba(238, 241, 239, 0.06);
+  --ll-pressed-overlay: rgba(238, 241, 239, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :where(.ll-theme)[data-theme="system"] {
+    --ll-color-page: var(--ll-p-neutral-950);
+    --ll-color-surface: var(--ll-p-neutral-900);
+    --ll-color-surface-subtle: var(--ll-p-neutral-800);
+    --ll-color-surface-sunken: var(--ll-p-neutral-950);
+    --ll-color-border: var(--ll-p-neutral-750);
+    --ll-color-border-strong: var(--ll-p-neutral-600);
+    --ll-color-control-border: var(--ll-p-neutral-400);
+    --ll-color-rule: var(--ll-p-neutral-100);
+
+    --ll-color-text: var(--ll-p-neutral-100);
+    --ll-color-text-secondary: var(--ll-p-neutral-300);
+    --ll-color-text-muted: var(--ll-p-neutral-350);
+    --ll-color-text-inverse: var(--ll-p-neutral-950);
+
+    --ll-color-brand: var(--ll-p-forest-300);
+    --ll-color-brand-pith: var(--ll-p-timber-300);
+    --ll-color-action: var(--ll-p-forest-300);
+    --ll-color-action-hover: var(--ll-p-forest-200);
+    --ll-color-action-pressed: var(--ll-p-forest-100);
+    --ll-color-on-action: var(--ll-p-neutral-950);
+    --ll-color-action-subtle: var(--ll-p-forest-950);
+    --ll-color-action-subtle-border: var(--ll-p-forest-800);
+    --ll-color-backdrop: rgba(14, 21, 18, 0.62);
+    --ll-color-caption-bg: rgba(14, 21, 18, 0.88);
+
+    --ll-color-selected-bg: var(--ll-p-forest-950);
+    --ll-color-selected-indicator: var(--ll-p-forest-300);
+    --ll-color-nav-active: var(--ll-p-forest-300);
+
+    --ll-color-accent: var(--ll-p-timber-300);
+    --ll-color-sponsored-bg: var(--ll-p-timber-900);
+    --ll-color-sponsored-text: var(--ll-p-timber-300);
+
+    --ll-color-status-positive: var(--ll-p-forest-200);
+    --ll-color-status-positive-bg: var(--ll-p-forest-900);
+    --ll-color-status-warning: var(--ll-p-amber-200);
+    --ll-color-status-warning-bg: var(--ll-p-amber-900);
+    --ll-color-status-critical: var(--ll-p-red-200);
+    --ll-color-status-critical-bg: var(--ll-p-red-900);
+    --ll-color-status-neutral: var(--ll-p-neutral-300);
+    --ll-color-status-neutral-bg: var(--ll-p-neutral-800);
+
+    --ll-focus-color: var(--ll-p-timber-300);
+    --ll-hover-overlay: rgba(238, 241, 239, 0.06);
+    --ll-pressed-overlay: rgba(238, 241, 239, 0.1);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
