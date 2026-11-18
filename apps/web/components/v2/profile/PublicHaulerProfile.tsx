@@ -12,9 +12,10 @@ function units(count: number): string {
  * A hauling business as a landing operator sees it (UX 02 §5.1). It takes only the public view
  * (`publicHaulerProfile`), so a private field cannot reach this markup: the profile page's preview and any public
  * page render exactly this. `headingLevel` places it under the page's own heading (2) or as the page heading (1).
- * Everything here is what the business itself stated; nothing is verified unless the verification line says so.
+ * Everything here is what the business itself stated; LogLoads reviewed only what the review line names. `now` is the
+ * request's instant, for that line's 12-month currency (#337).
  */
-export function PublicHaulerProfile({ profile, headingLevel = 2 }: { profile: HaulerPublicProfileView; headingLevel?: 1 | 2 }) {
+export function PublicHaulerProfile({ profile, now, headingLevel = 2 }: { profile: HaulerPublicProfileView; now: string; headingLevel?: 1 | 2 }) {
   const Name = headingLevel === 1 ? "h1" : "h2"
   const Part = headingLevel === 1 ? "h2" : "h3"
   const listed = profile.equipment.reduce((total, line) => total + line.units, 0)
@@ -35,7 +36,7 @@ export function PublicHaulerProfile({ profile, headingLevel = 2 }: { profile: Ha
         </p>
         {profile.verification ? (
           <p className={styles.meta}>
-            <VerificationIndicator verification={profile.verification} />
+            <VerificationIndicator now={now} verification={profile.verification} />
           </p>
         ) : null}
       </div>
