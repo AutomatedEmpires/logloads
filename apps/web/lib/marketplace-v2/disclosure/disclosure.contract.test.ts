@@ -25,7 +25,7 @@ const DISPOSABLE =
 const ISSUER = "https://clerk.reveal-contract.test"
 const AUDIENCE = "logloads-reveal-contract"
 const ROLE = "logloads_reveal_ci"
-const LEDGER = "06,11,12,16,18,23,26,29,31,33,35,38,40"
+const LEDGER = "06,11,12,16,18,23,26,29,31,33,35,38,40,42"
 
 if (REQUIRED && !DISPOSABLE) {
   describe("disclosure adapter contract", () => {
