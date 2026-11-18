@@ -219,13 +219,13 @@ describe("what reaches the browser (#185 review)", () => {
 })
 
 describe("share and report (criterion 5)", () => {
-  it("shares the public link only: the public origin and the job's path, never this request's query", async () => {
+  it("shares the public link only: the public origin and the share page, never this request's query", async () => {
     const root = await tree({ error: "Something", sent: "1" })
 
-    expect(propsOf<{ url: string }>(root, ShareListing)?.url).toBe(`https://logloads.example/v2/work/${JOB_ID}`)
+    expect(propsOf<{ url: string }>(root, ShareListing)?.url).toBe(`https://logloads.example/v2/share/${JOB_ID}`)
     const html = renderToStaticMarkup(root)
     expect(html).toMatch(/<summary[^>]*>Share this job<\/summary>/)
-    expect(html).toMatch(new RegExp(`<input[^>]*readOnly=""[^>]*value="https://logloads.example/v2/work/${JOB_ID}"|<input[^>]*value="https://logloads.example/v2/work/${JOB_ID}"[^>]*readOnly`, "i"))
+    expect(html).toMatch(new RegExp(`<input[^>]*readOnly=""[^>]*value="https://logloads.example/v2/share/${JOB_ID}"|<input[^>]*value="https://logloads.example/v2/share/${JOB_ID}"[^>]*readOnly`, "i"))
   })
 
   it("offers the spec's report reasons to a signed-in person, with optional details, posting only the listing id", async () => {
