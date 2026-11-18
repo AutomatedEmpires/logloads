@@ -15,7 +15,7 @@ import { normalizedDisclosure } from "./normalized"
 
 const PERSON = { audience: "logloads-app", issuer: "https://clerk.reveal.test", subject: "reveal_person" }
 const ORG = "11111111-1111-4111-8111-111111111111"
-const INTEREST = "22222222-2222-4222-8222-222222222222"
+const INTEREST = "77777777-7777-4777-8777-777777777777"
 const JOB = "33333333-3333-4333-8333-333333333333"
 const PAUSE = "44444444-4444-4444-8444-444444444444"
 const REPORT = "55555555-5555-4555-8555-555555555555"

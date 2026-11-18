@@ -356,7 +356,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
-          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38,40,42)" "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38,40,42,44)" "$RUNNER_TEMP/schema-again.log"
           grep -q "keep logloads_marketplace_adapter and its password" "$RUNNER_TEMP/schema-again.log"
 
       - name: "Owner tool: seed dry run, then --apply"
@@ -509,7 +509,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
-          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38,40,42)" "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38,40,42,44)" "$RUNNER_TEMP/schema-again.log"
 
       # The staging order (docs/INTEGRATIONS.md §15.1): the normalized store first, so PostGIS lives in `extensions`,
       # then the pilot migrations on the same database, each in one transaction as the migration role, and their own

@@ -5,7 +5,7 @@ import { DISCLOSURE_PILOT_OPERATIONS, pilotDisclosure } from "./pilot"
 
 const PRINCIPAL = { audience: "pilot", issuer: "https://clerk.pilot.test", subject: "pilot_person" }
 const ORG = "11111111-1111-4111-8111-111111111111"
-const ID = "22222222-2222-4222-8222-222222222222"
+const ID = "77777777-7777-4777-8777-777777777777"
 
 describe("the pilot disclosure adapter", () => {
   it("refuses every phone-reveal operation and does not need a store", async () => {

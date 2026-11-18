@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { numberCanBeShared, phoneShareNotice, phoneShareState } from "./phone-share"
 
-const INTEREST = "22222222-2222-4222-8222-222222222222"
+const INTEREST = "77777777-7777-4777-8777-777777777777"
 const disclosure = (overrides: Record<string, unknown> = {}) => ({
   interestId: INTEREST,
   phone: "+15415550188",
