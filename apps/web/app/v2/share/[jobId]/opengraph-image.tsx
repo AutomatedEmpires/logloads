@@ -6,6 +6,7 @@ import { toPublicJobView } from "@logloads/contracts"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 
 import { SHARE_CLOSED_BODY, SHARE_CLOSED_TITLE, shareFacts } from "../facts"
+import { shareRateLimit } from "../limit"
 import { resolveShare } from "../load"
 
 export const runtime = "nodejs"
@@ -25,11 +26,29 @@ const frame = {
 }
 
 /**
+ * How long anyone may keep a card (#404). Without this, `ImageResponse` answers `public, immutable,
+ * max-age=31536000` outside development, and a removed, edited or closed listing would keep its old card for a
+ * year. Five minutes is long enough for one unfurl's repeat fetches. The page also puts a version in the card's
+ * address (`cardVersion`), so a changed listing is a different address.
+ */
+const CARD_HEADERS = { "Cache-Control": "public, max-age=300" }
+
+/**
  * The preview a text or Facebook unfurls (1200 × 630). An open job shows pay, basis, trailer, distance and the
  * confirmation date. A closed basin shows the area notice only. Neither card has contact details or a quality claim.
+ * A caller over the request limit gets 429 and no read or render; 503 while the limiter cannot count (`limit.ts`).
  */
 export default async function ShareCardImage({ params }: { params: Promise<{ jobId: string }> }) {
   if (!marketplaceV2Enabled()) notFound()
+
+  const limit = await shareRateLimit("card")
+
+  if (!limit.ok) {
+    return new Response(limit.status === 429 ? "Too many requests" : "Try again shortly", {
+      headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8", "Retry-After": String(limit.retryAfterSeconds) },
+      status: limit.status
+    })
+  }
 
   const { jobId } = await params
   const resolved = await resolveShare(jobId)
@@ -48,7 +67,7 @@ export default async function ShareCardImage({ params }: { params: Promise<{ job
           <div />
         </div>
       ),
-      { ...size }
+      { ...size, headers: CARD_HEADERS }
     )
   }
 
@@ -71,13 +90,12 @@ export default async function ShareCardImage({ params }: { params: Promise<{ job
             <div style={{ fontSize: 84, fontWeight: 700 }}>{facts.payAmount}</div>
             {facts.payBasis ? <div style={{ fontSize: 40 }}>{facts.payBasis}</div> : null}
           </div>
-          <div style={{ fontSize: 36 }}>
-            {facts.equipment} · {facts.distance}
-          </div>
+          {/* One text node. Satori refuses a div with several children unless it is a flex box, and the card then has no picture. */}
+          <div style={{ fontSize: 36 }}>{`${facts.equipment} · ${facts.distance}`}</div>
         </div>
         <div style={{ color: "#d9bc8c", fontSize: 32 }}>{facts.cardFreshness}</div>
       </div>
     ),
-    { ...size }
+    { ...size, headers: CARD_HEADERS }
   )
 }
