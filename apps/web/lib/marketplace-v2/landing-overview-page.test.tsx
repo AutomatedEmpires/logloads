@@ -221,6 +221,23 @@ describe("the landing overview (#133)", () => {
     expect(page).toContain("Needs attention")
   })
 
+  it("hides the first-job checklist when the desk's own read has a paused or closed job (#320)", async () => {
+    mocks.supportsPublishing = true
+    mocks.listOwnLandings.mockResolvedValue([{ ...landing(), activeJobs: 0 }])
+    mocks.listJobs.mockResolvedValue([])
+    mocks.listLandingInterests.mockResolvedValue([])
+    mocks.listOwnJobs.mockResolvedValue([
+      { job: job("j-paused", "Paused pulp", { acceptingInterest: false, status: "paused" }) },
+      { job: job("j-closed", "Closed fir", { acceptingInterest: false, status: "closed" }) }
+    ])
+    const page = await render()
+
+    expect(page).not.toContain("Get started")
+    expect(page).toContain("Nothing needs attention right now")
+    expect(mocks.listOwnJobs).toHaveBeenCalledWith(viewer)
+    expect(mocks.listJobs).not.toHaveBeenCalled()
+  })
+
   it("says when the jobs could not be loaded, and derives neither the checklist nor an all-clear from it (#209 review)", async () => {
     mocks.listOwnLandings.mockResolvedValue([])
     mocks.listLandingInterests.mockResolvedValue([])

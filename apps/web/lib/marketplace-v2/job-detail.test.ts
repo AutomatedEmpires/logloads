@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { MarketplaceJobCardView } from "@logloads/contracts"
 
-import { interestBarOffer, jobPagePath, jobShareUrl, similarJobs } from "./job-detail"
+import { interestBarOffer, jobPagePath, jobSharePath, jobShareUrl, similarJobs } from "./job-detail"
 
 const JOB_ID = "11111111-1111-4111-8111-111111111111"
 
@@ -38,13 +38,16 @@ function card(overrides: Partial<MarketplaceJobCardView> = {}): MarketplaceJobCa
 }
 
 describe("the share link (spec §10.6)", () => {
-  it("is the public origin and the job's path, with nothing from the request", () => {
-    expect(jobShareUrl({ slug: JOB_ID }, "https://logloads.example")).toBe(`https://logloads.example/v2/work/${JOB_ID}`)
-    expect(jobShareUrl({ slug: JOB_ID }, "https://logloads.example/some/path?sent=1#interest")).toBe(`https://logloads.example/v2/work/${JOB_ID}`)
+  it("is the public origin and the share page, with nothing from the request", () => {
+    expect(jobSharePath({ slug: JOB_ID })).toBe(`/v2/share/${JOB_ID}`)
+    expect(jobPagePath({ slug: JOB_ID })).toBe(`/v2/work/${JOB_ID}`)
+    expect(jobShareUrl({ slug: JOB_ID }, "https://logloads.example")).toBe(`https://logloads.example/v2/share/${JOB_ID}`)
+    expect(jobShareUrl({ slug: JOB_ID }, "https://logloads.example/some/path?sent=1#interest")).toBe(`https://logloads.example/v2/share/${JOB_ID}`)
   })
 
   it("encodes the slug, so a slug can never add a query or a path", () => {
     expect(jobPagePath({ slug: "a/b?sent=1#x" })).toBe("/v2/work/a%2Fb%3Fsent%3D1%23x")
+    expect(jobSharePath({ slug: "a/b?sent=1#x" })).toBe("/v2/share/a%2Fb%3Fsent%3D1%23x")
   })
 })
 
