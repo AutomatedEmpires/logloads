@@ -71,7 +71,9 @@ Where an older entry disagrees, the founder's 2026-11-10 decisions (next entry) 
   counsel question (#293) and does not block.
 - **Reconfirmation interval (Blueprint §16.2): decided, as pilot defaults.** One number for both sides: **7 days**.
   - **Jobs.** A confirmation is recent for 7 days (`RECENT_CONFIRMATION_DAYS`). The poster is reminded on day 5.
-    From day 7 the job is due and haulers see "Last confirmed N days ago — check with the poster". At **14 days**
+    Until then haulers see "Confirmed by {landing} N days ago". From day 7 the job is due and haulers see
+    "Last confirmed by {landing} N days ago — check with the poster" (the label names who confirmed: #337,
+    legal review §7.3 item 10). At **14 days**
     without a confirmation the job stops taking new interest and leaves Find Work until the poster confirms again
     with the reconfirm statement. It is not expired, deleted or re-billed, and its label must not say the poster
     paused it.

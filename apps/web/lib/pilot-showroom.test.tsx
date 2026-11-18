@@ -214,7 +214,8 @@ describe("pilot showroom rendering", () => {
     expect(markup).toContain("Open full-size Driver Map capture")
     expect(markup).toContain('width="390"')
     expect(markup).toContain('height="844"')
-    expect(markup).toContain("Driver access is free forever")
+    expect(markup).toContain("Driver access is free. The stated driver pay")
+    expect(markup).not.toMatch(/free forever/i)
     expect(markup).toContain("only person who can mark direct driver pay received")
   })
 
