@@ -14,6 +14,7 @@ export const MAX_PROFILE_FIGURES = 4
 export function CompanyProfileHeader({
   business,
   verification,
+  now,
   figures,
   actions,
   actionNote,
@@ -60,7 +61,7 @@ export function CompanyProfileHeader({
               </p>
               {verification ? (
                 <p className={styles.verify}>
-                  <VerificationIndicator verification={verification} />
+                  <VerificationIndicator now={now} verification={verification} />
                 </p>
               ) : null}
             </div>

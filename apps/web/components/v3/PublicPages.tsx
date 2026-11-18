@@ -11,6 +11,7 @@ import {
   CONTACT_INTEREST_OPTIONS,
   type ContactInterest
 } from "@/lib/contact-intent"
+import type { LegalChangeNotice, LegalDocument, LegalPageContent, LegalSection } from "@/lib/legal/types"
 import type { ArchivedLegalVersion } from "@/lib/legal-archive"
 import type { NetworkLoadView } from "@/lib/network"
 import { payHeadline, presentPay } from "@/lib/pay-display"
@@ -18,13 +19,11 @@ import type { ResidualSettlementItem } from "@/lib/residual-settlement-data"
 
 import {
   forLandingsPlanAllowances,
-  legalPages,
   loadProductLabel,
   pricingPageCopy,
   publicLoadHref,
   publicSignUpCopy,
   slugify,
-  type LegalPageContent,
   type PublicSignUpIntent,
   type PublicStoryPage,
   visibilityLabel
@@ -217,7 +216,7 @@ export function PublicLoadDetail({ load }: { load: NetworkLoadView }) {
           ) : (
             <Link className="action-link action-link--secondary" href="/loads">See other open loads</Link>
           )}
-          <Link className="text-link" href="/marketplace-rules">How commitments work</Link>
+          <Link className="text-link" href="/posting-rules">Read the Posting Rules</Link>
         </aside>
       </main>
     </PublicShell>
@@ -421,6 +420,14 @@ export function PricingPage() {
   )
 }
 
+function legalParagraphs(section: LegalSection): readonly string[] {
+  return typeof section.body === "string" ? [section.body] : section.body
+}
+
+/**
+ * The sections of a legal page. Archived text (one paragraph and its points per section) renders exactly as it did
+ * when it was accepted; only current documents use the later parts (closing paragraph, links, counsel notes).
+ */
 function LegalSections({ content }: { content: LegalPageContent }) {
   return (
     <>
@@ -428,37 +435,59 @@ function LegalSections({ content }: { content: LegalPageContent }) {
         <strong>On this page</strong>
         <ul>{content.sections.map((section) => <li key={section.title}><a href={`#${slugify(section.title)}`}>{section.title}</a></li>)}</ul>
       </nav>
-      {content.sections.map((section) => <section id={slugify(section.title)} key={section.title}><h2>{section.title}</h2><p>{section.body}</p><ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul></section>)}
+      {content.sections.map((section) => (
+        <section id={slugify(section.title)} key={section.title}>
+          <h2>{section.title}</h2>
+          {legalParagraphs(section).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+          {section.points?.length ? <ul>{section.points.map((point) => <li key={point}>{point}</li>)}</ul> : null}
+          {section.closing ? <p>{section.closing}</p> : null}
+          {section.links?.length ? (
+            <ul className="legal-links">
+              {section.links.map((link) => <li key={link.href}><Link href={link.href}>{link.label}</Link></li>)}
+            </ul>
+          ) : null}
+          {section.counsel ? <p className="legal-counsel"><strong>For counsel:</strong> {section.counsel}</p> : null}
+        </section>
+      ))}
     </>
   )
 }
 
-export function LegalPage({ content }: { content: LegalPageContent }) {
-  const notice = content.changeNotice
+function LegalChangeNoticeAside({ notice }: { notice: LegalChangeNotice }) {
+  return (
+    <aside aria-label="Change notice" className="legal-notice">
+      <strong>Change notice · <time dateTime={notice.dateTime}>{notice.date}</time></strong>
+      <p>
+        {notice.body} {notice.link.lead}{" "}
+        <Link href={notice.link.href}>{notice.link.label}</Link>.
+      </p>
+    </aside>
+  )
+}
+
+/**
+ * A current legal document (#329). It always shows its effective date and version id, which acceptance records
+ * point at (#338), and that it is a draft for counsel: none of this text has been reviewed by a licensed attorney.
+ */
+export function LegalPage({ document }: { document: LegalDocument }) {
+  const notice = document.changeNotice
+  const marksCounselPoints = document.sections.some((section) => Boolean(section.counsel))
 
   return (
     <PublicShell>
       <main className="page-main legal-page">
-        <PageIntro eyebrow="Legal" title={content.title} body={content.intro} />
-        <p className="legal-effective">Effective {content.effectiveDate}</p>
-        {notice ? (
-          <aside aria-label="Change notice" className="legal-notice">
-            <strong>Change notice · <time dateTime={notice.dateTime}>{notice.date}</time></strong>
-            <p>
-              {notice.body} {notice.link.lead}{" "}
-              <Link href={notice.link.href}>{notice.link.label}</Link>.
-            </p>
-          </aside>
-        ) : null}
-        <aside className="legal-boundary-summary">
-          <strong>Product boundary</strong>
+        <PageIntro eyebrow="Legal" title={document.title} body={document.intro} />
+        <p className="legal-effective">Effective <time dateTime={document.effectiveDateIso}>{document.effectiveDate}</time> · <span className="legal-version">Version {document.versionId}</span></p>
+        <aside aria-label="Draft status" className="legal-notice">
+          <strong>Draft for counsel review</strong>
           <p>
-            LogLoads coordinates timber hauling work.
-            LogLoads does not carry freight or receive, escrow, deduct from, or
-            distribute transportation compensation.
+            LogLoads wrote this text from its own legal review in November 2026, and it is the version in use now.
+            A licensed attorney has not reviewed it yet, so it may change after that review.
+            {marksCounselPoints ? " Each “For counsel” note below marks a point an attorney still has to confirm." : null}
           </p>
         </aside>
-        <LegalSections content={content} />
+        {notice ? <LegalChangeNoticeAside notice={notice} /> : null}
+        <LegalSections content={document} />
       </main>
     </PublicShell>
   )
@@ -477,22 +506,25 @@ export function ArchivedLegalPage({ archive }: { archive: ArchivedLegalVersion }
     <PublicShell>
       <main className="page-main legal-page legal-page--archived">
         <PageIntro
-          body={`The text below is the LogLoads ${content.title} effective ${content.effectiveDate}, published unchanged.`}
+          body={`The text below is the LogLoads ${content.title} ${archive.versionLabel}, published unchanged.`}
           eyebrow="Legal · Archived version"
-          title={`${content.title} — archived version effective ${content.effectiveDate}`}
+          title={`${content.title} — archived version ${archive.versionLabel}`}
         />
         <aside aria-label="Archived version" className="legal-notice">
           <strong>Superseded — kept for agreements accepted under this version</strong>
           <p>
             The current {content.title} replaced this version on{" "}
             <time dateTime={archive.supersededOnIso}>{archive.supersededOn}</time>.
-            Host agreements recorded as version {archive.agreementVersions.join(", ")} refer
-            to this text.{" "}
+            {archive.agreementVersions.length > 0 ? (
+              <> Host agreements recorded as version {archive.agreementVersions.join(", ")} refer to this text.</>
+            ) : null}{" "}
             <Link href={`/${content.slug}`}>Read the current {content.title}</Link>.
           </p>
         </aside>
         <p className="legal-effective">Effective {content.effectiveDate}</p>
         <p className="legal-archived-intro">{content.intro}</p>
+        {/* The dated notice this version carried when it was published, verbatim. */}
+        {content.changeNotice ? <LegalChangeNoticeAside notice={content.changeNotice} /> : null}
         <aside className="legal-boundary-summary">
           <strong>Product boundary</strong>
           <p>{archive.boundarySummary}</p>
@@ -915,5 +947,3 @@ export function ContactPage({
 }
 
 // NotFoundProduct is in ./NotFoundProduct.tsx on purpose; see there before moving it back (#137).
-
-export { legalPages }

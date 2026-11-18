@@ -105,10 +105,11 @@ const FRESHNESS_STATE: Readonly<Record<PostingFreshness, FreshnessState>> = Obje
 
 /**
  * AvailabilityStatus props for a listing. Only the poster's explicit confirmation (`lastConfirmedAt`, set by the
- * publish attestation or a reconfirmation) produces a "confirmed" state or wording; an edit never does.
+ * publish attestation or a reconfirmation) produces a "confirmed" state or wording; an edit never does. The
+ * confirmed wording names the business that confirmed (`posterName`), never LogLoads (#337).
  */
 export function jobAvailabilityStatus(
-  job: Pick<MarketplaceJobCardView, "lastModifiedAt" | "lastConfirmedAt" | "expiresAt">,
+  job: Pick<MarketplaceJobCardView, "lastModifiedAt" | "lastConfirmedAt" | "expiresAt" | "posterName">,
   now: string
 ): AvailabilityStatusProps {
   const { band, label } = postingFreshness(job, now)

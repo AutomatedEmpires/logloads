@@ -243,6 +243,24 @@ describe("one-tap press", () => {
     expect(JSON.stringify(captured.events)).not.toContain(REPLY)
   })
 
+  it("leads a used reply or decline link to its inquiry's thread, and a job link to the job postings (flow C, #328)", async () => {
+    const held = store()
+    const runtime = harness(held.effects)
+    const token = mint({ action: "reply" })
+
+    await pressOneTap(token, runtime)
+    const used = inspectOneTap(token, runtime)
+    expect(used).toEqual({ action: "reply", interestId: INTEREST, kind: "used" })
+
+    const reply = oneTapModel(used, null)
+    expect(reply.title).toBe("Reply sent.")
+    expect(reply.nextHref).toBe(`/v2/landing/inquiries?inquiry=${INTEREST}#conversation`)
+    expect(reply.nextLabel).toBe("Open the inquiry")
+    expect(oneTapModel({ action: "decline", interestId: INTEREST, kind: "used" }, null).nextHref).toBe(`/v2/landing/inquiries?inquiry=${INTEREST}#conversation`)
+    expect(oneTapModel({ action: "fill", interestId: null, kind: "used" }, null)).toMatchObject({ nextHref: "/v2/landing/jobs", nextLabel: "Job postings" })
+    expect(oneTapModel({ action: "confirm_availability", interestId: null, kind: "used" }, null).nextHref).toBe("/v2/work")
+  })
+
   it("lets only one of two simultaneous presses through", async () => {
     const held = store()
     const runtime = harness(held.effects)

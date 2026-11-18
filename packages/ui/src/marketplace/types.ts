@@ -46,10 +46,11 @@ export interface AvailabilityStatusProps { state: FreshnessState; label: string 
 
 /**
  * DEVIATION: takes the contract's `MarketplaceVerification | null` (#150) instead of a free `scope` string and
- * `reviewedOn`. The visible label is then always `describeMarketplaceVerification`'s scope-specific text, so no
- * caller can pass a generic "Verified" (Gate 5). `null` renders nothing.
+ * `reviewedOn`. The visible label is then always `describeMarketplaceVerification`'s whole dated sentence, so no
+ * caller can pass a generic "Verified" (Gate 5). `null` renders nothing. `now` is the request's ISO 8601 instant:
+ * a review is shown as current for 12 months, and a component must not read the clock (#337).
  */
-export interface VerificationIndicatorProps { verification: MarketplaceVerification | null }
+export interface VerificationIndicatorProps { verification: MarketplaceVerification | null; now: string }
 
 /** No props: one wording everywhere. */
 export type SponsoredIndicatorProps = Record<string, never>
@@ -121,6 +122,8 @@ export interface CompanyProfileHeaderProps {
   business: { name: string; initials: string; logoUrl?: string | null; kind: string; homeRegion: string; since?: number }
   /** DEVIATION: the contract verification record (see VerificationIndicatorProps), not a label string. */
   verification: MarketplaceVerification | null
+  /** The request's ISO 8601 instant, for the mark's 12-month currency (see VerificationIndicatorProps). */
+  now: string
   figures: Array<{ value: string; label: string }> // 2–4 capability figures; extras are not rendered
   actions: ReactNode
   actionNote?: string                    // e.g. invitations left, supplied by the page
