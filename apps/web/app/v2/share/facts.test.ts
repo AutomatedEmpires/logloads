@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest"
 
-import type { MarketplacePublicJobView } from "@logloads/contracts"
+import { NOT_IN_YOUR_AREA_YET, type MarketplacePublicJobView } from "@logloads/contracts"
 
-import { attributedFreshness, scrubPublicText, shareChannel, shareFacts, shareInterest } from "./facts"
+import { findWorkEmptyState, parseFindWorkSearch } from "@/lib/marketplace-v2/find-work"
+
+import {
+  SHARE_CLOSED_BODY,
+  SHARE_CLOSED_TITLE,
+  attributedFreshness,
+  scrubPublicText,
+  shareChannel,
+  shareFacts,
+  shareInterest
+} from "./facts"
 
 const NOW = "2026-11-12T15:00:00.000Z"
 
@@ -162,6 +172,21 @@ describe("send interest", () => {
       kind: "closed",
       label: "See open jobs"
     })
+  })
+})
+
+describe("a closed basin", () => {
+  it("uses Find Work's area notice and no other action", () => {
+    const state = findWorkEmptyState(
+      parseFindWorkSearch({}, { hasSetups: false }),
+      { hasSetups: false },
+      { areaNotice: NOT_IN_YOUR_AREA_YET }
+    )
+
+    expect(SHARE_CLOSED_TITLE).toBe(state.title)
+    expect(SHARE_CLOSED_BODY).toBe(state.body)
+    expect(state.actions).toEqual([])
+    expect(`${SHARE_CLOSED_TITLE} ${SHARE_CLOSED_BODY}`).not.toMatch(/verified job|every job is real|@|\d{3}-\d{3}/i)
   })
 })
 
