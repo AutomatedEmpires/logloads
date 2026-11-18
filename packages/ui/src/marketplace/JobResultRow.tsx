@@ -89,7 +89,7 @@ export function JobResultRow(props: JobResultRowProps & Placement) {
           {job.product ? <span>{job.product}</span> : null}
           {poster || !job.posterVerification ? null : (
             <span className={styles.verification}>
-              <VerificationIndicator verification={job.posterVerification} />
+              <VerificationIndicator now={now} verification={job.posterVerification} />
             </span>
           )}
           {showStatus ? (

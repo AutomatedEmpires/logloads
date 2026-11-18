@@ -69,7 +69,7 @@ describe("jobAvailabilityStatus (V2-DEC-03)", () => {
 
   it("is confirmed, then aging, only from lastConfirmedAt", () => {
     expect(jobAvailabilityStatus(jobCard({ lastConfirmedAt: "2026-11-01T15:00:00.000Z" }), NOW)).toEqual({
-      label: "Poster confirmed available 1 day ago",
+      label: "Confirmed by Example Timber Co 1 day ago",
       state: "confirmed"
     })
     expect(jobAvailabilityStatus(jobCard({ lastConfirmedAt: "2026-10-20T15:00:00.000Z" }), NOW).state).toBe("aging")

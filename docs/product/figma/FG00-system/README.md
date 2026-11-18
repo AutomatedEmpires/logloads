@@ -1,12 +1,69 @@
 # FG00 System: the LogLoads design system in Figma
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#256). It is not approved yet. Key screens built on it still need the founder's approval (AE-Control `policy/designops.md`). On 2026-11-10, #278 closed the 00 System gaps found while designing screens. On 2026-11-11, #281 added the field layer: the field design bar, a Dark theme and the field components. On 2026-11-12, #352 closed the remaining page 00 gaps and promoted page 02's local parts (see [Remaining gaps and promotions (#352)](#remaining-gaps-and-promotions-352)). No UI code changed.
+**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#256). It is not approved yet. Key screens built on it still need the founder's approval (AE-Control `policy/designops.md`). On 2026-11-10, #278 closed the 00 System gaps found while designing screens. On 2026-11-11, #281 added the field layer: the field design bar, a Dark theme and the field components. On 2026-11-12, #352 closed the remaining page 00 gaps and promoted page 02's local parts (see [Remaining gaps and promotions (#352)](#remaining-gaps-and-promotions-352)). On 2026-11-18, #336 (LL-D11) redrew the verification mark and added the "what this means" sheet for legal review Gate A (see [Legal review marks (#336)](#legal-review-marks-336)). No UI code changed.
 **Figma page:** [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) in the LogLoads file (jackson.cole's team). The field layer is the [Field layer](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=193-1082) group.
 **Source of truth:** `packages/ui` on `work/logloads-repair`. Figma mirrors the code, and when the two differ the code wins and this page gets updated. The one exception is the field layer (#281): it is a design target ahead of the code. Every token and component it changes has a `packages/ui` follow-up in [Follow-ups for packages/ui](#follow-ups-for-packagesui). No UI code changed in this task.
 
+## Legal review marks (#336)
+
+The legal review (`docs/legal/2026-11-legal-review.md`, PR #317, P0 item 7 and §7.3) treats a verification mark as LogLoads' own statement. The old mark used the Phosphor SealCheck in `color/status-positive`, which is a green tick on a seal, and the bare words "Business identity verified · Oct 2026". Both are banned by §7.3 items 1 and 2. This task changed the component in place, so every instance on pages 00 and 02 picked up the new look. Nothing on page 02 was edited.
+
+Link base: `https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=` plus the node id with `-` in place of `:`.
+
+**Components**
+
+| Component | Node | What it is |
+|---|---|---|
+| VerificationIndicator (now a set) | [355:1838](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1838) | 3 states. State=reviewed [19:416](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=19-416): "Business identity reviewed by LogLoads on Oct 14, 2026" in `color/text-secondary`. State=last reviewed [355:1822](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1822): a review older than 12 months, grey (`color/text-muted`), "Business identity last reviewed by LogLoads on Sep 3, 2025". State=not yet reviewed [355:1828](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1828): "Not yet reviewed", neutral. Every state uses the same neutral ID card icon and a dotted underline that says the mark opens the sheet. Properties: Label (reviewed), Last reviewed label, Focus ring, Pressed. The label wraps, so the mark fills its column in narrow rows. |
+| VerificationSheet | [357:19095](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-19095) | The "what this means" sheet (§7.3 item 3), 6 variants: Layout (sheet below 600 px, centred above) × State (the mark's three states). Built from Dialog, VerificationIndicator, Fact, Notice and Note. It says what LogLoads looked at, on what date, and "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. Check these yourself before you agree to a haul." It also says a mark does not move a business up in search (§7.3 item 5). Close is the one action. Sheet variants: [357:18621](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18621), [357:18717](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18717), [357:18800](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18800). Centred: [357:18861](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18861), [357:18947](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18947), [357:19030](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-19030). |
+| Checkbox, new State=error | [357:35165](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-35165) | For a box that must be ticked, such as the Terms box on pages 01 and 07. The box border is `color/status-critical` at 2 px, and the message sits under the label with the warning icon, as on Input. New Error text property. It is a new variant value, so no existing instance changed. |
+| Icon/status.reviewed | [355:1770](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1770) | Phosphor IdentificationCard, bold. The mark's icon. |
+| Icon/action.report | [355:1776](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1776) | Phosphor Flag, bold. Report on page 07 threads. |
+| Icon/action.block | [355:1782](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1782) | Phosphor Prohibit, bold. Block on page 07 threads. |
+| Icon/x.link-off | [355:1788](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1788) | Phosphor LinkBreak, bold. "Links in a first message are not clickable." |
+
+The icons were drawn from the `@phosphor-icons/react` 2.1.1 paths in the repository, on the Phosphor grid.
+
+**Changed containers.** The full sentence is wider than the old label, so the containers that hold a mark changed. In JobResultRow's wide rows and in JobSummary's poster row, the business line now wraps, and the mark takes its own line at full width. In narrow rows and in CompanyProfileHeader, the mark fills its column. A check afterwards found none of the 22 nested marks on page 00, or the 44 on page 02, running past its container.
+
+**Frames on the canvas.** The group [Legal review marks (#336)](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-21273) (`357:21273`) sits at the end of the 00 System frame. Each frame uses only 00 System instances, and the 390 frames use the Touch mode.
+
+| Frame | 390 | 768 | 1440 | Dark (390) |
+|---|---|---|---|---|
+| VM-01 Hauler profile in Find trucks, mark reviewed | [357:21281](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-21281) | [357:21433](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-21433) | [357:21585](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-21585) | [357:22190](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-22190) |
+| VM-02 Mark states (a specimen, not a screen): on a job row, reviewed, last reviewed, not yet reviewed, focus, pressed | [357:21738](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-21738) | — | — | [357:21964](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-21964) |
+| VM-03 What this mark means, reviewed | [357:23696](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-23696) | [357:23742](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-23742) | [357:23788](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-23788) | [357:23833](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-23833) |
+| VM-04 What this mark means, last reviewed | [357:23883](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-23883) | centred variant `357:18947` | centred variant `357:18947` | — |
+| VM-05 What "Not yet reviewed" means | [357:23929](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-23929) | centred variant `357:19030` | [357:23965](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-23965) | — |
+
+**States.** The mark has default (reviewed), last reviewed, not yet reviewed, focus and pressed. A mark cannot be disabled, and it does not load or fail on its own, because it comes with the profile or job that shows it. That screen's loading, offline and error states cover it. The sheet holds no data that can fail, because it shows what the mark already has. Empty is "Not yet reviewed".
+
+**Contrast.** Only role tokens are used, so the measured table above holds in both themes: `color/text-secondary` 9.40:1 or more, `color/text-muted` 7.18:1 or more, the focus ring 3:1 or more, and link text 6.59:1 or more.
+
+**Wording.** These strings are design copy for counsel's short review of the mark sentence and the sheet (legal review §7.3, counsel: yes). "What LogLoads looked at" reads "The business name the owner gave us, checked against a business document they sent us." This follows spec §7.2, which names the claimed business name and the submitted documents. Admin review copy can make it more exact.
+
+### Self-audit against quality bar v1 (#336)
+
+Every frame this task made or changed, on pages 00, 01, 03, 04 and 07, was checked by a read-only script on 2026-11-18. The script looked for text under 14 px, a button, choice card or checkbox under 44 px, a disabled control, the word "Preview", a solid fill or stroke not bound to a variable (outside instances), text outside its frame, overlapping frames on the canvas, and "verified", "Trusted", "Vetted" or "Certified" in the mark frames. It found nothing on any of the five pages. Key frames were also checked by screenshot. Nothing was checked in a browser or in Present mode.
+
+| Rule | Severity | Where | What is wrong | Fix |
+|---|---|---|---|---|
+| V6 | major (it was there before) | CompanyProfileHeader Breakpoint=mobile [23:963](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=23-963), seen in VM-01 390 | The stat tiles alternate: two have a boxed edge and two do not | Give all four tiles the same treatment in the component (a 00 System follow-up) |
+| V3 | polish | Page 04 directory listing frames | The group headings use the same 16 px gap as the facts | Put 24 px above each heading |
+| V5 | polish | Note `207:1215` | The main component has a fixed height. These frames set each instance to hug | Make Note hug its text |
+| A1 | polish (code) | The Terms box on pages 01 and 07 | The label holds two links, so in code a tap on a link must open the document and not tick the box | Make the links separate targets and keep the box and the rest of the label as the tick target |
+
+Scorecard: Visual 6 of 6 pass (two polish items, one major from before). Usefulness 5 of 5 pass. Accessibility A1 to A3 pass in design, and A4 (axe) runs on the UI PR. Responsive R1 passes: key screens at 390, 768 and 1440, with states at 390 on pages 01 and 07 and at all three widths on page 04, which is how each page already works. Performance and backend do not apply to a design task. Blockers: 0.
+
+The three changes that would most raise the quality:
+
+1. Build VerificationIndicator and VerificationSheet in `packages/ui`, and add the banned bare words to `tools/check-guardrails.mjs` (P0 item 4).
+2. Fix the CompanyProfileHeader mobile tiles.
+3. Get counsel's short review of the mark sentence, the sheet and the SMS consent words before they ship.
+
 ## What is on the page
 
-The page holds one frame, `00 System`, which contains seven groups:
+The page holds one frame, `00 System`, which contains eight groups:
 
 | Group | Node | Contents |
 |---|---|---|
@@ -17,8 +74,9 @@ The page holds one frame, `00 System`, which contains seven groups:
 | [Layout and navigation](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-13) | `9:13` | Top bar, bottom tabs, page header, section, search, filters, detail panel |
 | [Marketplace](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-16) | `9:16` | Pay, freshness, verification, equipment, job rows and list, inquiry row, company header |
 | [Field layer](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=193-1082) | `193:1082` | The field design bar, the Dark theme decision, the measured contrast table, key components in Light and Dark, and the field components |
+| [Legal review marks (#336)](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-21273) | `357:21273` | The verification mark in context, its states, and the "what this means" sheet at 390, 768 and 1440 |
 
-The icons are one component per `IconKey` in `packages/ui/src/icons/registry.ts`. They use the real Phosphor 2.1 glyphs at their registry weights. Four icons added by the field layer and one added by #352 (`status.paused`) are not in the registry yet (see the follow-ups).
+The icons are one component per `IconKey` in `packages/ui/src/icons/registry.ts`. They use the real Phosphor 2.1 glyphs at their registry weights. Four icons added by the field layer, one added by #352 (`status.paused`) and four added by #336 (`status.reviewed`, `action.report`, `action.block`, `x.link-off`) are not in the registry yet (see the follow-ups).
 
 Each component sits in an entry that shows its name, its code path and a short note on behaviour taken from the code comments.
 
@@ -254,7 +312,7 @@ Every fill and stroke of the new and changed components is bound to a variable.
 | Button / Icon only | [12:443](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=12-443) | `packages/ui/src/primitives/Button.tsx` (iconOnly) | 48: Variant × Size × State (default, disabled, focus, pressed); Label (accessible name), Icon, Focus ring |
 | Count | [12:452](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=12-452) | `packages/ui/src/primitives/TabCount.tsx` and the `.count` rules of GlobalNavigation and ResponsiveNavigation | 2: Context (tab-or-top-nav, bottom-tab); Count |
 | FormField | [13:146](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=13-146) | `packages/ui/src/primitives/FormField.tsx` | 15: Control (input, select, textarea) × State (default, focus, error, disabled, pressed); Label, Optional, Hint, Show hint, Value, Error. Select variants bind those text properties, the same way input does. |
-| Checkbox | [13:177](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=13-177) | `packages/ui/src/primitives/Checkbox.tsx` | 8: Checked × State (default, disabled, focus, pressed); Label, Hint, Show hint, Focus ring. Rows are at least 48 px. |
+| Checkbox | [13:177](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=13-177) | `packages/ui/src/primitives/Checkbox.tsx` | 9: Checked × State (default, disabled, focus, pressed, and error for an unticked box since #336); Label, Hint, Show hint, Focus ring, Error. Rows are at least 48 px. |
 | ChoiceCard | [13:221](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=13-221) | `packages/ui/src/primitives/ChoiceCard.tsx` | 10: Checked × State (default, hover, disabled, focus, pressed); Title, Description |
 | SegmentedControl | [14:77](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-77) (part [14:40](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-40)) | `packages/ui/src/primitives/SegmentedControl.tsx` | 5: Selected (none, 1, 2, 3, 4); Show option 3, Show option 4. Option part: Pressed (aria-pressed) × State (default, hover, focus), Label, Touch pressed. 16 px labels; a check icon on the selected option (#352). |
 | Tabs | [14:131](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-131) (part [14:98](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=14-98)) | `packages/ui/src/primitives/Tabs.tsx`, `packages/ui/src/primitives/TabList.tsx` | 2: Variant (page, segmented). Tab part: Variant × Selected, Label, Show count, Focus ring, Pressed |
@@ -280,7 +338,8 @@ Every fill and stroke of the new and changed components is bound to a variable.
 | PayFigure | [19:385](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=19-385) | `packages/ui/src/marketplace/PayFigure.tsx` | 9: Kind (rate, negotiable, unstated) × Size (sm, md, lg); Amount, Basis |
 | AvailabilityStatus | [19:405](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=19-405) | `packages/ui/src/marketplace/AvailabilityStatus.tsx` | 5: State (confirmed, aging, stale, unconfirmed, unknown); Label (postingFreshness wording). Drawn as the FreshnessChip. |
 | SponsoredIndicator | [19:410](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=19-410) | `packages/ui/src/marketplace/SponsoredIndicator.tsx` | No props |
-| VerificationIndicator | [19:416](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=19-416) | `packages/ui/src/marketplace/VerificationIndicator.tsx` | Label. Place it only where a real verification record exists. |
+| VerificationIndicator | [355:1838](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1838) (State=reviewed is the old `19:416`) | `packages/ui/src/marketplace/VerificationIndicator.tsx` | 3 since #336: State (reviewed, last reviewed, not yet reviewed); Label, Last reviewed label, Focus ring, Pressed. A neutral ID card icon and the full sentence. It opens VerificationSheet. |
+| VerificationSheet | [357:19095](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-19095) | Not in code yet (#336) | 6: Layout (sheet, centred) × State (reviewed, last reviewed, not yet reviewed). The "what this means" sheet. |
 | EquipmentRequirement | [19:436](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=19-436) | `packages/ui/src/marketplace/EquipmentRequirement.tsx` | 3: Fit (none, fits, not_in_setups); Labels |
 | EquipmentCapacity | [19:457](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=19-457) | `packages/ui/src/marketplace/EquipmentCapacity.tsx` | 2: State (known, unknown); Text |
 | OperatingRegion | [19:478](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=19-478) | `packages/ui/src/marketplace/OperatingRegion.tsx` | 2: Radius (known, unknown); Areas |
@@ -341,6 +400,16 @@ The field layer is ahead of the code. Each change below needs a matching code ta
 - **PageNotice** (`apps/web/components/v2/PageNotice.tsx`): 16 px text (`--ll-text-base`, not `--ll-text-md`) and a tone icon (status.info, status.confirmed, status.warning).
 - **StepIndicator:** draw the done step with `status.confirmed` instead of the "✓" glyph, which renders like a "v" in Plex Mono (audit G12).
 - **From #352:** FormField's error state keeps the hint and value visible, and its label row wraps "(optional)"; EmptyState's body is full width (no 560 px max); AvailabilityStatus gets the filled and paused looks (lock and pause icons) for closed jobs; PlanCard gets a not-for-sale state with no action; BottomActionBar gets the stacked layout and the ready-reply choices; the icon registry gets `status.paused` (PauseCircle, bold); SegmentedControl gets 16 px labels, a check on the selected option and two to four options; FindWorkSummary gets a 16 px second line and a "Filters" button; JobResultRow (below its narrow breakpoint), JobSummary and JobDetail get the decision order and 16 px labels; GlobalNavigation, ResponsiveNavigation and BusinessSwitcher labels go to `--ll-text-base`; and PageHeader renders no slot wrapper when it has no children.
+
+**From #336 (legal review Gate A)**
+
+- **VerificationIndicator:** use the full sentence from `describeMarketplaceVerification` as the visible label. Today the label is `"<scope> verified"` and only the tooltip has the sentence, and legal review §7.3 item 1 bans the bare word. Swap the `status.verified` SealCheck (duotone, `status-positive`) for `status.reviewed` (IdentificationCard, bold) in `text-secondary`. Grey the mark (`text-muted`) and say "last reviewed" with the date when `reviewedOn` is older than 12 months. Render "Not yet reviewed" for a business with no record. Today the component renders nothing for `null`, and §7.3 item 7 asks for the neutral words. Make the mark a button with a 48 px hit area that opens the sheet, with a dotted underline on the label.
+- **VerificationSheet:** a new Dialog-based component, a sheet below bp-sm and centred above, with the three states drawn here.
+- **Checkbox:** an error state with a `status-critical` 2 px border and the message under the label.
+- **Icon registry:** add `status.reviewed` (IdentificationCard), `action.report` (Flag), `action.block` (Prohibit) and `x.link-off` (LinkBreak), all at the bold weight.
+- **Guardrails:** add the bare words Verified, Trusted, Approved, Vetted, Safe, Certified and Background checked to `tools/check-guardrails.mjs` for mark components (P0 item 4).
+- **Ranking:** search must not rank a marked profile higher by default. A filter named "Identity reviewed" is allowed (§7.3 item 5).
+- **00 System gaps found here:** CompanyProfileHeader mobile stat tiles alternate a boxed edge, and Note `207:1215` has a fixed height (see the self-audit).
 
 **Figma follow-ups on other pages** (not in this task; 00 System is the only page it edits)
 

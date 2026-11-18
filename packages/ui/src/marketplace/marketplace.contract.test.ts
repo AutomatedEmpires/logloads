@@ -106,7 +106,7 @@ describe("marketplace contract (DS-04, #147)", () => {
 
   it("ships none of the design reference's fictional businesses or verification strings (Gate 5)", () => {
     for (const name of [...shipped, "test-fixtures.ts"]) {
-      expect(read(name), name).not.toMatch(/Ridgeline Hauling|Cedar Fork Logging|Business identity verified · Oct 2026/)
+      expect(read(name), name).not.toMatch(/Ridgeline Hauling|Cedar Fork Logging|Business identity verified/)
     }
   })
 })

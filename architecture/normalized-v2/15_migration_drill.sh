@@ -131,7 +131,7 @@ show_diff() { # show_diff <before rows file> <label>
 }
 
 echo "[1/7] Sequencing: no file controls its own transaction or uses non-transactional DDL..."
-for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql 23_v2_round2_hardening.sql 26_v2_team_seats_saved_jobs_outbox.sql 29_v2_landing_scope_hardening.sql 31_v2_reply_gate_reconfirmation_unsubscribe.sql 33_v2_port_v3_functions.sql 35_v2_day14_direct_reads_unsubscribe_keys.sql 38_v2_basins.sql 40_v2_reveal_pause.sql; do
+for f in 01_schema.sql 02_access.sql 03_entitlements.sql 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql 23_v2_round2_hardening.sql 26_v2_team_seats_saved_jobs_outbox.sql 29_v2_landing_scope_hardening.sql 31_v2_reply_gate_reconfirmation_unsubscribe.sql 33_v2_port_v3_functions.sql 35_v2_day14_direct_reads_unsubscribe_keys.sql 38_v2_basins.sql 40_v2_reveal_pause.sql 42_v2_basin_liquidity.sql; do
   # (PL/pgSQL block ends are `end;` / `end if;` and its `begin` carries no semicolon, so they do not match.)
   ! grep -Eiq '^[[:space:]]*(begin|commit|rollback|start[[:space:]]+transaction)[[:space:]]*;' "$SCRIPT_DIR/$f" \
     || fail "$f contains transaction control and cannot be applied atomically"
@@ -191,6 +191,7 @@ refused "$SCRIPT_DIR/33_v2_port_v3_functions.sql" "requires migration 31"
 refused "$SCRIPT_DIR/35_v2_day14_direct_reads_unsubscribe_keys.sql" "requires migration 33"
 refused "$SCRIPT_DIR/38_v2_basins.sql" "requires migration 35"
 refused "$SCRIPT_DIR/40_v2_reveal_pause.sql" "requires migration 38"
+refused "$SCRIPT_DIR/42_v2_basin_liquidity.sql" "requires migration 40"
 [[ "$(fp)" == "$FP0" ]] || { show_diff "$TMP/rows0.txt" "after refused out-of-order runs"; fail "a refused out-of-order migration changed something"; }
 ok "11, 12, 16, 18, 23, 26, 29, 31, 33 and 35 before 06 are refused; nothing changed"
 if psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/06_v2_contract_alignment.sql" >/dev/null 2>"$TMP/autocommit.log"; then
@@ -213,7 +214,8 @@ echo "[4/7] Rollback: a failure after the last statement of 06 -> 11 -> 12 -> 16
     "$SCRIPT_DIR/31_v2_reply_gate_reconfirmation_unsubscribe.sql" "$SCRIPT_DIR/33_v2_port_v3_functions.sql" \
     "$SCRIPT_DIR/35_v2_day14_direct_reads_unsubscribe_keys.sql" \
     "$SCRIPT_DIR/38_v2_basins.sql" \
-    "$SCRIPT_DIR/40_v2_reveal_pause.sql"
+    "$SCRIPT_DIR/40_v2_reveal_pause.sql" \
+    "$SCRIPT_DIR/42_v2_basin_liquidity.sql"
   echo "select 1 / 0; -- injected failure"; } > "$TMP/batch_with_failure.sql"
 if psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$TMP/batch_with_failure.sql" >/dev/null 2>"$TMP/err.log"; then
   fail "the injected failure did not abort the batch"
@@ -229,8 +231,8 @@ if psql "$DB_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$TMP/06_with
 ok "a failure at the end of 06 alone also rolls back completely"
 
 echo "[5/7] Forward: 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35 each in one transaction; then a live V2-published job..."
-for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql 23_v2_round2_hardening.sql 26_v2_team_seats_saved_jobs_outbox.sql 29_v2_landing_scope_hardening.sql 31_v2_reply_gate_reconfirmation_unsubscribe.sql 33_v2_port_v3_functions.sql 35_v2_day14_direct_reads_unsubscribe_keys.sql 38_v2_basins.sql 40_v2_reveal_pause.sql; do apply1 "$SCRIPT_DIR/$f"; done
-[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16,18,23,26,29,31,33,35,38,40" ]] || fail "ledger does not record 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35 in order"
+for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql 23_v2_round2_hardening.sql 26_v2_team_seats_saved_jobs_outbox.sql 29_v2_landing_scope_hardening.sql 31_v2_reply_gate_reconfirmation_unsubscribe.sql 33_v2_port_v3_functions.sql 35_v2_day14_direct_reads_unsubscribe_keys.sql 38_v2_basins.sql 40_v2_reveal_pause.sql 42_v2_basin_liquidity.sql; do apply1 "$SCRIPT_DIR/$f"; done
+[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16,18,23,26,29,31,33,35,38,40,42" ]] || fail "ledger does not record 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35 in order"
 [[ "$(q "select bool_and(c.relrowsecurity) from pg_class c where c.relnamespace = 'marketplace'::regnamespace and c.relkind in ('r','p');")" == "t" ]] || fail "RLS missing after forward migration"
 ok "06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35 applied atomically and recorded in order; RLS on every table"
 x "
@@ -277,6 +279,7 @@ refused "$SCRIPT_DIR/33_v2_port_v3_functions.sql" "already applied"
 refused "$SCRIPT_DIR/35_v2_day14_direct_reads_unsubscribe_keys.sql" "already applied"
 refused "$SCRIPT_DIR/38_v2_basins.sql" "already applied"
 refused "$SCRIPT_DIR/40_v2_reveal_pause.sql" "already applied"
+refused "$SCRIPT_DIR/42_v2_basin_liquidity.sql" "already applied"
 [[ "$(fp)" == "$FP1" ]] || { show_diff "$TMP/rows1.txt" "after refused re-runs"; fail "a refused re-run changed the catalog or data"; }
 [[ "$(q "select is_legacy_import::text from marketplace.job_postings where title = 'Drill V2 Published Job';")" == "false" ]] \
   || fail "D-1: the V2-published job was reinterpreted as a legacy import"
@@ -302,22 +305,22 @@ if [[ "${LOGLOADS_DB_ENV:-}" == "ci-disposable" ]]; then
   FRESH_FP="$(fp)"
   [[ "$FRESH_FP" == "$FP0" ]] || fail "restoring the backup into a fresh database did not reproduce the pre-migration fingerprint"
   ok "backup restored into a brand-new database to exactly the pre-migration fingerprint"
-  for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql 23_v2_round2_hardening.sql 26_v2_team_seats_saved_jobs_outbox.sql 29_v2_landing_scope_hardening.sql 31_v2_reply_gate_reconfirmation_unsubscribe.sql 33_v2_port_v3_functions.sql 35_v2_day14_direct_reads_unsubscribe_keys.sql 38_v2_basins.sql 40_v2_reveal_pause.sql; do
+  for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql 23_v2_round2_hardening.sql 26_v2_team_seats_saved_jobs_outbox.sql 29_v2_landing_scope_hardening.sql 31_v2_reply_gate_reconfirmation_unsubscribe.sql 33_v2_port_v3_functions.sql 35_v2_day14_direct_reads_unsubscribe_keys.sql 38_v2_basins.sql 40_v2_reveal_pause.sql 42_v2_basin_liquidity.sql; do
     psql "$FRESH_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$SCRIPT_DIR/$f" >/dev/null
   done
   [[ "$(q "select count(*) from marketplace.job_postings where title = 'Drill Active Job' and is_legacy_import;")" == "1" \
-     && "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16,18,23,26,29,31,33,35,38,40" ]] \
+     && "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16,18,23,26,29,31,33,35,38,40,42" ]] \
     || fail "the forward migration did not apply cleanly on the freshly restored database"
   TARGET_URL="$DB_URL"
   x "drop database ${FRESH};"
-  ok "the freshly restored database also migrates forward (legacy data carried, ledger 06,11,12,16,18,23,26,29,31,33,35,38,40)"
+  ok "the freshly restored database also migrates forward (legacy data carried, ledger 06,11,12,16,18,23,26,29,31,33,35,38,40,42)"
   ok "not covered by this drill (operator prerequisites): cluster roles, database settings, restoring into another cluster"
 else
   ok "fresh-database restore runs on the plain PostgreSQL target (this target cannot create databases with PostGIS)"
 fi
-for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql 23_v2_round2_hardening.sql 26_v2_team_seats_saved_jobs_outbox.sql 29_v2_landing_scope_hardening.sql 31_v2_reply_gate_reconfirmation_unsubscribe.sql 33_v2_port_v3_functions.sql 35_v2_day14_direct_reads_unsubscribe_keys.sql 38_v2_basins.sql 40_v2_reveal_pause.sql; do apply1 "$SCRIPT_DIR/$f"; done
+for f in 06_v2_contract_alignment.sql 11_v2_phase3_policy.sql 12_v2_billing_events.sql 16_v2_identity_membership_hardening.sql 18_v2_review_106_hardening.sql 23_v2_round2_hardening.sql 26_v2_team_seats_saved_jobs_outbox.sql 29_v2_landing_scope_hardening.sql 31_v2_reply_gate_reconfirmation_unsubscribe.sql 33_v2_port_v3_functions.sql 35_v2_day14_direct_reads_unsubscribe_keys.sql 38_v2_basins.sql 40_v2_reveal_pause.sql 42_v2_basin_liquidity.sql; do apply1 "$SCRIPT_DIR/$f"; done
 [[ "$(q "select count(*) from marketplace.job_postings where title = 'Drill Active Job' and is_legacy_import;")" == "1" ]] || fail "forward migration after restore lost data"
-[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16,18,23,26,29,31,33,35,38,40" ]] || fail "ledger after the forward migration is not 06,11,12,16,18,23,26,29,31,33,35,38,40"
+[[ "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" == "06,11,12,16,18,23,26,29,31,33,35,38,40,42" ]] || fail "ledger after the forward migration is not 06,11,12,16,18,23,26,29,31,33,35,38,40,42"
 ok "forward migration after restore succeeded; existing data carried through; the ledger records the re-applied migrations"
 x "drop schema if exists marketplace cascade;"
 

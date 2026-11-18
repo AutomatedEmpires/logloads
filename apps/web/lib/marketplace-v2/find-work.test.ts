@@ -1,7 +1,9 @@
+import { MARKETPLACE_JOB_SORTS, sortMarketplaceJobs, type MarketplaceJobCardView } from "@logloads/contracts"
 import { describe, expect, it } from "vitest"
 
 import {
   effectiveSort,
+  FIND_WORK_SORT_LABELS,
   filterTexts,
   findWorkCountText,
   findWorkEmptyState,
@@ -98,6 +100,76 @@ describe("reading the search from the URL", () => {
     const unknown = parseFindWorkSearch({ near: "Atlantis", sort: "nearest" }, VISITOR)
     expect(findWorkFilters(unknown, { now: NOW, setups: [] })).toMatchObject({ near: null, radiusMiles: null, sort: "newest" })
     expect(effectiveSort(unknown)).toBe("newest")
+  })
+})
+
+describe("the verification mark never ranks a job (legal review §7.3 item 5, #337)", () => {
+  const listing = (id: string, overrides: Partial<MarketplaceJobCardView>): MarketplaceJobCardView => ({
+    acceptingInterest: true,
+    destinationLabel: "Valley Mill · Sweet Home, OR",
+    endsOn: null,
+    equipment: ["log_truck", "pole_trailer"],
+    estimatedDailyLoads: null,
+    estimatedLoadsPerTruckPerDay: null,
+    estimatedTonsPerLoad: null,
+    expiresAt: null,
+    haulDistance: null,
+    id,
+    lastConfirmedAt: "2026-11-02T18:00:00.000Z",
+    lastModifiedAt: "2026-11-01T18:00:00.000Z",
+    origin: { approximatePoint: { lat: 44.4, lng: -122.7 }, label: "Sweet Home, OR", stateCode: "OR" },
+    pay: { amountCents: 52_500, note: null, unit: "per_load" },
+    posterName: "Example Timber Co",
+    posterOrganizationId: "22222222-aaaa-4aaa-8aaa-222222222222",
+    posterVerification: null,
+    product: "Saw logs",
+    scheduleNote: null,
+    slug: id,
+    sponsored: false,
+    startsOn: null,
+    status: "active",
+    title: "Saw logs",
+    trucks: { perDay: null, total: null },
+    ...overrides
+  })
+  const current = { reviewedOn: "2026-10-14", scope: "business_identity" as const }
+  const lapsed = { reviewedOn: "2025-10-14", scope: "business_identity" as const }
+
+  it("offers no order and no default that reads the mark", () => {
+    expect(MARKETPLACE_JOB_SORTS).toEqual(["newest", "nearest", "pay"])
+    expect(Object.keys(FIND_WORK_SORT_LABELS).sort()).toEqual(["nearest", "newest", "pay"])
+    expect(Object.values(FIND_WORK_SORT_LABELS).join(" ")).not.toMatch(/verif|review|trust|identity/i)
+
+    for (const params of [{}, { sort: "verified" }, { sort: "reviewed" }, { verified: "1" }, { reviewed: "1", sort: "identity" }]) {
+      const filters = findWorkFilters(parseFindWorkSearch(params, VISITOR), { now: NOW, setups: [] })
+
+      expect(filters.sort, JSON.stringify(params)).toBe("newest")
+      expect(Object.keys(filters).join(" "), JSON.stringify(params)).not.toMatch(/verif|review|identity/i)
+    }
+  })
+
+  it("orders the same jobs the same way whichever of them carry a mark, in every order Find work offers", () => {
+    const facts: Array<[string, Partial<MarketplaceJobCardView>]> = [
+      ["a", { lastConfirmedAt: "2026-11-03T12:00:00.000Z", pay: { amountCents: 48_000, note: null, unit: "per_load" } }],
+      ["b", { lastConfirmedAt: null, origin: { approximatePoint: { lat: 44.1, lng: -123.1 }, label: "Eugene, OR", stateCode: "OR" } }],
+      ["c", { pay: { amountCents: 61_000, note: null, unit: "per_load" } }],
+      ["d", {}]
+    ]
+    const marks = [current, lapsed, null, null]
+
+    for (const params of [{}, { sort: "newest" }, { near: "Sweet Home", sort: "nearest" }, { sort: "pay" }]) {
+      const { near, sort } = findWorkFilters(parseFindWorkSearch(params, VISITOR), { now: NOW, setups: [] })
+      const order = (shift: number | null) =>
+        sortMarketplaceJobs(
+          facts.map(([id, overrides], index) => listing(id, { ...overrides, posterVerification: shift === null ? null : marks[(index + shift) % marks.length] ?? null })),
+          { near, sort }
+        ).map((job) => job.id)
+
+      for (let shift = 0; shift < marks.length; shift += 1) expect(order(shift), JSON.stringify(params)).toEqual(order(null))
+    }
+
+    // Identical listings: the marked one is not first, the id decides.
+    expect(sortMarketplaceJobs([listing("z", { posterVerification: current }), listing("y", {})]).map((job) => job.id)).toEqual(["y", "z"])
   })
 })
 

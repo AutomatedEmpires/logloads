@@ -56,7 +56,9 @@ const server = serverMode === "start"
 
 export default defineConfig({
   testDir: ".",
-  testMatch: ["design-system.spec.ts", "field-conditions.spec.ts"],
+  // v2-flow-c.spec.ts (#328) runs last in file order: it writes only replies to New River Hauling's inquiry with North
+  // Pine Logging, which the design-system cases have finished with by then.
+  testMatch: ["design-system.spec.ts", "field-conditions.spec.ts", "v2-flow-c.spec.ts"],
   outputDir,
   // `next dev` compiles each route on its first request, so the local mode gets longer budgets.
   timeout: serverMode === "dev" ? 180_000 : 60_000,
