@@ -5,6 +5,7 @@ import { AuthenticatedEntryPage, AuthPage } from "@/components/v3"
 import { DEMO_PERSONAS } from "@/lib/demo-personas"
 import { decideExistingActorEntry, safeEntryNext } from "@/lib/entry-routing"
 import { getSessionActor, isClerkConfigured, isFounderDemoMode } from "@/lib/session"
+import { signedInV2Destination } from "@/lib/signed-in-entry"
 
 export const dynamic = "force-dynamic"
 
@@ -20,9 +21,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ n
       redirect(decision.href)
     }
 
+    // With Marketplace V2 on, "Continue" goes where a fresh sign-in would (#378); otherwise the legacy home.
+    const v2Destination = await signedInV2Destination(actor, next)
+
     return (
       <AuthenticatedEntryPage
-        currentHome={decision.currentHome}
+        currentHome={v2Destination ?? decision.currentHome}
         displayName={actor.profile.fullName}
         email={actor.profile.email}
         mode="sign-in"
