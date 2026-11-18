@@ -79,6 +79,10 @@
 
 - [ ] The changed journey works at phone width with adequate touch targets and full keyboard operation. It
       has visible labels, errors, and contrast.
+- [ ] A UI change passes the field-conditions check (`apps/web/tests/field-conditions.spec.ts`) in the
+      design-system end-to-end job: 16 px body text, 48 px targets and 56 px primary actions, 7:1 contrast on
+      key facts, no horizontal scroll at 320 px, and largest contentful paint on throttled 4G. Record the
+      result. A skip is not a pass. (#327)
 - [ ] Results are text-first and usable with the map disabled or failing. Maps and weather load lazily and
       fail gracefully.
 - [ ] Measured on the actual changed path. A successful build is not UX evidence.

@@ -69,16 +69,27 @@ export function JobInterestBar({ offer, summaryId, targetId }: { offer: Interest
       root.style.scrollPaddingBottom = `${Math.ceil(covered()) + CLEARANCE_PX}px`
     }
 
+    function clearFocused(element: HTMLElement) {
+      if (!bar) return
+      const barTop = bar.getBoundingClientRect().top
+      const rect = element.getBoundingClientRect()
+      if (rect.bottom > barTop - CLEARANCE_PX && rect.top < window.innerHeight) {
+        window.scrollBy({ behavior: "instant", top: rect.bottom - barTop + CLEARANCE_PX })
+      }
+    }
+
     function onFocusIn(event: FocusEvent) {
       const element = event.target
       if (!(element instanceof HTMLElement) || !bar || bar.contains(element)) return
 
+      // The browser scrolls a control that was below the fold after this event, and it reads scroll-margin
+      // at that later time. Set the margin to the bar's real height first, so that scroll stops above the
+      // bar instead of only clearing the bottom tabs.
+      const obstruction = Math.ceil(Math.max(0, window.innerHeight - bar.getBoundingClientRect().top) + CLEARANCE_PX)
+      if (obstruction > 0) element.style.scrollMarginBottom = `${obstruction}px`
+
       requestAnimationFrame(() => {
-        const barTop = bar.getBoundingClientRect().top
-        const rect = element.getBoundingClientRect()
-        if (rect.bottom > barTop - CLEARANCE_PX && rect.top < window.innerHeight) {
-          window.scrollBy({ behavior: "instant", top: rect.bottom - barTop + CLEARANCE_PX })
-        }
+        requestAnimationFrame(() => clearFocused(element))
       })
     }
 

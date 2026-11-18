@@ -15,14 +15,16 @@
   background: var(--ll-color-surface);
   color: var(--ll-color-text-secondary);
   font-family: inherit;
-  font-size: var(--ll-text-sm);
-  font-weight: var(--ll-weight-medium);
+  height: 100%;
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
   white-space: nowrap;
   cursor: pointer;
 }
 
 .option + .option { border-left: 1px solid var(--ll-color-control-border); }
 .option:not([aria-pressed="true"]):hover { background: var(--ll-color-surface-subtle); }
+.option:not([aria-pressed="true"]):active { background: var(--ll-pressed-overlay); }
 .option[aria-pressed="true"] { background: var(--ll-color-text); color: var(--ll-color-text-inverse); }
 
 /* The group clips its corners, so the ring sits inside the button. box-shadow: none removes the app's legacy

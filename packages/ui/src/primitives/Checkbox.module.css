@@ -1,4 +1,4 @@
-/* Checkbox: ported from design-system/components.css (.ll-check). The whole row is the 44 px target. */
+/* Checkbox: ported from design-system/components.css (.ll-check). The whole row is the 48 px target; the box is 24 px. */
 .check {
   display: flex;
   align-items: flex-start;
@@ -9,9 +9,11 @@
   cursor: pointer;
 }
 
+.check:active { background: var(--ll-pressed-overlay); }
+
 .input {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   margin: 1px 0 0;
   flex: none;
   accent-color: var(--ll-color-action);
@@ -26,6 +28,6 @@
 }
 
 .text { display: grid; gap: 2px; min-width: 0; }
-.hint { display: block; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+.hint { display: block; font-size: var(--ll-text-base); color: var(--ll-color-text-secondary); }
 
 .check:has(.input:disabled) { cursor: not-allowed; opacity: var(--ll-disabled-opacity); }
