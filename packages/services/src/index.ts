@@ -887,3 +887,5 @@ export * from "./v2/alerts"
 export * from "./v2/notify"
 export * from "./v2/boosts"
 export * from "./v2/admin"
+// Not a port v3 group: the privacy request rules (#343).
+export * from "./v2/privacy"

@@ -28,7 +28,8 @@ const CLICK = { isTrusted: true, type: "click" }
 const DEVICE = { lat: 44.40123, lng: -122.73456 }
 
 function fakeGeolocation(answer: { position?: { lat: number; lng: number }; errorCode?: number }) {
-  const getCurrentPosition = vi.fn((success: PositionCallback, failure?: PositionErrorCallback | null) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the options are read from the recorded call
+  const getCurrentPosition = vi.fn((success: PositionCallback, failure?: PositionErrorCallback | null, _options?: PositionOptions) => {
     if (answer.position) {
       success({ coords: { accuracy: 5, latitude: answer.position.lat, longitude: answer.position.lng }, timestamp: 0 } as unknown as GeolocationPosition)
     } else {
@@ -67,10 +68,13 @@ describe("used for that search", () => {
     const result = await locateForSearch(CLICK, fakeGeolocation({ position: DEVICE }), { context: CONTEXT, search: SEARCH })
 
     expect(result).toEqual({ href: "/v2/work?near=Sweet+Home%2C+OR&product=Pulpwood", status: "found", town: "Sweet Home, OR" })
-    expect(result).toEqual({
-      ...result,
-      href: findWorkHref({ ...SEARCH, after: null, jobId: null }, CONTEXT, { location: "Sweet Home, OR", place: { place: nearestTown(DEVICE)!, status: "found" } })
-    })
+
+    // The same link a typed "Sweet Home, OR" makes from this search's first page.
+    const town = nearestTown(DEVICE)
+    expect(town?.name).toBe("Sweet Home")
+    if (town && result.status === "found") {
+      expect(result.href).toBe(findWorkHref({ ...SEARCH, after: null, jobId: null }, CONTEXT, { location: "Sweet Home, OR", place: { place: town, status: "found" } }))
+    }
   })
 
   it("returns nothing of the reading itself", async () => {
@@ -96,7 +100,7 @@ describe("kept no finer than a town", () => {
     expect(back.place.status).toBe("found")
     const point = back.place.status === "found" ? back.place.place.point : null
     expect(point).toEqual({ lat: 44.4, lng: -122.7 })
-    expect(point).toEqual(snapToPublicGrid(point!))
+    expect(point).toEqual(snapToPublicGrid(point ?? { lat: 0, lng: 0 }))
   })
 
   it("never guesses a town for a device far from every known one", async () => {

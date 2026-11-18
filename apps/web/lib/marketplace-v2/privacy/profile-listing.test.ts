@@ -102,7 +102,8 @@ describe("listing a profile stays the hauler's choice, and is reversible (F1)", 
 
     // No default: a save that does not say whether to list is refused, never read as consent.
     const chosen = { ...EMPTY_HAULER_PROFILE_FORM, businessName: "Ridgeline Hauling", serviceRadiusMiles: null }
-    const { listed: _listed, ...withoutChoice } = chosen
+    const withoutChoice: Record<string, unknown> = { ...chosen }
+    delete withoutChoice.listed
     expect(haulerProfileInputSchema.safeParse(chosen).success).toBe(true)
     expect(haulerProfileInputSchema.safeParse(withoutChoice).error?.issues.map((issue) => issue.path.join("."))).toEqual(["listed"])
   })

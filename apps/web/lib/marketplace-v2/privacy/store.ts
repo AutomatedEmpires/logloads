@@ -2,13 +2,12 @@ import type { MarketplacePrivacyAuditRow, MarketplacePrivacyRequestRecord } from
 
 /**
  * The privacy request store (#343). Every write is one transaction that also appends its audit rows, so a request
- * never exists, or changes, without its audit trail. A request is a staff queue entry from the moment it is stored:
+ * never exists, or changes, without its audit rows. A request is a staff queue entry from the moment it is stored:
  * the queue is the store's open requests (`listOpen`), not a second table that could fall out of step.
  *
- * Two implementations meet this contract: `memoryPrivacyRequestStore` (./memory-store.ts), the reference the tests
- * run, and the normalized store, which needs a schema stage first (`PRIVACY_STORE_FUNCTIONS` in ./statements.ts).
- * Until that stage exists `privacyRequestStore()` (./index.ts) has no store, and the request form points people to the
- * email address instead.
+ * `memoryPrivacyRequestStore` (./memory-store.ts) is the reference the tests run. The normalized store will meet the
+ * same contract once its schema stage exists (the stage is specified on logloads#343). Until then
+ * `privacyRequestStore()` (./index.ts) has no store, and the request form points people to the email address instead.
  */
 
 export type PrivacyReceiveResult =
