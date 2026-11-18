@@ -218,35 +218,44 @@ test("public terms no longer describe the retired 5% host fee", async ({
   await page.waitForLoadState("domcontentloaded")
 
   await expect(
-    page.getByRole("heading", { exact: true, name: "What LogLoads is" })
+    page.getByRole("heading", { exact: true, name: "2. What LogLoads is not" })
   ).toBeVisible()
   await expect(
     page.getByText(
-      "LogLoads does not carry freight or receive, escrow, deduct from, or distribute transportation compensation.",
+      "LogLoads does not arrange transportation, select carriers, negotiate for either side, set rates, handle freight money or become a party to any hauling agreement.",
       { exact: false }
     ).first()
   ).toBeVisible()
-  await expect(page.locator(".legal-effective")).toHaveText("Effective August 3, 2026")
+  await expect(page.locator(".legal-effective")).toHaveText(
+    "Effective November 18, 2026 · Version terms-2026-11-18"
+  )
   for (const retiredSection of ["Host platform fee", "Agreement and payment method"]) {
     await expect(
       page.getByRole("heading", { exact: true, name: retiredSection })
     ).toHaveCount(0)
   }
-  await expect(page.locator("body")).not.toContainText(
-    /\d\s?%|per completed load|completed-load fee|\$\s?\d/i
+  await expect(page.locator("main")).not.toContainText(
+    /\d\s?%|per completed load|completed-load fee|monthly in arrears/i
   )
-  await expect(page.locator("body")).not.toContainText(/monthly in arrears/i)
 
-  // LE-13: the removal is announced, and the removed text stays one click away.
-  const changeNotice = page.locator(".legal-notice")
-  await expect(changeNotice).toContainText("Change notice · November 2, 2026")
-  await expect(changeNotice).toContainText(
-    "sections were removed from these Terms because the per-load fee model was retired."
-  )
+  // #329: a draft for counsel, never presented as approved.
+  await expect(
+    page.getByRole("complementary", { name: "Draft status" })
+  ).toContainText("A licensed attorney has not reviewed it yet")
+
+  // LE-13: the rewrite is announced, and both earlier texts stay one click away.
+  const changeNotice = page.getByRole("complementary", { name: "Change notice" })
+  await expect(changeNotice).toContainText("Change notice · November 18, 2026")
   await expect(
     changeNotice.getByRole("link", {
       exact: true,
-      name: "archived Terms of Service effective August 3, 2026"
+      name: "Terms of Service as changed on November 2, 2026"
+    })
+  ).toHaveAttribute("href", "/terms/2026-11-02")
+  await expect(
+    page.getByRole("link", {
+      exact: true,
+      name: "Terms of Service effective August 3, 2026"
     })
   ).toHaveAttribute("href", "/terms/2026-08-03")
 
