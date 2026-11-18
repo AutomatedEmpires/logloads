@@ -79,10 +79,9 @@ export function InquiryConversation({
 }) {
   const name = viewerSide === "landing" ? interest.haulerOrganization.name : interest.landingOrganization.name
   const titleId = `conversation-${interest.id}-title`
-  const factsId = `conversation-${interest.id}-facts`
   const status = inquiryStatus(interest, viewerSide)
   const list = (
-    <dl aria-labelledby={factsTitle ? factsId : undefined} className={styles.facts}>
+    <dl className={styles.facts}>
       {facts.map((fact) => (
         <div className={styles.fact} key={fact.label}>
           <dt className={styles.label}>{fact.label}</dt>
@@ -116,7 +115,7 @@ export function InquiryConversation({
         {job ? <div className={styles.job} data-flow-c="">{job}</div> : null}
         {factsTitle ? (
           <div className={styles.offer}>
-            <h3 className={styles.offerTitle} id={factsId}>{factsTitle}</h3>
+            <h3 className={styles.offerTitle}>{factsTitle}</h3>
             {list}
           </div>
         ) : list}

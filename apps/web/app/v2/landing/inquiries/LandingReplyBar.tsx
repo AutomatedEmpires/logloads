@@ -7,6 +7,7 @@ import { ConfirmActionDialog } from "@/components/v2/ConfirmActionDialog"
 import type { ConfirmReason } from "@/components/v2/ConfirmReasonField"
 import styles from "@/components/v2/InquiryConversation.module.css"
 import { InquiryReplyComposer } from "@/components/v2/InquiryReplyComposer"
+import { V2_ERROR_PARAM, V2_REFERENCE_PARAM } from "@/lib/marketplace-v2/error-codes"
 import { clearReplyDraft, writeReplyDraft } from "@/lib/offline/drafts"
 
 import {
@@ -60,6 +61,23 @@ function keep(write: (storage: Storage) => void): void {
     write(storage)
   } catch {
     // Storage full or blocked: the answer stays held in this page until it closes.
+  }
+}
+
+/**
+ * A new answer makes the last redirect's `updated` or `error` stale. They are dropped from the address, so a reload
+ * within the minute cannot read an earlier send's `updated=replied` as this answer's arrival and drop it unsent.
+ */
+function dropAnswerParams(): void {
+  try {
+    const url = new URL(window.location.href)
+    const stale = ["updated", V2_ERROR_PARAM, V2_REFERENCE_PARAM].filter((name) => url.searchParams.has(name))
+
+    if (stale.length === 0) return
+    for (const name of stale) url.searchParams.delete(name)
+    window.history.replaceState(window.history.state, "", url)
+  } catch {
+    // Without history the address keeps them; the answer is still held and sent.
   }
 }
 
@@ -200,6 +218,7 @@ export function LandingReplyBar({
     const item = holdSend({ body, decision, interestId, replyId }, Date.now(), holdMs)
     if (!item) return false
 
+    dropAnswerParams()
     keep((storage) => writeHeld(storage, item))
     setHeld(item)
     setPhase("holding")

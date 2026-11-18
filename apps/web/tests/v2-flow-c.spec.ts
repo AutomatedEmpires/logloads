@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs"
+import { join } from "node:path"
 
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Locator, type Page } from "@playwright/test"
@@ -25,13 +26,14 @@ const OTHER_LANDING = "cole@summit.example"
 
 const READY_YES = "Yes, we can use you."
 const HOLD = "01:01"
-const SHOTS = "tests/test-results/flow-c"
+/** apps/web/tests/test-results/flow-c, wherever Playwright was started from (ignored by Git). */
+const shotsDir = () => join(test.info().project.testDir, "test-results", "flow-c")
 const NO_INQUIRY = "No North Pine Logging job accepts interest in this run's state, so New River Hauling has no inquiry to answer"
 
 const viewportFor = (width: number) => ({ height: width < 768 ? 844 : 900, width })
 
 test.beforeAll(() => {
-  mkdirSync(SHOTS, { recursive: true })
+  mkdirSync(shotsDir(), { recursive: true })
 })
 
 test.beforeEach(async ({ page }) => {
@@ -117,8 +119,14 @@ function tapCounter() {
   }
 }
 
+/**
+ * The whole page, without the fixed bottom tabs (a stitched capture would draw them over the middle of the page),
+ * and the screen as the phone shows it, scrolled to flow C's last part (the bar, the held answer or the panel).
+ */
 async function shoot(page: Page, name: string, width: number) {
-  await page.screenshot({ fullPage: true, path: `${SHOTS}/${name}-${width}.png` })
+  await page.screenshot({ fullPage: true, path: join(shotsDir(), `${name}-${width}.png`), style: ".ll-app > nav { display: none !important; }" })
+  await page.locator("[data-flow-c]").last().evaluate((element) => element.scrollIntoView({ behavior: "instant", block: "center" }))
+  await page.screenshot({ path: join(shotsDir(), `${name}-${width}-screen.png`) })
 }
 
 async function expectNoSeriousAxeViolations(page: Page) {
@@ -155,14 +163,28 @@ async function expectFieldFloors(page: Page) {
       const size = parseFloat(getComputedStyle(element).fontSize)
       if (size < 16) small.push(`${element.tagName.toLowerCase()} ${(element.textContent ?? "").trim().slice(0, 40)} ${size}px`)
     }
+    // The card clips what overflows it, so the page never scrolls sideways; nothing may run past its edges either.
+    const clipped: string[] = []
+    const frame = document.querySelector("#conversation")?.getBoundingClientRect()
+    if (frame) {
+      for (const element of document.querySelectorAll("#conversation *")) {
+        if (!visible(element)) continue
+        const box = element.getBoundingClientRect()
+        if (box.right > frame.right + 0.5 || box.left < frame.left - 0.5) {
+          clipped.push(`${element.tagName.toLowerCase()} ${(element.textContent ?? "").trim().slice(0, 30)} ${Math.round(box.left)}-${Math.round(box.right)}`)
+        }
+      }
+    }
     return {
       bodyPx: parseFloat(getComputedStyle(app).fontSize),
+      clipped: clipped.slice(0, 5),
       scroll: { clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth },
       shortTargets,
       small
     }
   })
 
+  expect(report.clipped, "nothing runs past the conversation card").toEqual([])
   expect(report.bodyPx, "body text").toBeGreaterThanOrEqual(16)
   expect(report.shortTargets, "48 px targets, 56 px primary").toEqual([])
   expect(report.small, "16 px text in the conversation").toEqual([])

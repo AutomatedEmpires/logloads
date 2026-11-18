@@ -16,8 +16,11 @@
   font-size: var(--ll-text-md);
 }
 
+/* One track no wider than the card: a child's own width (a long button label) must not widen it past the frame,
+   where `overflow: hidden` would clip every part of the conversation at 320 px. */
 .conversation {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--ll-color-border);
@@ -276,7 +279,15 @@
 .answered > svg { margin-top: 2px; color: var(--ll-color-status-positive); }
 
 /* The reply bar: the ready replies over the typed reply (MessageComposer draws its own top rule). */
-.replyBar { display: grid; }
+.replyBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* MessageComposer's form is a grid whose one track grows to the textarea's own width plus Send (about 280 px), wider
+   than a 320 px phone leaves it. Holding its track to the bar lets the textarea shrink, on both inquiry pages. */
+.conversation > form,
+.replyBar > form { grid-template-columns: minmax(0, 1fr); }
 
 .ready {
   display: grid;
@@ -296,8 +307,17 @@
   margin: 0;
 }
 
-/* Scoped to the form so it outranks the Button module's own sizing whatever the stylesheet order. */
-.readyForm > .readyButton { width: 100%; }
+/* Scoped to the form so it outranks the Button module's own sizing whatever the stylesheet order. A long reply wraps
+   inside the 56 px button instead of running past the card on a narrow phone. */
+.readyForm > .readyButton {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: var(--ll-c-button-h-lg);
+  padding-block: var(--ll-space-2);
+  white-space: normal;
+  text-align: center;
+}
 
 /* The typed reply sits in the same bar as the ready replies. */
 .ready + * { border-top: 0; }
