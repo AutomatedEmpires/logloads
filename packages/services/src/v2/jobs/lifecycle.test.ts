@@ -7,7 +7,7 @@ import {
   MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS,
   MARKETPLACE_JOB_UNCONFIRMED_LABEL,
   MARKETPLACE_JOB_UNCONFIRMED_REASON,
-  postingFreshness,
+  postingFreshnessBand,
   type MarketplaceJobStatus,
   type MarketplaceJobStopStatus
 } from "@logloads/contracts"
@@ -183,7 +183,7 @@ describe("jobReconfirmation: reminded on day 5, due on day 7, off Find Work on d
   it("is the interval haulers see: due exactly when the listing stops reading as recently confirmed", () => {
     for (const age of [0, DAY, interval - 1, interval, interval + 1, 30 * DAY]) {
       const listed = job("active", { lastConfirmedAt: ago(age) })
-      const band = postingFreshness({ expiresAt: null, lastConfirmedAt: listed.lastConfirmedAt, lastModifiedAt: ago(age) }, NOW.toISOString()).band
+      const band = postingFreshnessBand({ expiresAt: null, lastConfirmedAt: listed.lastConfirmedAt, lastModifiedAt: ago(age) }, NOW.toISOString())
 
       expect(jobReconfirmation(listed, NOW).due, `${age} ms`).toBe(band === "confirmed_aging")
     }

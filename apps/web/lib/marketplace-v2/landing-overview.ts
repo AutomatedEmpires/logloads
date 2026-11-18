@@ -1,7 +1,7 @@
 import {
   LANDING_INTEREST_QUEUE_LABELS,
   landingInterestQueueFor,
-  postingFreshness,
+  postingFreshnessBand,
   RECENT_CONFIRMATION_DAYS,
   type MarketplaceInterestView,
   type MarketplaceJobCardView,
@@ -69,7 +69,7 @@ export async function readOwnJobs(
  * (`planJobReconfirm`); this only decides whether to offer the button.
  */
 export function reconfirmableJob(job: Pick<MarketplaceJobCardView, "status" | "expiresAt" | "lastConfirmedAt" | "lastModifiedAt">, now: string): boolean {
-  return job.status === "active" && postingFreshness(job, now).band !== "expired"
+  return job.status === "active" && postingFreshnessBand(job, now) !== "expired"
 }
 
 export interface NewInquiriesItem {
@@ -130,14 +130,14 @@ function wholeDays(from: string, to: string): number {
 
 /**
  * The business's listed jobs (a day-14 job among them) that were not confirmed within `RECENT_CONFIRMATION_DAYS`, the one
- * interval the contracts define: past it, haulers see "Last confirmed … check with the poster". Never confirmed
+ * interval the contracts define: past it, haulers see "Last confirmed by … check with the poster". Never confirmed
  * first, then the oldest confirmation. An edit is never a confirmation.
  */
 export function unconfirmedJobItems(jobs: readonly MarketplaceJobCardView[], organizationId: string, now: string): UnconfirmedJobItem[] {
   return jobs
     .filter((job) => job.posterOrganizationId === organizationId && reconfirmableJob(job, now))
     .filter((job) => {
-      const band = postingFreshness(job, now).band
+      const band = postingFreshnessBand(job, now)
       return band === "unconfirmed" || band === "confirmed_aging"
     })
     .map((job) => ({ days: job.lastConfirmedAt ? wholeDays(job.lastConfirmedAt, now) : null, jobId: job.id, jobTitle: job.title, kind: "unconfirmed" as const }))

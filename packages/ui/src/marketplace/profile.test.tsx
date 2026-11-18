@@ -6,6 +6,7 @@ import { openingTag, textOf } from "../primitives/test-helpers"
 import { CompanyProfileHeader } from "./CompanyProfileHeader"
 import { EquipmentCapacity, MAX_CAPACITY_MARKS } from "./EquipmentCapacity"
 import { OperatingRegion } from "./OperatingRegion"
+import { NOW } from "./test-fixtures"
 
 const marks = (html: string) => html.match(/data-on/g)?.length ?? 0
 
@@ -75,13 +76,14 @@ describe("CompanyProfileHeader", () => {
           { label: "products", value: "3" },
           { label: "ignored fifth figure", value: "9" }
         ]}
+        now={NOW}
         verification={{ reviewedOn: "2026-10-05", scope: "business_identity" }}
       />
     )
     const text = textOf(html)
 
     expect(openingTag(html, /^<h1/)).toBeTruthy()
-    expect(text).toContain("EH Example Hauling LLC Hauling company Riverton, OR Hauling since 2011 Business identity verified · Oct 2026")
+    expect(text).toContain("EH Example Hauling LLC Hauling company Riverton, OR Hauling since 2011 Business identity reviewed by LogLoads on Oct 5, 2026")
     expect(text).toContain("Save Invitations are not available yet")
     expect(html.match(/<dt/g)).toHaveLength(4)
     expect(text).not.toContain("ignored fifth figure")
@@ -90,11 +92,11 @@ describe("CompanyProfileHeader", () => {
 
   it("shows a real logo as decoration and no mark without a verification record", () => {
     const html = renderToStaticMarkup(
-      <CompanyProfileHeader actions={null} business={{ ...business, logoUrl: "/logo.png" }} figures={[]} verification={null} />
+      <CompanyProfileHeader actions={null} business={{ ...business, logoUrl: "/logo.png" }} figures={[]} now={NOW} verification={null} />
     )
 
     expect(openingTag(html, /^<img/)).toContain('alt=""')
-    expect(textOf(html)).not.toContain("verified")
+    expect(textOf(html)).not.toMatch(/verified|reviewed/i)
     expect(html).not.toContain("<dl")
   })
 })

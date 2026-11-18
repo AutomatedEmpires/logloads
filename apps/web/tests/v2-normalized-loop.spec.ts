@@ -280,7 +280,9 @@ test("2–5. the published job is discovered signed out, a free hauler sends int
     await openV2(page, jobPath)
     const job = page.locator("[data-ds-page='job-detail']")
     await expect(page.getByRole("heading", { name: title }).first()).toBeVisible()
-    await expect(job).toContainText("Business identity verified")
+    // The whole attributed sentence, never a bare "verified" (#337). The normalized read carries no review date yet.
+    await expect(job).toContainText("Business identity reviewed by LogLoads")
+    await expect(job).not.toContainText("Business identity verified")
     await expect(job).toContainText("Oakridge, OR")
     await expect(job).toContainText("Valley Mill · Sweet Home, OR")
     await expect(page.getByRole("link", { name: "Sign in to express interest" }).first()).toBeVisible()

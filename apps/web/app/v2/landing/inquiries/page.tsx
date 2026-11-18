@@ -6,13 +6,14 @@ import {
   marketplaceInterestIsOpen,
   offeredEquipmentFit,
   type MarketplaceInquiryJobContext,
-  type MarketplaceInterestView
+  type MarketplaceInterestView,
+  type MarketplacePay
 } from "@logloads/contracts"
+import { Icon } from "@logloads/ui/icons"
 import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
-import { availabilityText, formatDay, InquiryRow } from "@logloads/ui/marketplace"
+import { availabilityText, formatDay, InquiryRow, PayFigure } from "@logloads/ui/marketplace"
 import { Button, FormField, Tabs } from "@logloads/ui/primitives"
 
-import { ConfirmActionDialog } from "@/components/v2/ConfirmActionDialog"
 import { ConfirmActionForm } from "@/components/v2/ConfirmActionForm"
 import { ConfirmReasonField, type ConfirmReason } from "@/components/v2/ConfirmReasonField"
 import {
@@ -21,10 +22,11 @@ import {
   InquiryConfirmation,
   InquiryConversation,
   inquiryHref,
+  InquiryJobTitle,
+  jobIsListed,
   type InquiryFact
 } from "@/components/v2/InquiryConversation"
 import styles from "@/components/v2/InquiryConversation.module.css"
-import { InquiryReplyComposer } from "@/components/v2/InquiryReplyComposer"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { respondToInterestAction } from "@/lib/marketplace-v2/actions"
@@ -42,6 +44,9 @@ import {
 } from "@/lib/marketplace-v2/inquiries"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { resolveV2Actor, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
+
+import { readyReplyTexts } from "./_lib/ready-replies"
+import { LandingReplyBar } from "./LandingReplyBar"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -144,6 +149,10 @@ function tabHref(tab: string, filters: Record<string, string>): string {
  * all of it works without JavaScript. Replying, marking reviewed and declining post to the existing server action;
  * declining is confirmed first, in a Dialog or in the page, and can carry a reason the hauler sees. Nothing here
  * shares the landing's private details: a reply carries only what its author writes.
+ *
+ * Flow C (#328): the inquiry link a notice carries (`?inquiry=<id>#conversation`) opens the thread with the reply
+ * bar, so a ready reply is the second tap. Ready replies and confirmed declines are held a minute for Undo
+ * (LandingReplyBar). A link to an inquiry this business cannot open shows the permission-denied panel (C-denied).
  */
 export default async function LandingInboxPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -185,13 +194,25 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
   const filters = landingInquiryFilters(interests, jobs, { job: one(query.job), landing: one(query.landing) })
   const carried = filterQuery(filters)
   const counts = inquiryTabCounts(filters.interests, LANDING_INQUIRY_TABS, landingQueueOf)
+  const requestedId = one(query.inquiry).trim()
+  // C-denied (#328, Figma `315:1506`): an inquiry link this business cannot open. An inquiry that does not exist gets
+  // the same panel, so the page never tells which business holds an inquiry, or that it exists.
+  const denied = !refusal && actor !== null && requestedId !== "" && !interests.some((interest) => interest.id.toLowerCase() === requestedId.toLowerCase())
   const requested = filters.interests.find((interest) => interest.id === one(query.inquiry)) ?? null
   const tab = chooseInquiryTab(one(query.tab), requested ? landingQueueOf(requested) : null, counts, LANDING_INQUIRY_TABS)
   const current = LANDING_INQUIRY_TABS.find((item) => item.id === tab) ?? LANDING_INQUIRY_TABS[0]
   const rows = filters.interests.filter((interest) => landingQueueOf(interest) === tab)
-  const selected = (requested && landingQueueOf(requested) === tab ? requested : null) ?? rows[0] ?? null
+  const selected = denied ? null : (requested && landingQueueOf(requested) === tab ? requested : null) ?? rows[0] ?? null
   const hasInquiries = !refusal && interests.length > 0
   const jobEquipment = (interest: MarketplaceInterestView) => jobs?.find((job) => job.jobId === interest.job.id)?.equipmentCodes ?? null
+  // The job card's pay (C3): the job as this business sees it. Without it the card shows the title alone.
+  const jobPay: MarketplacePay | null =
+    selected && actor && workspace && jobIsListed(selected)
+      ? await pilotMarketplaceV2
+          .getJob(selected.job.id, { organizationId: workspace.id, userId: actor.profile.id })
+          .then((job) => job?.pay ?? null)
+          .catch(() => null)
+      : null
 
   const list = (
     <>
@@ -241,7 +262,11 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
         title="Hauler inquiries"
       />
       <PageContainer>
-        {refusal || !selected || !actor ? (
+        {refusal || !actor ? (
+          <ContentGrid layout="single" main={list} />
+        ) : denied ? (
+          <ContentGrid aside={<DeniedInquiry canSwitch={actor.memberships.length > 1} />} layout="split" main={list} />
+        ) : !selected ? (
           <ContentGrid layout="single" main={list} />
         ) : (
           <ContentGrid
@@ -251,6 +276,9 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
                 confirmDecline={one(query.confirm) === "decline"}
                 interest={selected}
                 jobEquipment={jobEquipment(selected)}
+                pay={jobPay}
+                today={new Date().toISOString().slice(0, 10)}
+                updated={one(query.inquiry) === selected.id ? one(query.updated) : ""}
                 viewerUserId={actor.profile.id}
               />
             }
@@ -299,50 +327,108 @@ function InboxFilters({ filters }: { filters: LandingInquiryFilters }) {
 }
 
 /**
- * The selected conversation: facts (with each offered configuration against the job's equipment), "Mark reviewed"
- * while it is new, the thread, and while it is open the reply composer with Decline beside Send. Declining is
- * confirmed first and can carry a reason the hauler sees.
+ * C-denied (#328, Figma 07 Flows `315:1506`): an inquiry link the session's business cannot open. It names no
+ * business and says nothing of the inquiry. Someone with another business is offered the switch.
+ */
+function DeniedInquiry({ canSwitch }: { canSwitch: boolean }) {
+  return (
+    <section aria-labelledby="inquiry-denied-title" className={styles.denied} data-flow-c="">
+      <span aria-hidden="true" className={styles.deniedMark}>
+        <Icon aria-hidden name="status.lock" size={24} />
+      </span>
+      <h2 className={styles.deniedTitle} id="inquiry-denied-title">You can’t open this inquiry</h2>
+      <p className={styles.deniedBody}>
+        It belongs to another business, or it is no longer here. Only that business’s owner, managers and staff can read it
+        and reply. Sign in with that account, or ask its owner to add you.
+      </p>
+      <div className={styles.deniedActions}>
+        {canSwitch ? <Button href="/v2/switch" label="Switch business" size="lg" /> : null}
+        <Button href="/v2/landing" label="Go to my home page" size="lg" variant={canSwitch ? "secondary" : "primary"} />
+      </div>
+    </section>
+  )
+}
+
+/** The job card at the top of the thread (C3): the pay as the poster stated it, then the job. */
+function JobCard({ interest, pay }: { interest: MarketplaceInterestView; pay: MarketplacePay | null }) {
+  return (
+    <>
+      {pay ? <PayFigure className={styles.jobPay} pay={pay} /> : null}
+      <span className={styles.jobTitle}>
+        <InquiryJobTitle interest={interest} />
+      </span>
+    </>
+  )
+}
+
+/** What the last answer did, from the server's redirect (C4 and C7 once the minute is over, or without scripts). */
+function answerNotice(updated: string, interest: MarketplaceInterestView) {
+  const name = interest.haulerOrganization.name
+  const text = updated === "replied" ? `Reply sent to ${name}.` : updated === "declined" ? `Declined. ${name} can see it.` : null
+
+  return text ? (
+    <p className={styles.answered} data-flow-c="" role="status">
+      <Icon aria-hidden name="status.assigned" size={20} />
+      <span>{text}</span>
+    </p>
+  ) : null
+}
+
+/**
+ * The selected conversation: the job card, what the hauler can bring (each offered configuration against the job's
+ * equipment), "Mark reviewed" while it is new, the thread, and while it is open the reply bar (flow C, #328): two
+ * ready replies that go in one tap with a minute to undo, the typed reply, and Decline beside Send. Declining is
+ * confirmed first, can carry a reason the hauler sees, and is then held for a minute too.
  */
 function LandingConversation({
   carried,
   confirmDecline,
   interest,
   jobEquipment,
+  pay,
+  today,
+  updated,
   viewerUserId
 }: {
   carried: Record<string, string>
   confirmDecline: boolean
   interest: MarketplaceInterestView
   jobEquipment: readonly string[] | null
+  pay: MarketplacePay | null
+  /** The server's calendar day (YYYY-MM-DD), for the ready reply that names the hauler's first day. */
+  today: string
+  /** `updated` from the redirect, when it was for this inquiry. */
+  updated: string
   viewerUserId: string
 }) {
   const open = marketplaceInterestIsOpen(interest.status)
   const replyId = randomUUID()
   // The reason is a landing message: its own server-generated id makes a repeated decline post it once.
   const declineFields = { decision: "declined", interestId: interest.id, replyId: randomUUID() }
+  // Each ready reply has its own server-generated id, so a retried send is recorded once.
+  const readyReplies = readyReplyTexts(interest, today).map((body) => ({ body, replyId: randomUUID() }))
 
   return (
     <InquiryConversation
       closedNote="This conversation is closed. Nothing more can be sent on it."
       composer={
         open ? (
-          <InquiryReplyComposer
+          <LandingReplyBar
             action={respondToInterestAction}
-            fields={{ decision: "replied", interestId: interest.id, replyId }}
+            decline={{
+              body: declineBody(interest),
+              confirmLabel: "Decline inquiry",
+              fallbackHref: inquiryHref(PATH, interest.id, { confirm: "decline", ...carried }, CONFIRM_ANCHOR),
+              fields: declineFields,
+              reason: DECLINE_REASON,
+              title: DECLINE_TITLE,
+              triggerLabel: "Decline"
+            }}
+            interestId={interest.id}
             key={replyId}
+            readyReplies={readyReplies}
             recipientName={interest.haulerOrganization.name}
-            secondaryAction={
-              <ConfirmActionDialog
-                action={respondToInterestAction}
-                body={declineBody(interest)}
-                confirmLabel="Decline inquiry"
-                fallbackHref={inquiryHref(PATH, interest.id, { confirm: "decline", ...carried }, CONFIRM_ANCHOR)}
-                fields={declineFields}
-                reason={DECLINE_REASON}
-                title={DECLINE_TITLE}
-                triggerLabel="Decline"
-              />
-            }
+            replyFields={{ decision: "replied", interestId: interest.id, replyId }}
           />
         ) : null
       }
@@ -359,6 +445,7 @@ function LandingConversation({
         ) : null
       }
       facts={landingFacts(interest, jobEquipment)}
+      factsTitle="They can bring"
       headActions={
         interest.status === "submitted" ? (
           <form action={respondToInterestAction} className={styles.dialogForm}>
@@ -369,6 +456,8 @@ function LandingConversation({
         ) : null
       }
       interest={interest}
+      job={<JobCard interest={interest} pay={pay} />}
+      notice={answerNotice(updated, interest)}
       viewerSide="landing"
       viewerUserId={viewerUserId}
     />

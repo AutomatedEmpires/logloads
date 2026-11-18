@@ -1,13 +1,7 @@
-import type { Metadata } from "next"
+import { permanentRedirect } from "next/navigation"
 
-import { LegalPage } from "@/components/v3"
-import { legalPages } from "@/lib/v3"
-
-export const metadata: Metadata = {
-  title: "Marketplace Rules",
-  description: "How commitments work on LogLoads: record platform-sourced work on the assignment, keep calling like normal, respect private access."
-}
-
-export default function Page() {
-  return <LegalPage content={legalPages["marketplace-rules"]!} />
+// The Posting Rules replace the Marketplace Rules of July 6, 2026, which told users to "commit through LogLoads"
+// (legal review §8.0 item 2, #329). Old links and bookmarks keep working through a permanent (308) redirect.
+export default function Page(): never {
+  permanentRedirect("/posting-rules")
 }
