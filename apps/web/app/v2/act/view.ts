@@ -20,7 +20,16 @@ export interface OneTapModel {
 
 const SIGN_IN = { href: "/sign-in", label: "Sign in" }
 
-function nextFor(action: OneTapAction): { href: string; label: string } {
+/**
+ * Where a used link leads. A reply or a decline leads to its inquiry's thread (flow C, #328): the landing's inbox
+ * with that inquiry open, which asks for sign-in and opens only for the landing business the inquiry belongs to. The
+ * inquiry id comes from the verified token, never from the request.
+ */
+function nextFor(action: OneTapAction, interestId: string | null): { href: string; label: string } {
+  if ((action === "reply" || action === "decline") && interestId) {
+    return { href: `/v2/landing/inquiries?${new URLSearchParams({ inquiry: interestId }).toString()}#conversation`, label: "Open the inquiry" }
+  }
+
   return action === "confirm_availability"
     ? { href: "/v2/work", label: "Find work" }
     : { href: "/v2/landing/jobs", label: "Job postings" }
@@ -78,7 +87,7 @@ export function oneTapModel(inspection: OneTapInspection, notice: OneTapNotice):
 
   if (inspection.kind === "used") {
     const statement = oneTapStatement(inspection.action)
-    const next = nextFor(inspection.action)
+    const next = nextFor(inspection.action, inspection.interestId)
 
     return {
       alert: null,

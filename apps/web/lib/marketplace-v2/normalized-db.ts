@@ -77,7 +77,7 @@ interface FunctionSpec {
 
 /**
  * The closed list of database functions the adapter may call. Names, argument names and argument types match the SQL
- * exactly (architecture/normalized-v2, stages 01-38; 38 adds the basin staff calls and the public area notice).
+ * exactly (architecture/normalized-v2, stages 01-42; 38 adds the basin staff calls and the public area notice, 42 the liquidity board).
  *
  * Every function here is SECURITY DEFINER with a pinned `search_path`, is granted EXECUTE to `authenticated` (and to
  * `anon` only where `anonymous` is true) and never to `service_role`; `normalized-adapter.contract.test.ts` proves
@@ -384,6 +384,10 @@ export const MARKETPLACE_FUNCTIONS = {
   // 5 to 1000 characters in `p_reason`, which becomes the report's resolution note. A resolved report keeps its
   // outcome (23514); an unknown report is "Report not found" (P0002). Audited.
   admin_resolve_report: { anonymous: false, args: { p_reason: "text", p_report_id: "uuid", p_status: "text" }, returns: "void" },
+  // Role: moderator (40, #325). Dismisses the reveal pause's report through admin_resolve_report and closes the pause.
+  // Reason 5-500. An unknown or already cleared pause is "Reveal pause not found" (P0002). A non-moderator is 42501.
+  // The call does not read or return a phone number.
+  admin_clear_hauler_reveal_pause: { anonymous: false, args: { p_org_id: "uuid", p_reason: "text" }, returns: "void" },
   // Anonymous and authenticated (38, #324). Null, or exactly "not in your area yet". An unknown job id is null, the
   // same as a launched one. Stable, so anon's only volatile function stays unsubscribe_with_token.
   public_area_notice: {
@@ -409,7 +413,12 @@ export const MARKETPLACE_FUNCTIONS = {
   list_basins: { anonymous: false, args: {}, returns: "rows" },
   // Authenticated (38, #324). Any active platform admin. Verified landings, active jobs, and haulers whose
   // availability was confirmed in the last 14 days. Unknown basin is P0002.
-  basin_readiness: { anonymous: false, args: { p_basin_id: "uuid" }, returns: "rows" }
+  basin_readiness: { anonymous: false, args: { p_basin_id: "uuid" }, returns: "rows" },
+  // Authenticated (42, #326). Any active platform admin; anyone else is 42501. One row per basin for the staff
+  // liquidity board: the basin's name, state and status, and seven counts (verified landings, active jobs, jobs
+  // confirmed in 14 days, available haulers, inquiries, inquiries answered, median minutes to a first reply).
+  // Counts only: no business, person, job, landing, point or boundary. No audit: it only reads.
+  basin_liquidity_board: { anonymous: false, args: {}, returns: "rows" }
 } as const satisfies Record<string, FunctionSpec>
 
 export type MarketplaceFunctionName = keyof typeof MARKETPLACE_FUNCTIONS

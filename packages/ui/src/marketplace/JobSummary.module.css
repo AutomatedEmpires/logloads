@@ -15,15 +15,19 @@
   min-width: 0;
 }
 
+/* The name and the mark are one run of text: the mark's sentence ("Business identity reviewed by LogLoads on
+   Oct 14, 2026", #337) starts beside the name and wraps under it. As two flex items the sentence took two lines of
+   its own at 390 px and pushed the Listing fact past the first 600 px. */
 .poster {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px var(--ll-space-3);
   margin: 0;
   color: var(--ll-color-text-secondary);
   font-size: var(--ll-text-md);
+  line-height: var(--ll-leading-snug);
 }
+
+.poster > :first-child { margin-inline-end: var(--ll-space-3); }
+.poster .posterMark { display: inline; }
+.poster .posterMark > [data-icon] { margin-inline-end: 5px; }
 
 .title {
   margin: 0 0 var(--ll-space-1);

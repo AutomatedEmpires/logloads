@@ -128,7 +128,7 @@ export default async function HaulerProfilePage({ searchParams }: { searchParams
                         ? " Every landing operator can see it."
                         : " Right now only landings you send interest to can see it."}
                     </PageNotice>
-                    <PublicHaulerProfile profile={publicHaulerProfile(profile, equipment)} />
+                    <PublicHaulerProfile now={new Date().toISOString()} profile={publicHaulerProfile(profile, equipment)} />
                   </div>
                 ) : (
                   <HaulerProfileForm

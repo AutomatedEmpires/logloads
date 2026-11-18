@@ -659,7 +659,7 @@ begin
   -- Ledger
   -- -------------------------------------------------------------------------
   perform pg_temp.ok((select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations)
-                       in ('06,11,12,16,18,23,26,29,31,33', '06,11,12,16,18,23,26,29,31,33,35', '06,11,12,16,18,23,26,29,31,33,35,38'),
+                       in ('06,11,12,16,18,23,26,29,31,33', '06,11,12,16,18,23,26,29,31,33,35', '06,11,12,16,18,23,26,29,31,33,35,38', '06,11,12,16,18,23,26,29,31,33,35,38,40', '06,11,12,16,18,23,26,29,31,33,35,38,40,42'),
     'the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33 in order (and 35 after them, when stage 36 runs this suite again)');
 
   raise notice 'ALL PORT V3 FUNCTION (33-I1, 33-I2, 33-T, 33-A1, 33-A2, 33-Q1, 33-Q2) TESTS PASSED.';

@@ -32,6 +32,9 @@
 #       exactly the jobs that take new interest (job_takes_new_interest).
 #   38  changes no stored row either (it adds the empty basins table and nine functions, and redefines two). With no
 #       basin recorded, anon still reads exactly the jobs that take new interest.
+#   40  changes no stored row either (it adds the empty hauler_reveal_pauses table, four functions and two triggers).
+#   42  changes no stored row either (it adds one function and nothing else).
+#   42  changes no stored row either (it adds one function and nothing else).
 # =============================================================================
 set -euo pipefail
 
@@ -322,6 +325,15 @@ ANON_JOBS="$(q "begin; select set_config('request.jwt.claims', '{\"role\":\"anon
   select 'IDS ' || coalesce(string_agg(id::text, ',' order by id), '') from marketplace.job_postings; rollback;" | grep '^IDS ' | cut -c5-)"
 expect_eq "35-R: on the existing data anon reads directly exactly the jobs that take new interest" \
   "$ANON_JOBS" "$(q "select coalesce(string_agg(id::text, ',' order by id), '') from marketplace.job_postings where marketplace.job_takes_new_interest(id);")"
-expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35 and 38 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33,35,38"
+BEFORE_40="$(all_data schema_migrations)"
+apply1 "$SCRIPT_DIR/40_v2_reveal_pause.sql"
+AFTER_40="$(all_data schema_migrations,hauler_reveal_pauses)"
+expect_eq "40 changes no stored row in any marketplace table (the ledger and the new pause table aside)" "$AFTER_40" "$BEFORE_40"
+expect_eq "40's pause table starts empty" "$(q "select count(*) from marketplace.hauler_reveal_pauses;")" "0"
+BEFORE_42="$(all_data schema_migrations)"
+apply1 "$SCRIPT_DIR/42_v2_basin_liquidity.sql"
+AFTER_42="$(all_data schema_migrations)"
+expect_eq "42 changes no stored row in any marketplace table (the ledger aside)" "$AFTER_42" "$BEFORE_42"
+expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38, 40 and 42 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33,35,38,40,42"
 x "drop schema if exists marketplace cascade;"
 echo "MIGRATION PATH TEST PASSED."

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
-# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..39>
+# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..43>
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
@@ -796,6 +796,55 @@ SUITES
 36_v2_day14_direct_reads_unsubscribe_keys_tests.sql|ALL DAY-14 DIRECT READ, UNSUBSCRIBE PRUNE AND KEY ROTATION (35-R, 35-P, 35-K) TESTS PASSED
 SUITES
     check "the re-run suites rolled back (no test organizations left)" "select count(*) = 0 from marketplace.organizations;"
+    ;;
+  40)
+    run_migration "$DIR/40_v2_reveal_pause.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations','notification_unsubscribe_keys','notification_unsubscribe_uses','basins','hauler_reveal_pauses'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38, 40 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23,26,29,31,33,35,38,40' from marketplace.schema_migrations;"
+    check "40: the pause table has row-level security, no policy, and starts empty" "select c.relrowsecurity and not c.relforcerowsecurity and not exists (select 1 from pg_policies p where p.schemaname = 'marketplace' and p.tablename = 'hauler_reveal_pauses') and (select count(*) = 0 from marketplace.hauler_reveal_pauses) from pg_class c where c.oid = 'marketplace.hauler_reveal_pauses'::regclass;"
+    check "40: the limit, the opener, the trigger and the staff clear exist" "select to_regprocedure('marketplace.phone_reveal_pause_limit()') is not null and to_regprocedure('marketplace.open_hauler_reveal_pause(uuid)') is not null and to_regprocedure('marketplace.tg_hauler_reveal_pause()') is not null and to_regprocedure('marketplace.admin_clear_hauler_reveal_pause(uuid,text)') is not null;"
+    check "40: both share triggers are installed" "select count(*) = 2 from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.oid = 'marketplace.expressions_of_interest'::regclass and t.tgname in ('hauler_reveal_pause_before', 'hauler_reveal_pause_after') and not t.tgisinternal;"
+    check "40: the limit is 5 distinct landings in 24 hours" "select landing_count = 5 and window_hours = 24 from marketplace.phone_reveal_pause_limit();"
+    check "40: authenticated can clear a pause and cannot call the internals; anon can call none of them" "select has_function_privilege('authenticated', 'marketplace.admin_clear_hauler_reveal_pause(uuid,text)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.admin_clear_hauler_reveal_pause(uuid,text)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.open_hauler_reveal_pause(uuid)', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.open_hauler_reveal_pause(uuid)', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.phone_reveal_pause_limit()', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.phone_reveal_pause_limit()', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.tg_hauler_reveal_pause()', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.tg_hauler_reveal_pause()', 'EXECUTE');"
+    check "31-U still holds: unsubscribe_with_token is the only volatile marketplace function anon can execute" "select count(*) = 1 and bool_and(p.proname = 'unsubscribe_with_token') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.provolatile = 'v' and has_function_privilege('anon', p.oid, 'EXECUTE');"
+    ;;
+  41)
+    run_sql "$DIR/41_v2_reveal_pause_tests.sql"
+    grep -q "ALL REVEAL PAUSE (40) TESTS PASSED" "$LOG" || { echo "STAGE 41: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no s40 organizations left)" "select count(*) = 0 from marketplace.organizations where slug like 's40-%';"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 16 ]] || { echo "STAGE 41: only $PASSES PASS notices; expected at least 16" >&2; exit 1; }
+    # The new table and function counts are the stage40 branch of 04. 39 already re-ran 04 before 40 existed.
+    RLOG="$LOG_DIR/stage41-rerun-04.log"
+    echo "== psql -X -v ON_ERROR_STOP=1 -f 04_tests.sql (again, on the 40 schema)" | tee "$RLOG"
+    psql "$LOGLOADS_DISPOSABLE_DB_URL" -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -f "$DIR/04_tests.sql" >> "$RLOG" 2>&1 \
+      || { echo "STAGE 41: 04_tests.sql failed on the 40 schema (see $RLOG)" | tee -a "$LOG" >&2; tail -n 30 "$RLOG" >&2; exit 1; }
+    grep -qF "PASS: All normalized-v2 integration" "$RLOG" || { echo "STAGE 41: 04_tests.sql did not reach its final PASS notice on the 40 schema" | tee -a "$LOG" >&2; exit 1; }
+    echo "  check ok: 04_tests.sql passes again on the 40 schema" | tee -a "$LOG" | tee -a "$SUMMARY"
+    check "the re-run rolled back (no organizations left before the race)" "select count(*) = 0 from marketplace.organizations;"
+    echo "== 41_v2_reveal_pause_race.sh" | tee -a "$LOG"
+    bash "$DIR/41_v2_reveal_pause_race.sh" 2>&1 | tee -a "$LOG"
+    grep -q "ALL REVEAL PAUSE RACE PASSED" "$LOG" || { echo "STAGE 41: the two-session race did not pass" >&2; exit 1; }
+    ;;
+  42)
+    run_migration "$DIR/42_v2_basin_liquidity.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations','notification_unsubscribe_keys','notification_unsubscribe_uses','basins','hauler_reveal_pauses'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38, 40, 42 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23,26,29,31,33,35,38,40,42' from marketplace.schema_migrations;"
+    check "42: the board exists, only reads (stable) and is security definer" "select p.provolatile = 's' and p.prosecdef from pg_proc p where p.oid = to_regprocedure('marketplace.basin_liquidity_board()');"
+    check "42: authenticated can call the board; anon and service_role cannot" "select has_function_privilege('authenticated', 'marketplace.basin_liquidity_board()', 'EXECUTE') and not has_function_privilege('anon', 'marketplace.basin_liquidity_board()', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.basin_liquidity_board()', 'EXECUTE');"
+    # 04 counts these on a rolled-back database. 41's race leaves its fixture behind, so 04 is not run again here
+    # and the two totals of its stage42 branch are checked directly.
+    check "42 adds one function and no table: 139 functions and 47 tables" "select (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace') = 139 and (select count(*) from pg_tables where schemaname = 'marketplace') = 47;"
+    check "31-U still holds: unsubscribe_with_token is the only volatile marketplace function anon can execute" "select count(*) = 1 and bool_and(p.proname = 'unsubscribe_with_token') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.provolatile = 'v' and has_function_privilege('anon', p.oid, 'EXECUTE');"
+    ;;
+  43)
+    run_sql "$DIR/43_v2_basin_liquidity_tests.sql"
+    grep -q "ALL BASIN LIQUIDITY BOARD (42) TESTS PASSED" "$LOG" || { echo "STAGE 43: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no s42 organizations and no basins left)" "select (select count(*) from marketplace.organizations where slug like 's42-%') + (select count(*) from marketplace.basins) = 0;"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 17 ]] || { echo "STAGE 43: only $PASSES PASS notices; expected at least 17" >&2; exit 1; }
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac

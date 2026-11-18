@@ -33,7 +33,8 @@ describe("JobResultRow: one markup for every context", () => {
     expect(html).toMatch(/^<li /)
     expect(openingTag(html, /^<li/)).toContain('data-context="hauler"')
     expect(text).toContain("Example Timber Co")
-    expect(text).toContain("Business identity verified · Oct 2026")
+    expect(text).toContain("Business identity reviewed by LogLoads on Oct 5, 2026")
+    expect(text).not.toMatch(/\bverified\b/i)
     expect(text).toContain("$525.00 per load")
     expect(text).toContain("Near Riverton, OR About 18 mi from your search")
     expect(text).toContain("Log truck, Pole trailer Fits your trucks")
@@ -132,7 +133,7 @@ describe("JobResultRow: honest listing copy", () => {
     const text = textOf(render({ context: "hauler", href: HREF, job: jobCard({ lastConfirmedAt: null, lastModifiedAt: NOW }), now: NOW }))
 
     expect(text).toContain("Not confirmed by poster · edited today")
-    expect(text).not.toMatch(/\b(Poster confirmed|Last confirmed)\b/)
+    expect(text).not.toMatch(/\b(Confirmed by|Last confirmed)\b/)
   })
 
   it("names the town without promising precision (V2-DEC-01)", () => {
