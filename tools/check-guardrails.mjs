@@ -491,6 +491,10 @@ export function scanSource(file, source) {
       }
 
       const line = source.slice(0, match.index).split("\n").length
+      // Two patterns of one rule can match the same label; report the line once.
+      if (check.id && failures.some((failure) => failure.id === check.id && failure.line === line)) {
+        continue
+      }
       failures.push({ file, id: check.id ?? null, line, message: check.message })
     }
   }

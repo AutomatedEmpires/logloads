@@ -95,7 +95,7 @@ describe("the board", () => {
 
     const html = await render()
 
-    for (const label of ["Verified landings", "Active jobs", "Confirmed in 14 days", "Haulers available", "Inquiries per job", "Answered", "Median first reply", "Stale jobs"]) {
+    for (const label of ["Identity-reviewed landings", "Active jobs", "Confirmed in 14 days", "Haulers available", "Inquiries per job", "Answered", "Median first reply", "Stale jobs"]) {
       expect(html, label).toContain(`data-label="${label}"`)
     }
     expect(html).toMatch(/data-label="Median first reply"[^>]*data-target="missed"[^>]*>3 h 20 min<span[^>]*>Over target<\/span>/)
