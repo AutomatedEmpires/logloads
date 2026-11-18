@@ -6,10 +6,14 @@
  * Everything here describes what a plan allows and what the store records. Nothing starts a charge, makes a plan
  * purchasable or gates an action: the store enforces every cap itself, at the point of action (§2.5). Limits come
  * from `LANDING_PLANS` (membership.ts) by plan code, never from the store or the page.
+ *
+ * The checkout and founding-offer disclosures (#345), drafts for counsel, are in `./disclosures`.
  */
 
 import type { MarketplaceLandingAllowanceView } from "../../marketplace-landings"
 import type { LandingPlan, LandingPlanCode } from "../../membership"
+
+export * from "./disclosures"
 
 /**
  * `organization_subscriptions.status` as the billing provider last reported it. Read only; nothing here starts a
