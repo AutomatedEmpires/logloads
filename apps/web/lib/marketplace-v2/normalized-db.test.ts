@@ -68,6 +68,7 @@ const REVIEWED_FUNCTIONS = {
   /** Platform-admin calls that are not named admin_ (38, #324). Writers take a reason; the two reads do not. */
   basin: ["basin_readiness", "create_basin", "list_basins", "set_basin_status"],
   staff: [
+    "admin_clear_hauler_reveal_pause",
     "admin_grant_founding_hauler_badge",
     "admin_grant_founding_promotion",
     "admin_moderate_job_posting",
@@ -115,6 +116,9 @@ const NEVER_CATALOGUED = [
   "rotate_unsubscribe_key",
   "supersede_deferred_billing_events",
   "sync_verified_identity",
+  "open_hauler_reveal_pause",
+  "phone_reveal_pause_limit",
+  "tg_hauler_reveal_pause",
   "write_audit"
 ]
 

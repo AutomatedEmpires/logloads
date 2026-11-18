@@ -384,6 +384,10 @@ export const MARKETPLACE_FUNCTIONS = {
   // 5 to 1000 characters in `p_reason`, which becomes the report's resolution note. A resolved report keeps its
   // outcome (23514); an unknown report is "Report not found" (P0002). Audited.
   admin_resolve_report: { anonymous: false, args: { p_reason: "text", p_report_id: "uuid", p_status: "text" }, returns: "void" },
+  // Role: moderator (40, #325). Dismisses the reveal pause's report through admin_resolve_report and closes the pause.
+  // Reason 5-500. An unknown or already cleared pause is "Reveal pause not found" (P0002). A non-moderator is 42501.
+  // The call does not read or return a phone number.
+  admin_clear_hauler_reveal_pause: { anonymous: false, args: { p_org_id: "uuid", p_reason: "text" }, returns: "void" },
   // Anonymous and authenticated (38, #324). Null, or exactly "not in your area yet". An unknown job id is null, the
   // same as a launched one. Stable, so anon's only volatile function stays unsubscribe_with_token.
   public_area_notice: {

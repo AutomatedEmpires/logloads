@@ -39,5 +39,6 @@ export * from "./v2/notify"
 export * from "./v2/boosts"
 export * from "./v2/admin"
 export * from "./v2/basins"
+export * from "./v2/disclosure"
 
 export const LOGLOADS_DOMAIN_VERSION = "operating-network-v1"
