@@ -1,10 +1,29 @@
 # FG03 Create and edit: job editor, job management, and the interest sheet
 
-**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#296), then on 2026-11-12 for design audit 3 (#334). The lead audits this pass. It is not a founder approval. Key screens still need the founder's approval before anyone builds them (AE-Control `policy/designops.md`).
+**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#296), on 2026-11-12 for design audit 3 (#334), and on 2026-11-18 for the legal review notices (#336, see [Legal review notices (#336)](#legal-review-notices-336)). The lead audits this pass. It is not a founder approval. Key screens still need the founder's approval before anyone builds them (AE-Control `policy/designops.md`).
 **Figma page:** [03 Create and edit](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=43-77) in the LogLoads file (jackson.cole's team).
 **Source of truth:** the coded V2 screens on `work/logloads-repair`, the changes spec §4.4, §4.5, §4.6, and §5.4, and design audit 2 (#285). No UI code changed in this task. Every control is an instance from [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2), bound to that file's variables. No new styles or components were created.
 
 Example data is the seeded North Pine Logging job at Oak Landing, "Oak saw-log morning run" ($525.00 per load, log truck and pole trailer, destined for Cascade Mill · Springfield, OR, from Mon, Nov 16, 2026), plus "Douglas-fir poles, Hills Creek" ($68.00 per load). Interest is from Granite Creek Hauling (1 log truck with pole trailer, from Nov 16). Sam Carter sends that interest at 10:42 am. The landing's number, shown only after a reply if the landing opts in, is (541) 555-0188.
+
+## Legal review notices (#336)
+
+These come from legal review P0 items 5 and 15, §3.3 item 8 and §10 Q6 (`docs/legal/2026-11-legal-review.md`, PR #317).
+
+| What | Frames |
+|---|---|
+| **Product field in step 1.** The editor had no product field, although `MARKETPLACE_PRODUCTS` in `packages/contracts/src/marketplace-v2.ts` drives the form. CE-03 now has a Product select (FormField, select) after the job title: "Saw logs", with the hint "Haulers filter jobs by product." | CE-03 390 [58:2523](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-2523), 768 [156:1626](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-1626), 1440 [58:2377](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-2377) |
+| **CE-03b The advertising-only notice.** When the product is "Poles and pilings" or "Other", an info Notice appears under the product. The title is "LogLoads only advertises this job". The body for poles is "You and the hauler are responsible for any operating authority this haul of poles and pilings needs. LogLoads does not arrange the haul or check authority." "Other" adds the poster's description field ("Treated fence posts", up to 120 characters) and the same notice without the product name. The example is the poles job from CE-01, "Douglas-fir poles, Hills Creek". | Row [359:4602](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=359-4602): 390 [359:4634](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=359-4634), 768 [359:4664](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=359-4664), 1440 [359:4605](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=359-4605). Other at 390: [359:5109](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=359-5109) |
+| **The Posting Rules line.** "Publishing is subject to the LogLoads Posting Rules." sits under the three publish statements, with "LogLoads Posting Rules" linked. | CE-06 "Before you publish" at 390 (`238:3596` in [58:3714](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-3714)), 768 (`238:3616` in [156:1999](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=156-1999)), 1440 (`238:3576` in [58:3495](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=58-3495)) and Dark (`319:4349` in [319:4333](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=319-4333)) |
+
+Notes:
+
+- **Which products.** The legal review lists "Other", lumber, treated poles and equipment. The controlled list has no lumber or equipment entry, so the notice is drawn for "Poles and pilings" and "Other". Each list entry still needs an unmanufactured-or-not mark in contracts (P0 item 5), and the monthly share report goes to the lead.
+- **No legal conclusions.** The notice does not say that LogLoads is or is not a broker (§3.3 item 6). It describes the conduct.
+- **Stored text.** The attestation must store the text version shown (P0 item 15). The Posting Rules page replaces `/marketplace-rules` (P0 item 1).
+- **States.** The notice is information and has no state of its own. The editor's error, offline and publish-failed states (CE-05, CE-09, CE-10) are unchanged. Page 07 B5 and B-error got the same Posting Rules line.
+
+**Check** (read-only script over the 11 frames, 2026-11-18): no text under 14 px, no control under 44 px, no disabled control, no "Preview" text, no raw fill, and no text outside its frame. It found 4 Posting Rules lines and 4 advertising notices. CE-03b 390 and the CE-06 390 block were also checked by screenshot.
 
 ## Design audit 3 (#334)
 

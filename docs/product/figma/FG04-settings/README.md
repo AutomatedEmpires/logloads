@@ -1,12 +1,59 @@
 # FG04 Settings: billing, team and account
 
-**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#297), then for design audit 3 on 2026-11-11 (#334). It is not approved. These key screens still need the founder's approval (AE-Control `policy/designops.md`).
+**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#297), for design audit 3 on 2026-11-11 (#334), and for the legal review privacy notices on 2026-11-18 (#336, see [Legal review privacy screens (#336)](#legal-review-privacy-screens-336)). It is not approved. These key screens still need the founder's approval (AE-Control `policy/designops.md`).
 **Figma page:** [04 Settings](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=44-115) in the LogLoads file (jackson.cole's team).
 **Source of truth:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`, the plan numbers in `packages/contracts/src/membership.ts`, and the lead rulings on #108 and #334 (billing is not open; current-state frames show no payment control). Figma mirrors that copy. No UI code changed in this task.
 
 The current billing screen is **Billing not on yet**: the plan facts and one status notice, with no payment control. The billing-on screens are kept, but only in the section **Future: billing closed**, outside the approval set. Hauling stays free. Nothing on this page stores a full card number.
 
 The example person is the one already on page 00 System: Sam Carter, sam@example.com, owner of North Ridge Logging.
+
+## Legal review privacy screens (#336)
+
+These come from legal review P0 item 11, §6.5 and §6.6 (`docs/legal/2026-11-legal-review.md`, PR #317). Each state is drawn at 390, 768 and 1440, as on the rest of this page. The 390 frames put the primary action in a BottomActionBar.
+
+**Directory listing: the hauler profile publish notice (§6.5).** This is a just-in-time notice that lists the exact visible fields and who sees them. Publishing is the hauler's choice, and it can be undone in one tap. Nothing changes the hauler's ability to send interest without a listing. The example is Granite Creek Hauling, the hauler on pages 03 and 07.
+
+- **What landings see.** Business name, service area, trucks and trailers, availability ("1 truck from Mon, Nov 16. Confirmed by you today." is attributed, as §7.3 item 10 asks) and the identity review ("Not yet reviewed").
+- **Name note.** "If your business name is your own name, landings will see your name."
+- **Who sees it.** "Landing businesses signed in to LogLoads. Not people who are signed out, and not search engines."
+- **Never shown.** "Your phone number, your email and your exact location."
+- **Copies.** "You can remove the listing in one tap. If someone saved a copy or a link before then, LogLoads cannot take that copy back." (§6.5 item 5).
+
+| State | 390 | 768 | 1440 |
+|---|---|---|---|
+| Not listed (List my profile, Not now) | [361:4236](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-4236) | [361:4523](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-4523) | [361:4739](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-4739) |
+| Listed (one tap: Remove my listing) | [361:4954](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-4954) | [361:5163](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-5163) | [361:5372](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-5372) |
+| Removed, with Undo | [361:5581](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-5581) | [361:5799](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-5799) | [361:6009](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-6009) |
+| Offline (the last saved setting stays) | [361:6219](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-6219) | [361:6457](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-6457) | [361:6682](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-6682) |
+| Not saved (Try again; nothing changed) | [361:6907](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-6907) | [361:7131](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-7131) | [361:7347](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-7347) |
+| Dark (not listed) | [361:7563](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-7563) | — | — |
+
+**Privacy request (§6.6 item 1).** An in-app form to see, copy, correct or delete personal information. Each request type is a ChoiceCard:
+
+- "See what LogLoads holds about me"
+- "Get a copy to download"
+- "Correct something"
+- "Delete my information": "We delete what we can and tell you what we must keep, and why."
+
+The form has an optional Details box. It says "Before we act, we email sam@example.com to confirm it is you. We answer within 45 days." It also offers "You can also write to support@logloads.com", the support address the code already uses (`apps/web/lib/contact-actions.ts`). The Account screens gained a "Make a privacy request" button under "Email me a copy of my data": 390 `362:7717`, 768 `362:7723`, 1440 `362:7729` and Dark `362:7735`.
+
+| State | 390 | 768 | 1440 |
+|---|---|---|---|
+| Privacy request (Send request, Cancel) | [362:5445](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-5445) | [362:5666](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-5666) | [362:5831](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-5831) |
+| Nothing chosen (the typed details stay) | [362:5995](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-5995) | [362:6177](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-6177) | [362:6352](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-6352) |
+| Sent (confirm by email; answer by Jan 2, 2027) | [362:6527](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-6527) | [362:6695](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-6695) | [362:6854](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-6854) |
+| Offline (the choice and details stay) | [362:7013](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-7013) | [362:7196](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-7196) | [362:7371](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-7371) |
+| Dark | [362:7546](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-7546) | — | — |
+
+Notes:
+
+- **Entry point.** The directory listing is a hauler screen, reached from the hauler profile. That profile screen is not drawn yet (FG01, Gaps).
+- **Code follow-ups.** Profile pages carry `noindex` and stay out of the sitemap (§6.5 item 4). The directory needs a landing organization that has passed identity review (§9.3 item 4). Both are code follow-ups, with nothing to draw.
+- **Example dates.** The "answer by" date is Nov 18, 2026 plus 45 days.
+- **Not drawn here.** The incident plan (§6.6 item 6) is an operations document.
+
+**Check** (read-only script over the 33 new and changed frames, 2026-11-18): no text under 14 px, no control under 44 px, no disabled control, no "Preview" text, no stray "Billing" text, no raw fill, no text outside its frame, and no overlapping frames. The not-listed 390 and 1440 frames and the privacy request at 390 were also checked by screenshot.
 
 ## Design audit 3 (#334)
 
@@ -74,7 +121,7 @@ These frames sit in the section [Future: billing closed](https://www.figma.com/d
 
 **Team.** Sam Carter is the owner. Riley Nguyen is a manager at Oak Landing. Jordan Hale is invited as staff. Each person is a 00 System Member row. Inviting, resending, and transferring ownership each have an ending. Owners handle billing and the team. Managers edit landings and jobs. Staff read inquiries and reply.
 
-**Account.** Profile facts link out to the profile. Email and in-app alerts are on. Texts are off; the consent line under them is pending the legal review (#291, #293), the same as page 07. Daily digest, quiet hours 9:00 PM to 6:00 AM. Theme: Match my phone. Report a problem, email a copy of the data, delete the sign-in, and sign out are actions with endings. Deleting the sign-in does not delete North Ridge Logging.
+**Account.** Profile facts link out to the profile. Email and in-app alerts are on. Texts are off; the consent line under them is pending the legal review (#291, #293), the same as page 07. Daily digest, quiet hours 9:00 PM to 6:00 AM. Theme: Match my phone. Report a problem, email a copy of the data, make a privacy request (#336), delete the sign-in, and sign out are actions with endings. Deleting the sign-in does not delete North Ridge Logging.
 
 ## What changed for audit 2
 
