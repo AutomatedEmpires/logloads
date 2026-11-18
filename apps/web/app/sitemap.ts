@@ -21,8 +21,9 @@ const staticRoutes: Array<{ path: string; priority: number; changeFrequency: "ho
   { changeFrequency: "monthly", path: "/contact", priority: 0.5 },
   { changeFrequency: "monthly", path: "/terms", priority: 0.3 },
   { changeFrequency: "monthly", path: "/privacy", priority: 0.3 },
-  { changeFrequency: "monthly", path: "/marketplace-rules", priority: 0.3 },
-  { changeFrequency: "monthly", path: "/acceptable-use", priority: 0.3 }
+  { changeFrequency: "monthly", path: "/posting-rules", priority: 0.3 },
+  { changeFrequency: "monthly", path: "/acceptable-use", priority: 0.3 },
+  { changeFrequency: "monthly", path: "/sms-terms", priority: 0.3 }
 ]
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

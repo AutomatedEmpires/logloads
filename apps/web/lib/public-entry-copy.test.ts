@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { landingPlanCards } from "@logloads/contracts"
 import { describe, expect, it } from "vitest"
 
+import { legalDocuments } from "./legal"
 import {
   pilotLaunchGates,
   pilotRoles,
@@ -10,7 +11,6 @@ import {
 } from "./pilot-showroom"
 import {
   forLandingsPlanAllowances,
-  legalPages,
   pricingPageCopy,
   publicSignUpCopy,
   storyPages
@@ -244,22 +244,39 @@ describe("public role entry copy", () => {
     expect(JSON.stringify(allowances)).not.toMatch(TYPED_PRICE)
   })
 
-  it("keeps the retired host fee sections out of the Terms of Service but links their archive", () => {
-    const terms = legalPages["terms"]
-    const sectionTitles = terms?.sections.map((section) => section.title)
+  it("keeps the retired host fee sections out of the Terms of Service but links their archives", () => {
+    const terms = legalDocuments.terms
+    const sectionTitles = terms.sections.map((section) => section.title)
+    const liability = terms.sections.find((section) => section.title === "17. Limit of liability")
 
-    expect(sectionTitles).toContain("What LogLoads is")
+    expect(sectionTitles).toContain("2. What LogLoads is not")
     expect(sectionTitles).not.toContain("Host platform fee")
     expect(sectionTitles).not.toContain("Agreement and payment method")
     expect(JSON.stringify(terms)).not.toMatch(RETIRED_FEE_CLAIM)
-    expect(JSON.stringify(terms)).not.toMatch(TYPED_PRICE)
     expect(JSON.stringify(terms)).not.toMatch(/monthly in arrears|percentage agreement/i)
-    // The removed text stays readable for agreements accepted under it (LE-13).
-    expect(terms?.changeNotice).toMatchObject({
-      date: "November 2, 2026",
-      dateTime: "2026-11-02",
-      link: { href: "/terms/2026-08-03" }
+    // The one typed amount is the liability floor, a legal term for counsel rather than a price (#293 §10 Q2).
+    expect(JSON.stringify(liability)).toContain("$100")
+    expect(JSON.stringify({ ...terms, sections: terms.sections.filter((section) => section !== liability) })).not.toMatch(
+      TYPED_PRICE
+    )
+    expect(JSON.stringify(terms)).not.toMatch(/free forever/i)
+    // Every earlier text stays readable for agreements accepted under it (LE-13).
+    expect(terms.changeNotice).toMatchObject({
+      date: "November 18, 2026",
+      dateTime: "2026-11-18",
+      link: { href: "/terms/2026-11-02" }
     })
+    expect(JSON.stringify(terms)).toContain('"href":"/terms/2026-08-03"')
+  })
+
+  it("keeps every current legal document free of the retired host fee and of prices", () => {
+    for (const document of Object.values(legalDocuments)) {
+      // The Terms' liability floor ($100, in the clause and in its counsel note) is the one allowed amount.
+      const typed = document.slug === "terms" ? JSON.stringify(document).replaceAll("$100", "") : JSON.stringify(document)
+
+      expect(typed, document.slug).not.toMatch(RETIRED_FEE_CLAIM)
+      expect(typed, document.slug).not.toMatch(TYPED_PRICE)
+    }
   })
 
   it("limits live trip visibility to assigned participants", () => {

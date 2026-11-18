@@ -133,6 +133,67 @@ describe("share facts", () => {
     expect(scrubPublicText("real jobs only")).toBe("")
   })
 
+  it("drops a phone number whatever sits between its digits (#404)", () => {
+    const written = [
+      "541/555/0199",
+      "541_555_0199",
+      "541 / 555 / 0199",
+      "541|555|0199",
+      "541*555*0199",
+      "541~555~0199",
+      "(541)555_0199",
+      "+1/541/555/0199",
+      "541-555-0199",
+      "541.555.0199",
+      "541 555 0199",
+      "5415550199"
+    ]
+
+    for (const phone of written) {
+      expect(scrubPublicText(`Call ${phone} today`), phone).toBe("Call today")
+    }
+
+    const facts = shareFacts(job({ product: "Fir, call 541_555_0199", title: "Call 541/555/0199" }), NOW)
+
+    expect(facts.title).toBe("Call")
+    expect(facts.cardTitle).toBe("Call")
+    expect(facts.product).toBe("Fir, call")
+    expect(JSON.stringify(facts)).not.toMatch(/0199/)
+
+    const note = shareFacts(job({ pay: { amountCents: null, note: "ring 541/555/0199", unit: "negotiable" } }), NOW)
+
+    expect(note.payText).toBe("Negotiable")
+  })
+
+  it("keeps log lengths, prices and a clock time, which are not phone numbers (#404)", () => {
+    expect(scrubPublicText("Fir 16' 20' 32' 40' logs")).toBe("Fir 16' 20' 32' 40' logs")
+    expect(scrubPublicText("$475, $500 or $525 a load")).toBe("$475, $500 or $525 a load")
+    expect(scrubPublicText("Gate opens 6:00, last load 14:30")).toBe("Gate opens 6:00, last load 14:30")
+    expect(scrubPublicText("54 mi, 2 trucks, 22 days")).toBe("54 mi, 2 trucks, 22 days")
+  })
+
+  it("gives the card a version that changes when what the card shows changes (#404)", () => {
+    const first = shareFacts(job(), NOW)
+
+    expect(first.cardVersion).toMatch(/^[0-9a-f]{16}$/)
+    expect(shareFacts(job(), NOW).cardVersion).toBe(first.cardVersion)
+    // A field the card does not show leaves it alone.
+    expect(shareFacts(job({ scheduleNote: "Other" }), NOW).cardVersion).toBe(first.cardVersion)
+
+    for (const changed of [
+      job({ pay: { amountCents: 50_000, note: null, unit: "per_load" } }),
+      job({ title: "Oak pulp to Cascade Mill" }),
+      job({ posterName: "Elm Landing" }),
+      job({ lastConfirmedAt: "2026-11-11T15:00:00.000Z" }),
+      job({ haulDistance: { basis: "poster_route_estimate", miles: 60 } }),
+      job({ equipment: ["log_truck"] }),
+      job({ sponsored: true }),
+      job({ expiresAt: "2026-11-01T00:00:00.000Z" })
+    ]) {
+      expect(shareFacts(changed, NOW).cardVersion).not.toBe(first.cardVersion)
+    }
+  })
+
   it("does not put a phone number that was typed as a pay note onto negotiable pay", () => {
     const leaked = shareFacts(job({ pay: { amountCents: null, note: "call 541-555-0199", unit: "negotiable" } }), NOW)
     const kept = shareFacts(job({ pay: { amountCents: null, note: "depends on the mill", unit: "negotiable" } }), NOW)
