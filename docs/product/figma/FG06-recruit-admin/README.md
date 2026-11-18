@@ -1,10 +1,25 @@
 # FG06 Recruit and admin
 
-**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#299), then on 2026-11-11 for design audit 3 (#334). These screens are not approved yet. Approval is a founder comment on the design issue (#235) that begins with `approved` (AE-Control `policy/designops.md`).
+**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#299), on 2026-11-11 for design audit 3 (#334), and on 2026-11-18 for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)). These screens are not approved yet. Approval is a founder comment on the design issue (#235) that begins with `approved` (AE-Control `policy/designops.md`).
 **Figma page:** [06 Recruit and admin](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6/LogLoads?node-id=52-2884) in the LogLoads file.
 **Source:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md` sections 4.8, 4.9, 4.10, and 7.1, and the lead ruling on payment controls (#334, under the founder's delegation, following #108). Components, variables, and text styles come from page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6/LogLoads?node-id=9-2). No new styles were created. No UI code changed.
 
-The landing is Ridgeline Landing Co. on an active Basic plan: 2 of 3 targeted invitations left, resetting Dec 1. The hauler is Ridgeline Hauling of Sweet Home, OR, 6 miles from the job, with 2 log trucks and a pole trailer, not confirmed for 12 days. The job is Oak saw logs to Cascade Mill at $525 per load.
+The landing is Ridgeline Landing Co. on an active Basic plan: 2 of 3 targeted invitations left, resetting Dec 1. The hauler is Granite Creek Hauling (named Ridgeline Hauling before #379), shown here in Sweet Home, OR, 6 miles from the job, with 2 log trucks and a pole trailer, last confirmed 12 days ago. The job is Oak saw logs to Cascade Mill at $525 per load.
+
+## Design audit 4 (#379)
+
+Design audit 4 ([logloads#235 comment 6831966093](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6831966093)) found one blocker and three minors on this page.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| Day-14 jobs read "Listing expired" next to "Accepting interest" in the admin stale queue. That is false and contradicts itself. | Blocker | The stale queue rows on RA-04 Stale listings 390 `130:9081`, 768 `130:9251` and 1440 `130:9421` now show their freshness, using the 00 System freshness look. The first row, at 9 days, is State=aging, "Confirmed 9 days ago", and still says Accepting interest. The second and third rows are past day 14. They read "Waiting for the poster to confirm · last confirmed 16 days ago" and "… 21 days ago" (lead decision 3), and their status is "Not taking new interest". The confirmation age is in the freshness line, apart from the job length ("About 18 days"), which the row already shows. At 390 and 768 the freshness label wraps inside the row. The 00 AvailabilityStatus stale state no longer says "Listing expired" anywhere. |
+| Find trucks showed no sort | Minor | A 00 System SortControl reading "Last confirmed" now sits under the hauler count on RA-01 390 `415:7585`, 768 `415:7593`, 1440 `415:7601`, the three offline frames (`415:7609`, `415:7617`, `415:7625`) and the Dark copy (`415:7633`). The options are exactly Last confirmed (the default), Distance and Name (lead decision 7). These are named, visible sort keys, as the legal review's broker guardrails ask, with no hidden ranking. |
+| The truck freshness wording "Not confirmed for 12 days" | Minor | It reads "Last confirmed 12 days ago" in all 14 places, on the RA-01 rows and in the RA-02 recipient line ("Sweet Home, OR. Gets invitations. Last confirmed 12 days ago."). |
+| The landing is "Ridgeline Landing Co." and the hauler was "Ridgeline Hauling" | Minor | The hauler is "Granite Creek Hauling", as on pages 02, 03, 04 and 07, in all 20 places (RA-01, RA-02 and the Dark row). Its town and distance on this page are unchanged. |
+
+While checking, a dangling "·" was found at the end of the interest line ("4 trucks requested ·") in 15 job rows on this page, where the row has no second interest fact. That separator is hidden on those rows.
+
+**Check** (read-only script over the 19 changed frames, 2026-11-18): no text under 14 px, no control under 44 px, no disabled control, no unbound fill or stroke, no text outside its frame and no overlapping frames. RA-04 Stale listings 390 and 1440 and RA-01 Find trucks 390 and 1440 were checked by screenshot. The 390 screenshot showed the long waiting label clipped at the row edge. It was made to wrap and checked again.
 
 ## Design audit 3 (#334)
 
