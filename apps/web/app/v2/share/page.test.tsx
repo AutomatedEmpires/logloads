@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { MarketplaceJobDetailView } from "@logloads/contracts"
 import { toPublicJobView } from "@logloads/contracts"
 
+import { RateLimitError, RateLimitUnavailableError } from "@/lib/rate-limit-core"
+
 import { shareFacts } from "./facts"
 
 /**
@@ -16,6 +18,8 @@ import { shareFacts } from "./facts"
 
 const mocks = vi.hoisted(() => ({
   areaNotice: vi.fn<(jobId: string) => Promise<string | null>>(async () => null),
+  checkRateLimit: vi.fn<(bucket: string, key: string, limit: number, windowMs: number) => Promise<void>>(async () => undefined),
+  clientKey: vi.fn(async () => "verified:share-test-client"),
   enabled: true,
   getActor: vi.fn(async (): Promise<{
     activeOrganization: { id: string } | null
@@ -33,9 +37,19 @@ vi.mock("next/navigation", () => ({
 }))
 vi.mock("next/og", () => ({
   ImageResponse: class {
-    constructor(public element: React.ReactElement) {}
+    constructor(public element: React.ReactElement, public options?: { headers?: Record<string, string> }) {}
   }
 }))
+vi.mock("@/lib/rate-limit", async () => {
+  const core = await vi.importActual<typeof import("@/lib/rate-limit-core")>("@/lib/rate-limit-core")
+
+  return {
+    RateLimitError: core.RateLimitError,
+    RateLimitUnavailableError: core.RateLimitUnavailableError,
+    checkRateLimit: (bucket: string, key: string, limit: number, windowMs: number) => mocks.checkRateLimit(bucket, key, limit, windowMs),
+    requestClientKey: () => mocks.clientKey()
+  }
+})
 vi.mock("@/lib/marketplace-v2/flag", () => ({ marketplaceV2Enabled: () => mocks.enabled }))
 vi.mock("@/lib/app-url", () => ({ resolvePublicAppUrl: () => "https://logloads.example" }))
 vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
@@ -120,6 +134,8 @@ beforeEach(() => {
   vi.stubGlobal("React", React)
   mocks.enabled = true
   mocks.areaNotice.mockResolvedValue(null)
+  mocks.checkRateLimit.mockResolvedValue(undefined)
+  mocks.clientKey.mockResolvedValue("verified:share-test-client")
   mocks.getActor.mockResolvedValue(null)
   mocks.getJob.mockResolvedValue(job())
   vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "")
@@ -246,12 +262,14 @@ describe("preview metadata", () => {
 
     expect(metadata.title).toBe("Oak saw logs to Cascade Mill")
     expect(metadata.description).toBe(facts.description)
+    const card = `/v2/share/${JOB_ID}/opengraph-image?v=${facts.cardVersion}`
+
     expect(metadata.openGraph).toMatchObject({
       description: facts.description,
-      images: [{ alt: facts.cardFreshness, height: 630, url: `/v2/share/${JOB_ID}/opengraph-image`, width: 1200 }],
+      images: [{ alt: facts.cardFreshness, height: 630, url: card, width: 1200 }],
       title: facts.title
     })
-    expect(metadata.twitter).toMatchObject({ card: "summary_large_image", images: [`/v2/share/${JOB_ID}/opengraph-image`] })
+    expect(metadata.twitter).toMatchObject({ card: "summary_large_image", images: [card] })
     expect(serialized).not.toContain(PLANTED_EMAIL)
     expect(serialized).not.toContain(PLANTED_PHONE)
     expect(serialized).not.toMatch(/verified job|every job is real/i)
@@ -288,7 +306,9 @@ describe("preview metadata", () => {
     expect(serialized).not.toContain("Oak saw")
     expect(serialized).not.toContain("475")
     expect(serialized).not.toContain(PLANTED_PHONE)
-    expect(serialized).not.toContain("opengraph-image")
+    // The closed card has its own address, so a card fetched while the basin was open is not reused for it (#404).
+    expect(metadata.openGraph).toMatchObject({ images: [{ height: 630, url: `/v2/share/${JOB_ID}/opengraph-image?v=closed`, width: 1200 }] })
+    expect(metadata.twitter).toMatchObject({ images: [`/v2/share/${JOB_ID}/opengraph-image?v=closed`] })
 
     const image = (await ShareCard({ params: Promise.resolve({ jobId: JOB_ID }) })) as unknown as { element: React.ReactElement }
     const html = renderToStaticMarkup(image.element)
@@ -300,9 +320,130 @@ describe("preview metadata", () => {
     expect(html).not.toContain(PLANTED_PHONE)
   })
 
+  it("gives the card a new address when the listing changes (#404)", async () => {
+    const cardUrl = async () => {
+      const metadata = await generateMetadata({ params: Promise.resolve({ jobId: JOB_ID }) })
+      const [image] = (metadata.openGraph as { images: Array<{ url: string }> }).images
+
+      return image?.url ?? ""
+    }
+
+    const first = await cardUrl()
+    expect(first.startsWith(`/v2/share/${JOB_ID}/opengraph-image?v=`)).toBe(true)
+    expect(first.split("?v=")[1]).toMatch(/^[0-9a-f]{16}$/)
+    expect(await cardUrl()).toBe(first)
+
+    mocks.getJob.mockResolvedValue(job({ pay: { amountCents: 52_000, note: null, unit: "per_load" } }))
+    const edited = await cardUrl()
+    expect(edited).not.toBe(first)
+
+    mocks.getJob.mockResolvedValue(null)
+    mocks.areaNotice.mockResolvedValue("not in your area yet")
+    const closed = await cardUrl()
+    expect(closed).not.toBe(first)
+    expect(closed).not.toBe(edited)
+  })
+
+  it("lets a preview card be kept for five minutes, not a year (#404)", async () => {
+    type Card = { options?: { headers?: Record<string, string> } }
+    const open = (await ShareCard({ params: Promise.resolve({ jobId: JOB_ID }) })) as unknown as Card
+
+    expect(open.options?.headers).toEqual({ "Cache-Control": "public, max-age=300" })
+
+    mocks.getJob.mockResolvedValue(null)
+    mocks.areaNotice.mockResolvedValue("not in your area yet")
+    const closed = (await ShareCard({ params: Promise.resolve({ jobId: JOB_ID }) })) as unknown as Card
+
+    expect(closed.options?.headers).toEqual({ "Cache-Control": "public, max-age=300" })
+  })
+
   it("is not listed in the sitemap", () => {
     const sitemap = readFileSync(new URL("../../sitemap.ts", import.meta.url), "utf8")
 
     expect(sitemap).not.toContain("/v2/share")
+  })
+})
+
+describe("the request limit (#404)", () => {
+  it("counts a page open and a card fetch per caller, in their own windows, before any read", async () => {
+    const order: string[] = []
+    mocks.checkRateLimit.mockImplementation(async () => {
+      order.push("limit")
+    })
+    mocks.getJob.mockImplementation(async () => {
+      order.push("read")
+      return job()
+    })
+
+    await pageHtml()
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("v2-share-page", "verified:share-test-client", 60, 60_000)
+    expect(order[0]).toBe("limit")
+    expect(order).toContain("read")
+
+    order.length = 0
+    mocks.checkRateLimit.mockClear()
+    await ShareCard({ params: Promise.resolve({ jobId: JOB_ID }) })
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("v2-share-card", "verified:share-test-client", 60, 60_000)
+    expect(order[0]).toBe("limit")
+
+    order.length = 0
+    mocks.checkRateLimit.mockClear()
+    await generateMetadata({ params: Promise.resolve({ jobId: JOB_ID }) })
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("v2-share-page", "verified:share-test-client", 60, 60_000)
+    expect(order[0]).toBe("limit")
+  })
+
+  it("answers a caller over the limit without reading the job, on the page and in its metadata", async () => {
+    mocks.checkRateLimit.mockRejectedValue(new RateLimitError(42))
+
+    const html = await pageHtml({ channel: "facebook" })
+    const metadata = await generateMetadata({ params: Promise.resolve({ jobId: JOB_ID }) })
+
+    expect(html).toContain("Too many requests")
+    expect(html).toContain("Wait a minute, then open this link again.")
+    expect(html).toContain(`href="/v2/share/${JOB_ID}"`)
+    expect(html).not.toContain("Oak saw logs")
+    expect(html).not.toContain("$475.00")
+    expect(html).not.toContain("data-beacon")
+    expect(metadata.title).toBe("Too many requests")
+    expect(metadata.robots).toEqual({ follow: false, index: false })
+    expect(JSON.stringify(metadata)).not.toMatch(/Oak saw|475|opengraph-image/)
+    expect(mocks.getJob).not.toHaveBeenCalled()
+    expect(mocks.areaNotice).not.toHaveBeenCalled()
+    expect(mocks.getActor).not.toHaveBeenCalled()
+  })
+
+  it("answers 429 with Retry-After for a card over the limit, and 503 when the limiter is down", async () => {
+    mocks.checkRateLimit.mockRejectedValue(new RateLimitError(42))
+    const limited = (await ShareCard({ params: Promise.resolve({ jobId: JOB_ID }) })) as unknown as Response
+
+    expect(limited).toBeInstanceOf(Response)
+    expect(limited.status).toBe(429)
+    expect(limited.headers.get("Retry-After")).toBe("42")
+    expect(limited.headers.get("Cache-Control")).toBe("no-store")
+
+    mocks.checkRateLimit.mockRejectedValue(new RateLimitUnavailableError())
+    const down = (await ShareCard({ params: Promise.resolve({ jobId: JOB_ID }) })) as unknown as Response
+
+    expect(down.status).toBe(503)
+    expect(down.headers.get("Retry-After")).toBe("5")
+    expect(down.headers.get("Cache-Control")).toBe("no-store")
+    expect(mocks.getJob).not.toHaveBeenCalled()
+
+    // The page fails closed too: no read while the limiter cannot count.
+    expect(await pageHtml()).toContain("Too many requests")
+    expect(mocks.getJob).not.toHaveBeenCalled()
+  })
+
+  it("does not count a request when Marketplace V2 is off, and does not hide another failure", async () => {
+    mocks.enabled = false
+    await expect(pageHtml()).rejects.toThrow("NEXT_NOT_FOUND")
+    await expect(ShareCard({ params: Promise.resolve({ jobId: JOB_ID }) })).rejects.toThrow("NEXT_NOT_FOUND")
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled()
+
+    mocks.enabled = true
+    mocks.clientKey.mockRejectedValue(new Error("LOGLOADS_RATE_LIMIT_HMAC_SECRET is required to protect rate-limit keys"))
+    await expect(pageHtml()).rejects.toThrow("LOGLOADS_RATE_LIMIT_HMAC_SECRET")
+    expect(mocks.getJob).not.toHaveBeenCalled()
   })
 })

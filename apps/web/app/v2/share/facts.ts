@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import {
   MARKETPLACE_EQUIPMENT_TYPES,
   type MarketplacePay,
@@ -14,7 +16,12 @@ import { demandText, equipmentLabels, payParts } from "@logloads/ui/marketplace"
  */
 
 const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/g
-const PHONE = /(?:\+?\d[\s().-]*){7,}/g
+/**
+ * Seven or more digits with only spaces or symbols between them: 541-555-0199, 541/555/0199, 541_555_0199,
+ * 541 | 555 | 0199 (#404). A letter ends the run. So do the marks that belong to ordinary listing numbers: a
+ * foot or inch mark, a dollar or percent sign, a comma and a colon. Log lengths, prices and clock times stay.
+ */
+const PHONE = /\(?(?:\+?\d[^\dA-Za-z'"’′″$%,:]*){7,}/g
 const QUALITY_CLAIM = /\b(?:verified job|every job is real|real jobs only)\b/gi
 
 const TRAILER_CODES: ReadonlySet<string> = new Set(
@@ -134,7 +141,8 @@ function haulDistanceDetail(job: Pick<MarketplacePublicJobView, "haulDistance">)
 }
 
 function containsContact(value: string): boolean {
-  return /[^\s@]+@[^\s@]+\.[^\s@]+/.test(value) || /(?:\+?\d[\s().-]*){7,}/.test(value)
+  // A global pattern remembers where it stopped, so each check uses its own copy.
+  return new RegExp(EMAIL.source).test(value) || new RegExp(PHONE.source).test(value)
 }
 
 function displayPay(pay: MarketplacePay) {
@@ -149,6 +157,8 @@ export interface ShareFacts {
   area: string
   cardFreshness: string
   cardTitle: string
+  /** Changes when anything the card paints changes. It goes in the card's address, so an old picture is not reused. */
+  cardVersion: string
   description: string
   destination: string | null
   distance: string
@@ -171,6 +181,14 @@ function clip(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`
 }
 
+/** The card's address for a closed basin. An open job never has this version. */
+export const SHARE_CLOSED_CARD_VERSION = "closed"
+
+/** Sixteen hex characters over exactly what `opengraph-image.tsx` paints for an open job, in a fixed order. */
+function cardVersionOf(painted: readonly (string | boolean | null)[]): string {
+  return createHash("sha256").update(JSON.stringify(painted)).digest("hex").slice(0, 16)
+}
+
 /** The strings the page and the card may render. Fields that are not here are not shown. */
 export function shareFacts(job: MarketplacePublicJobView, now: string): ShareFacts {
   const posterName = publicName(job.posterName, POSTER_FALLBACK)
@@ -189,11 +207,14 @@ export function shareFacts(job: MarketplacePublicJobView, now: string): ShareFac
     200
   )
 
+  const cardTitle = clip(title, 80)
+
   return {
     acceptingInterest: job.acceptingInterest && !listingExpired(job, now),
     area: areaLabel ? `Near ${areaLabel}` : "Area not stated",
     cardFreshness: freshness.card,
-    cardTitle: clip(title, 80),
+    cardTitle,
+    cardVersion: cardVersionOf([cardTitle, pay.amount, pay.basis, equipment.value, distance, freshness.card, job.sponsored]),
     description,
     destination: destination || null,
     distance,

@@ -16,13 +16,15 @@ import { getV2SessionActor } from "@/lib/marketplace-v2/v2-session"
 
 import {
   SHARE_CLOSED_BODY,
+  SHARE_CLOSED_CARD_VERSION,
   SHARE_CLOSED_TITLE,
   shareChannel,
   shareFacts,
   shareInterest,
   type ShareInterest
 } from "../facts"
-import { resolveShare, type ShareResolution } from "../load"
+import { shareRateLimit } from "../limit"
+import { resolveShare } from "../load"
 import styles from "./page.module.css"
 
 type Params = Promise<{ jobId: string }>
@@ -35,15 +37,17 @@ export const dynamic = "force-dynamic"
  * freshness, pay, basis, trailer, distance, length and trucks. Send interest goes through sign-up and returns to the
  * job. The preview card is `opengraph-image.tsx`. Coordinates, access notes and contact details are not rendered.
  * A closed basin (#324) shows the area notice and no job facts.
+ *
+ * Each request is counted per caller before anything is read (#404, `limit.ts`). A caller over the limit gets a
+ * short notice and no read. The page is rendered per request and is never stored. The card is `max-age=300`, and
+ * its address carries a version, so an edited, removed or closed listing gets a new picture.
  */
-async function resolveOrHide(jobId: string): Promise<Exclude<ShareResolution, { kind: "missing" }>> {
-  if (!marketplaceV2Enabled()) notFound()
+const LIMITED_TITLE = "Too many requests"
+const LIMITED_BODY = "Wait a minute, then open this link again."
 
-  const resolved = await resolveShare(jobId)
-
-  if (resolved.kind === "missing") notFound()
-
-  return resolved
+/** The card's address for one state of the listing. A crawler that kept an older card asks for this one instead. */
+function cardImage(path: string, version: string, alt: string) {
+  return { alt, height: 630, url: `${path}/opengraph-image?v=${version}`, width: 1200 }
 }
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
@@ -51,6 +55,10 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 
   if (!marketplaceV2Enabled()) {
     return { ...hidden, title: "Not found" }
+  }
+
+  if (!(await shareRateLimit("page")).ok) {
+    return { ...hidden, title: LIMITED_TITLE }
   }
 
   const { jobId } = await params
@@ -61,17 +69,20 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   }
 
   if (resolved.kind === "closed") {
-    return { ...hidden, description: SHARE_CLOSED_BODY, title: SHARE_CLOSED_TITLE }
+    const closedCard = cardImage(jobSharePath({ slug: jobId }), SHARE_CLOSED_CARD_VERSION, SHARE_CLOSED_TITLE)
+
+    return {
+      ...hidden,
+      description: SHARE_CLOSED_BODY,
+      openGraph: { description: SHARE_CLOSED_BODY, images: [closedCard], siteName: "LogLoads", title: SHARE_CLOSED_TITLE, type: "website" },
+      title: SHARE_CLOSED_TITLE,
+      twitter: { card: "summary_large_image", description: SHARE_CLOSED_BODY, images: [closedCard.url], title: SHARE_CLOSED_TITLE }
+    }
   }
 
   const facts = shareFacts(toPublicJobView(resolved.job), new Date().toISOString())
   const path = jobSharePath(resolved.job)
-  const image = {
-    alt: facts.cardFreshness,
-    height: 630,
-    url: `${path}/opengraph-image`,
-    width: 1200
-  }
+  const image = cardImage(path, facts.cardVersion, facts.cardFreshness)
 
   return {
     ...hidden,
@@ -120,9 +131,31 @@ function Fact({ children, label }: { children: string; label: string }) {
 }
 
 export default async function SharePage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
+  if (!marketplaceV2Enabled()) notFound()
+
   const { jobId } = await params
   const query = await searchParams
-  const resolved = await resolveOrHide(jobId)
+
+  if (!(await shareRateLimit("page")).ok) {
+    return (
+      <div data-ds-page="job-share">
+        <PageHeader title={LIMITED_TITLE} />
+        <PageContainer>
+          <Section variant="flush">
+            <div className={styles.actions}>
+              <p className={styles.note}>{LIMITED_BODY}</p>
+              <Button href={jobSharePath({ slug: jobId })} label="Open the link again" size="lg" variant="secondary" />
+            </div>
+          </Section>
+        </PageContainer>
+      </div>
+    )
+  }
+
+  const resolved = await resolveShare(jobId)
+
+  if (resolved.kind === "missing") notFound()
+
   const actor = await getV2SessionActor()
   const signedIn = Boolean(actor)
   const beacon = clientAnalyticsEnabled() ? (
