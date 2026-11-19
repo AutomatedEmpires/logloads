@@ -70,10 +70,15 @@ export type CredentialTone = NonNullable<BadgeProps["tone"]>
  * The state of ONE required record, as a person reads it.
  *
  * Deliberately not the stored status. A stored `approved` that has lapsed, or one
- * whose document is not stored, counts for nothing — and a chip reading "Approved"
- * over a record that does not let the driver work is the exact divergence this
+ * whose document is not stored, counts for nothing — and a chip saying LogLoads
+ * checked a record that does not let the driver work is the exact divergence this
  * type exists to prevent. So `expired` and `document_missing` are first-class
  * states, and `satisfied` is reachable only when the gate says the kind is held.
+ *
+ * A record that counts reads "Checked by LogLoads", never the bare "Approved": the
+ * word beside a driver's licence reads as LogLoads vouching for the driver (legal
+ * review §7.3 item 1, #428). It follows CREDENTIAL_ASSURANCE_STATEMENT, which says
+ * LogLoads checked the documents for consistency and expiry.
  */
 export const CREDENTIAL_SLOT_STATES = [
   "satisfied",
@@ -110,7 +115,7 @@ const SLOT_STATE_PRESENTATION: Record<CredentialSlotState, SlotStatePresentation
   more_info_required: { blocksWork: true, label: "More needed", tone: "warning" },
   not_approved: { blocksWork: true, label: "Not approved", tone: "critical" },
   nothing_on_file: { blocksWork: true, label: "Nothing on file", tone: "critical" },
-  satisfied: { blocksWork: false, label: "Approved", tone: "success" }
+  satisfied: { blocksWork: false, label: "Checked by LogLoads", tone: "success" }
 }
 
 /**
@@ -493,7 +498,11 @@ export interface CredentialEquipmentReadinessView {
 }
 
 function slotDetail(reading: CredentialKindReading, presentation: KindPresentation): string {
-  const { daysUntilExpiry, expiresOn, lapsed, latest, pendingRenewal, state } = reading
+  const { current, daysUntilExpiry, expiresOn, lapsed, latest, pendingRenewal, state } = reading
+  // Who checked the record that covers the driver, and when (#428). A decided record must carry `reviewedAt`, so the
+  // date is there; an unreadable one is left out rather than shown as "a date we cannot read".
+  const reviewedOn = current?.reviewedAt ? formatDay(current.reviewedAt) : null
+  const checked = `LogLoads checked this record${reviewedOn === null ? "" : ` on ${reviewedOn}`}`
   const lapsedExpiry = lapsed === null ? null : statedExpiry(lapsed)
   const lapseSentence =
     lapsedExpiry === null
@@ -507,12 +516,12 @@ function slotDetail(reading: CredentialKindReading, presentation: KindPresentati
   switch (state) {
     case "satisfied":
       return expiresOn === null
-        ? "Approved. This record states no expiry date, so it does not lapse."
-        : `Approved and in date until ${dayText(expiresOn)}.`
+        ? `${checked}. It states no expiry date, so it does not lapse.`
+        : `${checked}. In date until ${dayText(expiresOn)}.`
 
     case "expiring_soon":
       return (
-        `Approved, and it expires ${countdownPhrase(daysUntilExpiry ?? 0)}` +
+        `${checked}, and it expires ${countdownPhrase(daysUntilExpiry ?? 0)}` +
         `${expiresOn === null ? "" : ` (${dayText(expiresOn)})`}. Send the replacement before then — ` +
         "an expired record stops you accepting loads the day it lapses."
       )
@@ -789,8 +798,10 @@ export const HOST_CREDENTIAL_STATES = ["approved", "expires_soon", "not_current"
 
 export type HostCredentialState = (typeof HOST_CREDENTIAL_STATES)[number]
 
+// The state keys stay as stored; only the words change. "Approved" beside a driver reads as LogLoads vouching for
+// them, so the label says who checked the record (legal review §7.3 item 1, #428).
 const HOST_STATE_PRESENTATION: Record<HostCredentialState, { label: string; tone: CredentialTone }> = {
-  approved: { label: "Approved", tone: "success" },
+  approved: { label: "Checked by LogLoads", tone: "success" },
   expires_soon: { label: "Expires soon", tone: "warning" },
   not_current: { label: "Not current", tone: "critical" }
 }
@@ -890,7 +901,7 @@ function hostLineFor(
       state === "not_current"
         ? "LogLoads has no current approved record for this."
         : state === "expires_soon" && expiresOn !== null
-          ? `Approved, and expires on ${dayText(expiresOn)}.`
+          ? `Checked by LogLoads. Expires on ${dayText(expiresOn)}.`
           : null,
     photoOnFile,
     photoSrc: photoSrcFor(summary.driverProfileId, kind, {

@@ -207,11 +207,11 @@ export function getFleetFirstRunReadiness(
     {
       complete: organizationVerified,
       detail: organizationVerified
-        ? `${network.activeOrganization.name} is verified.`
+        ? `LogLoads reviewed ${network.activeOrganization.name}'s business identity.`
         : `Current state: ${formatHuman(network.activeOrganization.verificationStatus)}.`,
       id: "organization",
       label: organizationVerified
-        ? "Organization verified"
+        ? "Business identity reviewed by LogLoads"
         : `Organization verification: ${formatHuman(network.activeOrganization.verificationStatus)}`
     },
     {
@@ -749,9 +749,11 @@ export function FleetDispatch({ account, dispatchPlan, network }: FleetShellProp
 
 // --- Trucks -----------------------------------------------------------------------
 
+// The equipment record's review. `verified` is set only by a LogLoads platform administrator, so the label says who
+// reviewed what. Never the bare word (legal review §7.3 item 1, #428).
 function verificationBadge(verification: string) {
   if (verification === "verified") {
-    return <Badge tone="success">Verified</Badge>
+    return <Badge tone="success">Equipment record reviewed by LogLoads</Badge>
   }
 
   if (verification === "rejected" || verification === "suspended") {

@@ -1,8 +1,10 @@
-import type {
-  AssignmentStatus,
-  Entitlement,
-  OrganizationMembership,
-  OrganizationRole
+import {
+  describeMarketplaceVerification,
+  type AssignmentStatus,
+  type Entitlement,
+  type OrganizationMembership,
+  type OrganizationRole,
+  type VerificationRecord
 } from "@logloads/contracts"
 import type { LogLoadsDatabaseState } from "@logloads/db"
 
@@ -77,7 +79,8 @@ const FEATURE_NAMES: Record<string, string> = {
   route_packs: "Route Packs",
   team_seats: "Team seats",
   trip_documents: "Trip documents and delivery proof",
-  verified_access: "Verified network access"
+  // A historical feature key. The network it opened is gated on a business identity review (#428).
+  verified_access: "Identity-reviewed network access"
 }
 
 export function planFeatureName(key: string): string {
@@ -415,12 +418,70 @@ interface VerificationView {
   meaning: string
 }
 
-export function verificationView(status: string): VerificationView {
+const REVIEW_DAY_FORMAT = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC", year: "numeric" })
+
+/**
+ * A reviewed verification record (identity, insurance, equipment and the rest), as LogLoads' dated statement. Only an
+ * active platform administrator can set a record to `verified` (services/admin reviewVerificationRecord), and that
+ * stamps `verifiedAt`. Never the bare word (legal review §7.3 item 1, #428).
+ */
+export function reviewedByLogLoadsLabel(verifiedAt: string | null): string {
+  const instant = verifiedAt === null ? Number.NaN : Date.parse(verifiedAt)
+
+  return Number.isNaN(instant)
+    ? "Reviewed by LogLoads, date not on record"
+    : `Reviewed by LogLoads on ${REVIEW_DAY_FORMAT.format(new Date(instant))}`
+}
+
+/**
+ * When LogLoads last reviewed an organization's business identity: the latest `verifiedAt` among its `verified`
+ * identity records. A review decision stamps every one of them (services/admin applyOrganizationDecision). `null` when
+ * none carries a date.
+ */
+export function latestIdentityReviewAt(
+  records: readonly Pick<VerificationRecord, "status" | "subjectId" | "subjectType" | "verificationType" | "verifiedAt">[],
+  organizationId: string
+): string | null {
+  let latest: string | null = null
+
+  for (const record of records) {
+    if (
+      record.subjectType === "organization" &&
+      record.subjectId === organizationId &&
+      record.verificationType === "organization" &&
+      record.status === "verified" &&
+      record.verifiedAt &&
+      !Number.isNaN(Date.parse(record.verifiedAt)) &&
+      (latest === null || Date.parse(record.verifiedAt) > Date.parse(latest))
+    ) {
+      latest = record.verifiedAt
+    }
+  }
+
+  return latest
+}
+
+/**
+ * The organization's own verification state on its settings page. A reviewed organization reads as the Marketplace V2
+ * mark does (describeMarketplaceVerification): dated, attributed, and "last reviewed" after 12 months. Never the bare
+ * word (legal review §7.3 items 1 and 4, #428).
+ */
+export function verificationView(
+  status: string,
+  reviewedAt: string | null = null,
+  now: string = new Date().toISOString()
+): VerificationView {
   if (status === "verified") {
+    const mark = describeMarketplaceVerification({ reviewedOn: reviewedAt, scope: "business_identity" }, now)
+    const lapsed = mark.state === "review_lapsed" && mark.reviewedOn !== null
+
     return {
-      label: "Verified",
-      meaning: "LogLoads reviewed this organization's identity and operating details. Partners see the verified badge on your work.",
-      tone: "success"
+      label: mark.label,
+      meaning:
+        "The review looked at the business identity details this organization sent. " +
+        (lapsed ? "It is more than 12 months old, so LogLoads no longer shows it as current. " : "") +
+        "It does not cover insurance, operating authority, licences, safety record or equipment.",
+      tone: mark.state === "reviewed" ? "success" : "neutral"
     }
   }
 
@@ -580,7 +641,10 @@ export function getSettingsView(network: NetworkView, currentProfileId: string):
   const organizationId = network.activeOrganization.id
   const state = services.state
   const organization = state.organizations.find((candidate) => candidate.id === organizationId)
-  const verification = verificationView(organization?.verificationStatus ?? network.activeOrganization.verificationStatus)
+  const verification = verificationView(
+    organization?.verificationStatus ?? network.activeOrganization.verificationStatus,
+    latestIdentityReviewAt(state.verificationRecords, organizationId)
+  )
   const team = buildTeamRosterView(state, organizationId, currentProfileId)
 
   const entitlementPlans = services
