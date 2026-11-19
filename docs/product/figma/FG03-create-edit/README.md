@@ -1,10 +1,23 @@
 # FG03 Create and edit: job editor, job management, and the interest sheet
 
-**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#296), on 2026-11-12 for design audit 3 (#334), on 2026-11-18 for the legal review notices (#336, see [Legal review notices (#336)](#legal-review-notices-336)), and the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)). The lead audits this pass. It is not a founder approval. Key screens still need the founder's approval before anyone builds them (AE-Control `policy/designops.md`).
+**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#296), on 2026-11-12 for design audit 3 (#334), on 2026-11-18 for the legal review notices (#336, see [Legal review notices (#336)](#legal-review-notices-336)), the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)), and on 2026-11-19 for the tablet PageHeader (#434, see [Tablet PageHeader at 768 px (#434)](#tablet-pageheader-at-768-px-434)). The lead audits this pass. It is not a founder approval. Key screens still need the founder's approval before anyone builds them (AE-Control `policy/designops.md`).
 **Figma page:** [03 Create and edit](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=43-77) in the LogLoads file (jackson.cole's team).
 **Source of truth:** the coded V2 screens on `work/logloads-repair`, the changes spec §4.4, §4.5, §4.6, and §5.4, and design audit 2 (#285). No UI code changed in this task. Every control is an instance from [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2), bound to that file's variables. No new styles or components were created.
 
 Example data is the seeded North Pine Logging job at Oak Landing, "Oak saw-log morning run" ($525.00 per load, log truck and pole trailer, destined for Cascade Mill · Springfield, OR, from Mon, Nov 16, 2026), plus "Douglas-fir poles, Hills Creek" ($68.00 per load). Interest is from Granite Creek Hauling (1 log truck with pole trailer, from Nov 16). Sam Carter sends that interest at 10:42 am. The landing's number, shown only after a reply if the landing opts in, is (541) 555-0188.
+
+## Tablet PageHeader at 768 px (#434)
+
+#426 added `Breakpoint=tablet` to the 00 System PageHeader: 768 px wide with the 24 px gutter. On 2026-11-19, #434 moved the 18 PageHeader instances in this page's 768 px frames (CE-01 to CE-17 and CE-03b) from `Breakpoint=mobile` to it. Only the variant changed. Every title, description and breadcrumb is kept, and no header changed height.
+
+Two things changed with it, so the page lines up:
+
+- **Page content gutter.** The 768 px body used a 16 px side padding (`space/4`). With the header at 24 px the title and the body were 8 px apart. The 18 "Page content" frames now bind their side padding to `space/5` (24 px). CE-10 Editor offline grew by 24 px, because its offline line now wraps to two lines.
+- **BottomActionBar.** The 16 bars at 768 px carry an instance override that binds their side padding to `space/5`, so the bar's button lines up with the content. The 00 component has no tablet gutter of its own; that is a 00 follow-up.
+
+The 390 and 1440 px frames were not touched.
+
+**Check (2026-11-19).** A script compared each header's visible layers and text before and after and found no difference. All 18 frames were looked at in a screenshot, before and after the gutter change. A read-only script over the 18 frames (1,313 visible nodes) found no text under 14 px, no control under 44 px, no disabled control, no fill or stroke without a variable, no text outside its frame, no overlap, no "verified" text and no instance without its main component. These frames have no prototype links. Nothing was checked in a browser.
 
 ## Design audit 4 (#379)
 

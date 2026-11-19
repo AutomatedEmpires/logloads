@@ -92,6 +92,78 @@
 
 .issues { margin: var(--ll-space-2) 0 0; padding-left: var(--ll-space-5); }
 
+/* The advertising-only notice (#422; Figma CE-03b 359:4602, the Notice component 207:1206, info tone): the info icon
+   and a 4 px edge carry the tone, and the words are color/text. 16 px body, as the frame. */
+.adNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-3);
+  margin: 0;
+  padding: var(--ll-space-4);
+  border-left: 4px solid var(--ll-color-status-neutral);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-status-neutral-bg);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+/* status.info (Phosphor Info, bold), the frame's own 24 px asset, painted in the tone's colour so it follows the theme. */
+.adNoticeIcon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background-color: var(--ll-color-status-neutral);
+  -webkit-mask: url("./status-info.svg") center / 24px 24px no-repeat;
+  mask: url("./status-info.svg") center / 24px 24px no-repeat;
+}
+
+.adNoticeText { display: grid; gap: var(--ll-space-1); min-width: 0; }
+.adNoticeText > p { margin: 0; }
+.adNoticeTitle { font-weight: var(--ll-weight-semibold); }
+
+/* Step 1 carries one variant per notice product (JobEditorFields PRODUCT_NOTICE_RULES). Without :has() the saved
+   product's variant shows; with it, the step's rules show the variant of the checked option, script or not. */
+.adNotice[data-notice-for]:not([data-current]) { display: none; }
+
+@supports selector(:has(*)) {
+  .adNotice[data-notice-for] { display: none; }
+}
+
+@media (forced-colors: active) {
+  .adNotice { border-left-color: CanvasText; }
+  .adNoticeIcon { forced-color-adjust: none; background-color: CanvasText; }
+}
+
+/* The Posting Rules line under the publish statements (#422; CE-06 238:3596, page 07 B5 118:414). */
+.rules {
+  margin: 0;
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+  color: var(--ll-color-text-secondary);
+}
+
+/* Inline in the sentence, as drawn. The block padding grows each line of the link to a 44 px target (quality bar A3)
+   without moving the text. */
+.rules a {
+  padding-block: var(--ll-space-3);
+  border-radius: var(--ll-radius-xs);
+  color: var(--ll-color-action);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.rules a:hover { color: var(--ll-color-action-hover); }
+
+/* The keyboard ring hugs the words: without the target padding it never crosses the line above when the link wraps.
+   Vertical padding on an inline box moves no text, so nothing shifts. */
+.rules a:focus-visible {
+  padding-block: 0;
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: 0;
+}
+
 /* Review step */
 .previewLabel { margin: 0 0 var(--ll-space-2); font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); }
 

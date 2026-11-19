@@ -56,9 +56,18 @@ const server = serverMode === "start"
 
 export default defineConfig({
   testDir: ".",
-  // v2-flow-c.spec.ts (#328) runs last in file order: it writes only replies to New River Hauling's inquiry with North
-  // Pine Logging, which the design-system cases have finished with by then.
-  testMatch: ["design-system.spec.ts", "field-conditions.spec.ts", "v2-flow-c.spec.ts"],
+  // v2-flow-c.spec.ts (#328) runs after design-system.spec.ts in file order: it writes only replies to New River
+  // Hauling's inquiry with North Pine Logging, which the design-system cases have finished with by then. The V2 UI
+  // task specs follow (#422 job notices, #423 directory listing, #424 privacy request); a listed file that does not
+  // exist yet matches nothing. v2-job-notices.spec.ts writes nothing: it reads the editor and the review step.
+  testMatch: [
+    "design-system.spec.ts",
+    "field-conditions.spec.ts",
+    "v2-flow-c.spec.ts",
+    "v2-job-notices.spec.ts",
+    "v2-directory-listing.spec.ts",
+    "v2-privacy-request.spec.ts"
+  ],
   outputDir,
   // `next dev` compiles each route on its first request, so the local mode gets longer budgets.
   timeout: serverMode === "dev" ? 180_000 : 60_000,
