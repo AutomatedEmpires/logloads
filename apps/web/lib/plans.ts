@@ -477,9 +477,11 @@ export function verificationView(
 
     return {
       label: mark.label,
+      // Only what every path records (#412): the pilot store keeps a decision and an optional note, so nothing here
+      // says that details or documents were sent.
       meaning:
-        "The review looked at the business identity details this organization sent. " +
-        (lapsed ? "It is more than 12 months old, so LogLoads no longer shows it as current. " : "") +
+        "LogLoads reviewed this organization's business identity. " +
+        (lapsed ? "That review is more than 12 months old, so LogLoads no longer shows it as current. " : "") +
         "It does not cover insurance, operating authority, licences, safety record or equipment.",
       tone: mark.state === "reviewed" ? "success" : "neutral"
     }

@@ -161,8 +161,10 @@ describe("an organization's business identity review", () => {
     const view = verificationView("verified", "2026-10-14T16:00:00.000Z", NOW)
 
     expect(view).toMatchObject({ label: "Business identity reviewed by LogLoads on Oct 14, 2026", tone: "success" })
-    expect(view.meaning).toContain("business identity details this organization sent")
+    expect(view.meaning).toContain("LogLoads reviewed this organization's business identity.")
     expect(view.meaning).toContain("does not cover insurance, operating authority, licences, safety record or equipment")
+    // Only what every path records (#412): no claim that details or documents were sent.
+    expect(view.meaning).not.toMatch(/\bsent\b|documents?/i)
   })
 
   it("shows a review older than 12 months as last reviewed, in a neutral tone", () => {
