@@ -9,13 +9,13 @@ const ROLE_TOURS = [
   },
   {
     captureCount: 14,
-    commercialTruth: /Fleet workspace access is free forever/,
+    commercialTruth: /Fleet workspace access is free[.] No current subscription/,
     heading: "Coordinate every truck without taxing driver pay.",
     role: "fleet"
   },
   {
     captureCount: 9,
-    commercialTruth: /Driver access is free forever/,
+    commercialTruth: /Driver access is free[.] The stated driver pay/,
     heading: "Know the work before you turn the key.",
     role: "driver"
   }

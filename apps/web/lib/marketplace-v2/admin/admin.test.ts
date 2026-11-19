@@ -577,6 +577,14 @@ describe("admin reads (#255, §7.1–§7.3)", () => {
     await expect(port.adminReports(account, { status: "closed" } as never)).rejects.toMatchObject({ code: "22023" })
     expect(recorded.filter((entry) => entry.name === "admin_reports")).toHaveLength(2)
   })
+
+  it("lists a report LogLoads filed itself, with no member reporter (44, #403)", async () => {
+    queries.admin_reports = [reportRow({ reason: "unsafe_disclosure", reporter_user_id: null, target_kind: "organization" })]
+
+    await expect(adapter().adminReports(account)).resolves.toEqual([
+      expect.objectContaining({ reason: "unsafe_disclosure", reporterUserId: null, target: { id: JOB, kind: "organization" } })
+    ])
+  })
 })
 
 describe("the 12-month verification lapse job (#255; lead decision on #251)", () => {

@@ -100,6 +100,19 @@ describe("jobViewFromRow", () => {
     expect(jobViewFromRow(jobRow({ poster_verified: true })).posterVerification).toEqual({ reviewedOn: null, scope: "business_identity" })
   })
 
+  it("dates the review from poster_verified_at as a UTC calendar day (#403, #337)", () => {
+    expect(jobViewFromRow(jobRow({ poster_verified: true, poster_verified_at: "2026-10-14T17:30:00.123456+00:00" })).posterVerification)
+      .toEqual({ reviewedOn: "2026-10-14", scope: "business_identity" })
+    // Late evening in Oregon is already the next UTC day; the mark shows the UTC day, as contracts formats it.
+    expect(jobViewFromRow(jobRow({ poster_verified: true, poster_verified_at: "2026-10-14T23:30:00-07:00" })).posterVerification)
+      .toEqual({ reviewedOn: "2026-10-15", scope: "business_identity" })
+    expect(jobViewFromRow(jobRow({ poster_verified: true, poster_verified_at: null })).posterVerification)
+      .toEqual({ reviewedOn: null, scope: "business_identity" })
+    // A date without the verified flag claims nothing.
+    expect(jobViewFromRow(jobRow({ poster_verified: false, poster_verified_at: "2026-10-14T17:30:00Z" })).posterVerification).toBeNull()
+    expect(() => jobViewFromRow(jobRow({ poster_verified: true, poster_verified_at: "not a date" }))).toThrow(MarketplaceStoreError)
+  })
+
   it("keeps unknowns unknown", () => {
     const view = jobViewFromRow(jobRow({
       est_one_way_miles: null,

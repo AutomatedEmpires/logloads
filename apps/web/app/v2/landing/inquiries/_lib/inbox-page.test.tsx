@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getJob: vi.fn(),
   landingInquiryJobs: vi.fn(),
   listLandingInterests: vi.fn(),
+  loadInquiryPhone: vi.fn(),
   resolveV2Actor: vi.fn()
 }))
 
@@ -30,6 +31,8 @@ vi.mock("@/lib/marketplace-v2/viewer", () => ({
   withBusinessSwitchNote: (refusal: string) => refusal
 }))
 vi.mock("@/lib/marketplace-v2/actions", () => ({ respondToInterestAction: async () => undefined }))
+vi.mock("@/lib/marketplace-v2/disclosure/load", () => ({ loadInquiryPhone: mocks.loadInquiryPhone }))
+vi.mock("@/app/v2/landing/inquiries/actions", () => ({ hidePhoneAction: async () => undefined, sharePhoneAction: async () => undefined }))
 vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
   pilotMarketplaceV2: {
     getJob: mocks.getJob,
@@ -90,6 +93,13 @@ beforeEach(() => {
   mocks.listLandingInterests.mockResolvedValue([interest()])
   mocks.landingInquiryJobs.mockResolvedValue([])
   mocks.getJob.mockResolvedValue({ id: JOB_ID, pay: { amountCents: 47_500, note: null, unit: "per_load" } })
+  // The pilot store: no reveal, so no number is offered and ready reply 1 stops at the yes.
+  mocks.loadInquiryPhone.mockResolvedValue({ kind: "unavailable" })
+})
+
+const disclosure = (overrides: Record<string, unknown> = {}) => ({
+  kind: "ready",
+  disclosure: { interestId: FIRST, phone: "+15415550188", shared: false, sharedAt: null, status: "replied", ...overrides }
 })
 
 describe("flow C on the landing inbox (#328)", () => {
@@ -154,5 +164,65 @@ describe("flow C on the landing inbox (#328)", () => {
 
     expect(textOf(html)).not.toContain("You can’t open this inquiry")
     expect(html).toContain('id="conversation"')
+  })
+})
+
+describe("flow C, C4 and C5: Show my number on the landing inbox (#403)", () => {
+  it("offers the number after a reply, posting only the inquiry id (C4)", async () => {
+    mocks.listLandingInterests.mockResolvedValue([interest({ status: "replied" })])
+    mocks.loadInquiryPhone.mockResolvedValue(disclosure())
+    const html = await render({ inquiry: FIRST })
+    const text = textOf(html)
+
+    expect(mocks.loadInquiryPhone).toHaveBeenCalledWith(LANDING_ORG, FIRST)
+    expect(text).toContain("Let them see your phone number?")
+    expect(text).toContain("(541) 555-0188")
+    expect(text).toContain("Only Granite Creek Hauling sees it. It is never public.")
+    const show = forms(html).find((form) => form.includes("Show my number"))
+    expect(show).toBeDefined()
+    expect(hiddenValue(show!, "interestId")).toBe(FIRST)
+    expect(show).not.toContain("5415550188")
+    expect(html).toContain(`href="/v2/landing/inquiries?inquiry=${FIRST}&amp;phone=later`)
+  })
+
+  it("says the number is showing, with Hide my number (C5)", async () => {
+    mocks.listLandingInterests.mockResolvedValue([interest({ status: "replied" })])
+    mocks.loadInquiryPhone.mockResolvedValue(disclosure({ shared: true, sharedAt: "2026-11-18T22:00:00.000Z" }))
+    const html = await render({ inquiry: FIRST, updated: "phone_shared" })
+    const text = textOf(html)
+
+    expect(text).toContain("Your number is showing")
+    expect(text).toContain("Granite Creek Hauling can call or text (541) 555-0188")
+    expect(forms(html).some((form) => form.includes("Hide my number") && hiddenValue(form, "interestId") === FIRST)).toBe(true)
+    expect(text).toContain("Back to inquiries")
+    expect(text).not.toContain("Let them see your phone number?")
+  })
+
+  it("says only that the number was not shared, and leaves out the offer after Not now", async () => {
+    mocks.listLandingInterests.mockResolvedValue([interest({ status: "replied" })])
+    mocks.loadInquiryPhone.mockResolvedValue(disclosure())
+
+    const notShared = await render({ inquiry: FIRST, updated: "phone_not_shared" })
+    expect(notShared).toMatch(/<p[^>]*role="status"[^>]*>Your number was not shared\.<\/p>/)
+    expect(textOf(notShared)).not.toMatch(/paused|under review|on hold|reveal/i)
+
+    expect(textOf(await render({ inquiry: FIRST, phone: "later" }))).not.toContain("Let them see your phone number?")
+  })
+
+  it("offers no number before a reply, and restores the frame's \"Call me.\" once it can be shown", async () => {
+    mocks.loadInquiryPhone.mockResolvedValue(disclosure({ status: "submitted" }))
+    const html = await render({ inquiry: FIRST })
+    const ready = forms(html).filter((form) => hiddenValue(form, "decision") === "replied" && !form.includes("textarea"))
+
+    expect(textOf(html)).not.toContain("Let them see your phone number?")
+    expect(ready.map((form) => hiddenValue(form, "body"))).toEqual(["Yes, we can use you. Call me.", "Yes. Be here Mon, Nov 16."])
+  })
+
+  it("offers no number on the pilot store, and ready reply 1 stops at the yes", async () => {
+    mocks.listLandingInterests.mockResolvedValue([interest({ status: "replied" })])
+    const html = await render({ inquiry: FIRST })
+
+    expect(textOf(html)).not.toContain("Let them see your phone number?")
+    expect(textOf(html)).not.toContain("Your number is showing")
   })
 })

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   interestForJob: vi.fn(),
   listHaulerInterests: vi.fn(),
   listJobs: vi.fn(),
+  loadHaulerJobAccess: vi.fn(),
   viewerAccess: vi.fn()
 }))
 
@@ -31,6 +32,7 @@ vi.mock("@/lib/marketplace-v2/viewer", () => ({ withBusinessSwitchNote: (refusal
 vi.mock("@/lib/marketplace-v2/actions", () => ({ expressInterestAction: async () => undefined }))
 vi.mock("@/lib/marketplace-v2/report-actions", () => ({ reportListingAction: async () => ({ status: "idle" }) }))
 vi.mock("@/lib/app-url", () => ({ resolvePublicAppUrl: () => "https://logloads.example" }))
+vi.mock("@/lib/marketplace-v2/disclosure/load", () => ({ loadHaulerJobAccess: mocks.loadHaulerJobAccess }))
 vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
   pilotMarketplaceV2: {
     getJob: mocks.getJob,
@@ -165,6 +167,7 @@ beforeEach(() => {
   mocks.listJobs.mockResolvedValue([])
   mocks.haulerFleet.mockResolvedValue(fleet())
   mocks.listHaulerInterests.mockResolvedValue([])
+  mocks.loadHaulerJobAccess.mockResolvedValue(null)
 })
 
 describe("the decision summary (criteria 1, 2, 7)", () => {
@@ -410,5 +413,65 @@ describe("a link cannot write into the page (#279, C2)", () => {
     expect(await renderJob({ error: "job_closed" })).toMatch(/role="alert"[^>]*>This job is no longer accepting interest\. Nothing was sent\.</)
     expect(textOf(await renderJob({ error: "unexpected", ref: "0123456789ab" }))).toContain("Try again in a moment. Reference: 0123456789ab.")
     expect(textOf(await renderJob({ error: "unexpected", ref: PHISHING }))).not.toContain("Reference")
+  })
+})
+
+describe("the landing's released access details (#403, #325)", () => {
+  const released = {
+    directions: "Forest road 12, second left after the bridge",
+    gateInstructions: "Gate code 4417",
+    landingId: OTHER_ID,
+    sharedAt: "2026-11-18T22:00:00.000Z",
+    siteContactName: "Pat",
+    siteContactPhone: "+15415550188"
+  }
+
+  it("shows the access notes, gate details and phone once the landing replied and shared them, as the session's business", async () => {
+    mocks.interestForJob.mockResolvedValue(sentInterest({ status: "replied" }))
+    mocks.loadHaulerJobAccess.mockResolvedValue(released)
+    const html = await renderJob()
+    const text = textOf(html)
+
+    expect(mocks.loadHaulerJobAccess).toHaveBeenCalledWith(HAULER_ORG, JOB_ID)
+    expect(text).toContain("Access details")
+    expect(text).toContain("Phone (541) 555-0188")
+    expect(html).toContain('href="tel:+15415550188"')
+    expect(text).toContain("Site contact Pat")
+    expect(text).toContain("Directions Forest road 12, second left after the bridge")
+    expect(text).toContain("Gate Gate code 4417")
+    expect(text).toContain("Example Timber Co shared these with your business only, after replying. They are never public.")
+  })
+
+  it("never hands the released details to a client component", async () => {
+    mocks.interestForJob.mockResolvedValue(sentInterest({ status: "replied" }))
+    mocks.loadHaulerJobAccess.mockResolvedValue(released)
+    const root = await tree()
+
+    for (const component of [JobDetail, ShareListing, ReportListing, JobInterestBar]) {
+      expect(JSON.stringify(propsOf(root, component) ?? {}), String(component.name)).not.toMatch(/5415550188|4417|Forest road/)
+    }
+  })
+
+  it("asks for nothing before the landing replies, for a visitor, or for the poster", async () => {
+    mocks.interestForJob.mockResolvedValue(sentInterest({ status: "submitted" }))
+    expect(textOf(await renderJob())).not.toContain("Access details")
+
+    mocks.getSessionActor.mockResolvedValue(null)
+    expect(textOf(await renderJob())).not.toContain("Access details")
+
+    mocks.getSessionActor.mockResolvedValue(actorFor(LANDING_ORG))
+    mocks.viewerAccess.mockResolvedValue({ capabilities: ["job.publish"], organizationName: "Example Timber Co" })
+    expect(textOf(await renderJob())).not.toContain("Access details")
+
+    expect(mocks.loadHaulerJobAccess).not.toHaveBeenCalled()
+  })
+
+  it("shows nothing once the release is revoked, declined or withdrawn (the store returns none)", async () => {
+    mocks.interestForJob.mockResolvedValue(sentInterest({ status: "replied" }))
+    mocks.loadHaulerJobAccess.mockResolvedValue(null)
+    const html = await renderJob()
+
+    expect(textOf(html)).not.toContain("Access details")
+    expect(html).not.toContain("tel:")
   })
 })
