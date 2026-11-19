@@ -15,7 +15,7 @@ import { FormCheckbox } from "@/components/v2/FormCheckbox"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { saveHaulerProfileAction } from "@/lib/marketplace-v2/hauler-actions"
-import { PROFILE_FIELD_IDS, type HaulerProfileFormState } from "@/lib/marketplace-v2/hauler-profile-form"
+import { PROFILE_FIELD_IDS, PROFILE_LISTING_PATH, type HaulerProfileFormState } from "@/lib/marketplace-v2/hauler-profile-form"
 
 import styles from "./HaulerProfile.module.css"
 
@@ -188,14 +188,18 @@ export function HaulerProfileForm({
             >
               <textarea defaultValue={values.about} maxLength={HAULER_ABOUT_MAX_LENGTH} name="about" rows={4} />
             </FormField>
-            <div className={styles.setting}>
-              <FormCheckbox
-                defaultChecked={values.listed}
-                hint="A setting, not shown on your profile. When it is off, a landing sees your profile only after you send it interest."
-                id={PROFILE_FIELD_IDS.listed}
-                label="Show my profile to every landing operator"
-                name="listed"
-              />
+            {/* #423: the listing is chosen on its own screen, which says exactly what landings see; this form never changes it. */}
+            <div className={`${styles.setting} ${styles.listingRow}`}>
+              <div className={styles.readOnly}>
+                <p className={styles.readOnlyLabel}>Directory listing</p>
+                <p className={styles.readOnlyValue}>{values.listed ? "Listed in Find trucks" : "Not listed"}</p>
+                <p className={styles.readOnlyHint}>
+                  {values.listed
+                    ? "Landing businesses signed in to LogLoads can find you. You can remove it in one tap."
+                    : "Landings see your business when you send interest or reply. Listing is your choice."}
+                </p>
+              </div>
+              <Button href={PROFILE_LISTING_PATH} label={values.listed ? "Review listing" : "Review and list"} variant="secondary" />
             </div>
           </VisibilityPanel>
 
@@ -229,7 +233,7 @@ export function HaulerProfileForm({
             <div className={styles.setting}>
               <FormCheckbox
                 defaultChecked={values.acceptsInvitations}
-                hint="Off unless you turn it on. Invitations reach you only while your profile is shown to every landing operator."
+                hint="Off unless you turn it on. Invitations reach you only while your business is listed in Find trucks."
                 id={PROFILE_FIELD_IDS.acceptsInvitations}
                 label="Landing operators may send me job invitations"
                 name="acceptsInvitations"
