@@ -1,11 +1,64 @@
-/* Job editor (UX-05, #128). Layout only: fields, checkboxes, buttons, panels and the preview are design-system
-   components. Semantic --ll-* tokens only; measures the AppShell's "ll-app" container. */
+/* Job editor (UX-05, #128), laid out as the approved page 03 frames draw it (#431: CE-03 to CE-06). Layout only:
+   fields, checkboxes, buttons, panels and the preview are design-system components. Semantic --ll-* tokens only;
+   measures the AppShell's "ll-app" container. */
 
-.stack { display: grid; gap: var(--ll-space-5); min-width: 0; }
+/* One column, 16 px between items, as the frames' page content. */
+.step { display: grid; gap: var(--ll-space-4); min-width: 0; }
 
-.form { display: grid; gap: var(--ll-space-5); margin: 0; min-width: 0; }
+.form { display: grid; gap: var(--ll-space-4); margin: 0; min-width: 0; }
 
-.step { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+/* "Step 1 of 3 · The job": type/body-semibold. */
+.stepLine {
+  margin: 0;
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-normal);
+  color: var(--ll-color-text);
+}
+
+/* The 4 px progress bar under the step line. The frames fill 3:7, 7:3 and 10:1 of the track for steps 1 to 3:
+   the review is nearly done, not done, until the job is published. */
+.progress {
+  display: flex;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--ll-color-surface-sunken);
+}
+
+.progressFill { width: 30%; background: var(--ll-color-action); }
+.step[data-step="pay"] .progressFill { width: 70%; }
+.step[data-step="review"] .progressFill { width: calc(100% * 10 / 11); }
+
+@media (forced-colors: active) {
+  .progress { outline: 1px solid CanvasText; }
+  .progressFill { forced-color-adjust: none; background: CanvasText; }
+}
+
+/* Where the frames say "Draft saved 10:42 am.": type/body, text-secondary. */
+.draftLine { margin: 0; font-size: var(--ll-text-base); line-height: var(--ll-leading-normal); color: var(--ll-color-text-secondary); }
+
+.fieldset { display: grid; gap: var(--ll-space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+
+/* A group's label, as the frames' "Pay basis", "Work starts" and "Truck and trailer": type/body-semibold. */
+.legend {
+  padding: 0;
+  margin-bottom: var(--ll-space-1);
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-normal);
+  color: var(--ll-color-text);
+}
+
+/* "Before you publish" (CE-06 238:3597): type/body, 16 px regular. */
+.legendPlain {
+  padding: 0;
+  margin-bottom: var(--ll-space-1);
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-regular);
+  line-height: var(--ll-leading-normal);
+  color: var(--ll-color-text);
+}
 
 /* Two fields side by side from bp-sm, one column below. */
 .pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ll-space-4); }
@@ -14,19 +67,19 @@
   .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.fieldset { display: grid; gap: var(--ll-space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+.hint { margin: 0; font-size: var(--ll-text-base); line-height: var(--ll-leading-normal); color: var(--ll-color-text-muted); }
 
-.legend {
-  padding: 0;
-  margin-bottom: var(--ll-space-1);
-  font-size: var(--ll-text-md);
-  font-weight: var(--ll-weight-semibold);
-  color: var(--ll-color-text);
+/* As FormField's own error under a control (CE-05): 16 px regular, status-critical. */
+.error { margin: 0; font-size: var(--ll-text-base); line-height: var(--ll-leading-normal); color: var(--ll-color-status-critical); }
+
+/* "Describe the product" is only for Other (CE-03b 359:5109; JobEditorFields PRODUCT_NOTICE_RULES). Without :has() it
+   shows for a saved Other; with it, the step's rule shows it while Other is chosen, script or not. An error on it
+   always shows it (data-force). */
+.otherField:not([data-current]):not([data-force]) { display: none; }
+
+@supports selector(:has(*)) {
+  .otherField:not([data-force]) { display: none; }
 }
-
-.hint { margin: 0; font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
-
-.error { margin: 0; font-size: var(--ll-text-sm); font-weight: var(--ll-weight-medium); color: var(--ll-color-status-critical); }
 
 /* Equipment by category: a mono label over each group, checkboxes two up from bp-sm. */
 .groups { display: grid; gap: var(--ll-space-4); }
@@ -58,7 +111,7 @@
   align-items: center;
   min-height: var(--ll-target-touch);
   cursor: pointer;
-  font-size: var(--ll-text-md);
+  font-size: var(--ll-text-base);
   font-weight: var(--ll-weight-semibold);
 }
 
@@ -73,20 +126,25 @@
 
 .moreBody { display: grid; gap: var(--ll-space-4); padding-top: var(--ll-space-3); }
 
-/* Page notices: status, refusals and the publishing preview note. */
+/* Page notices: status, refusals and the publishing preview note. CE-05's critical notice: a tinted block, 12 px
+   padding, 16 px words. */
 .notice {
   margin: 0;
-  padding: var(--ll-space-3) var(--ll-space-4);
+  padding: var(--ll-space-3);
   border: 1px solid var(--ll-color-border);
   border-radius: var(--ll-radius-md);
   background: var(--ll-color-surface);
   color: var(--ll-color-text);
-  font-size: var(--ll-text-md);
+  font-size: var(--ll-text-base);
   line-height: var(--ll-leading-normal);
 }
 
-.notice[data-tone="critical"] { border-color: var(--ll-color-status-critical); background: var(--ll-color-status-critical-bg); }
+.notice[data-tone="critical"] { border-color: transparent; background: var(--ll-color-status-critical-bg); }
 .notice[data-tone="info"] { border-color: var(--ll-color-border-strong); background: var(--ll-color-surface-subtle); }
+
+@media (forced-colors: active) {
+  .notice[data-tone="critical"] { border-color: CanvasText; }
+}
 
 .noticeRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ll-space-3); }
 
@@ -164,20 +222,89 @@
   outline-offset: 0;
 }
 
+/* "What's required" (CE-03 153:2455, CE-03b 359:5125): a semibold line, then one row per step with its 24 px icon,
+   status.verified when done and status.open when not, each the frame's own asset painted in color/text. The shape
+   says done or not, and each row says it in words for a screen reader. Each row is a 44 px target. */
+.required { display: grid; gap: 0; }
+
+.requiredTitle {
+  margin: 0;
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-normal);
+  color: var(--ll-color-text);
+}
+
+.checklist { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; font-size: var(--ll-text-base); line-height: var(--ll-leading-normal); }
+
+.checkItem { display: flex; align-items: center; gap: var(--ll-space-2); min-height: var(--ll-target-touch); color: var(--ll-color-text); }
+
+.checkIcon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background-color: var(--ll-color-text);
+  -webkit-mask: url("./status-open.svg") center / 24px 24px no-repeat;
+  mask: url("./status-open.svg") center / 24px 24px no-repeat;
+}
+
+.checkItem[data-met] .checkIcon {
+  -webkit-mask-image: url("./status-verified.svg");
+  mask-image: url("./status-verified.svg");
+}
+
+@media (forced-colors: active) {
+  .checkIcon { forced-color-adjust: none; background-color: CanvasText; }
+}
+
+.checkItem a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ll-target-touch);
+  border-radius: var(--ll-radius-xs);
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+.checkItem a:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+/* The frames' BottomActionBar (213:1239): a surface bar edge to edge of the column with a border-strong top, 12 px
+   above and 24 px below, and the 56 px primary filling what Back leaves. `.form .actions` outranks FormActions' own
+   rule whatever order the sheets load in. */
+.form .actions {
+  flex-wrap: nowrap;
+  margin-inline: calc(-1 * var(--ll-gutter));
+  padding: var(--ll-space-3) var(--ll-gutter) var(--ll-space-5);
+  border-top-color: var(--ll-color-border-strong);
+  background: var(--ll-color-surface);
+}
+
+.form .actions > :last-child { flex: 1 1 auto; }
+.form .actions > :last-child :is(a, button) { flex: 1 1 auto; }
+
+/* Sticky above the bottom tabs wherever they show (below bp-lg, ResponsiveNavigation), as the 390 and 768 frames
+   draw the bar; FormActions alone sticks only below bp-sm. */
+@container ll-app (max-width: 959px) {
+  .form .actions {
+    position: sticky;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    z-index: var(--ll-z-sticky);
+  }
+}
+
+/* Without scripting the <noscript> Publish button takes the scripted one's place in the bar. Only then: with
+   scripting on, a <noscript>'s content is plain text, which must stay hidden. */
+@media (scripting: none) {
+  .form .actions > :last-child > noscript { display: contents; }
+}
+
 /* Review step */
-.previewLabel { margin: 0 0 var(--ll-space-2); font-size: var(--ll-text-md); font-weight: var(--ll-weight-semibold); }
+.previewLabel { margin: 0 0 var(--ll-space-2); font-size: var(--ll-text-base); font-weight: var(--ll-weight-semibold); }
 
 .privateList { margin: 0; padding-left: var(--ll-space-5); display: grid; gap: var(--ll-space-1); }
-
-/* "What's required" beside the editor. */
-.checklist { display: grid; gap: var(--ll-space-2); margin: 0; padding: 0; list-style: none; font-size: var(--ll-text-md); }
-
-.checkItem { display: flex; align-items: flex-start; gap: var(--ll-space-2); color: var(--ll-color-text-muted); }
-.checkItem[data-met] { color: var(--ll-color-text); }
-.checkItem[data-met] .checkIcon { color: var(--ll-color-status-positive); }
-.checkIcon { flex: none; width: 1.25em; font-weight: var(--ll-weight-bold); text-align: center; }
-
-.checkItem a { color: inherit; }
 
 .srOnly {
   position: absolute;

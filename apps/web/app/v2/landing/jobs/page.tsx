@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation"
 
-import { MARKETPLACE_AVAILABILITY_ATTESTATION, type MarketplaceJobCardView } from "@logloads/contracts"
+import {
+  MARKETPLACE_AVAILABILITY_ATTESTATION,
+  MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS,
+  MARKETPLACE_JOB_UNCONFIRMED_LABEL,
+  type MarketplaceJobCardView
+} from "@logloads/contracts"
 import { ContentGrid, PageActions, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
 import { formatDay, JobResultList, JobResultRow } from "@logloads/ui/marketplace"
 import { Button, EmptyState, Tabs } from "@logloads/ui/primitives"
@@ -159,7 +164,7 @@ export default async function LandingJobsPage({ searchParams }: { searchParams: 
                   title="Confirm what's still available"
                 >
                   <ul className={styles.confirmList}>
-                    {confirmable.map((job) => <ReconfirmItem job={job} key={job.id} />)}
+                    {confirmable.map((job) => <ReconfirmItem job={job} key={job.id} now={now} />)}
                   </ul>
                 </Section>
               ) : null}
@@ -171,17 +176,42 @@ export default async function LandingJobsPage({ searchParams }: { searchParams: 
   )
 }
 
-/** One listing's explicit "still available" confirmation (LE-15). The server action re-checks everything. */
-function ReconfirmItem({ job }: { job: MarketplaceJobCardView }) {
+/**
+ * A listing whose last confirmation is at least 14 days old: off Find Work and taking no new interest until its
+ * business confirms it again (the day-14 rule, #308, #374). Never-confirmed listings keep their "Never confirmed" line.
+ */
+function confirmedDaysAgoAtLeast14(job: Pick<MarketplaceJobCardView, "lastConfirmedAt">, now: string): boolean {
+  const confirmed = job.lastConfirmedAt ? Date.parse(job.lastConfirmedAt) : Number.NaN
+  return !Number.isNaN(confirmed) && Date.parse(now) - confirmed >= MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS * 86_400_000
+}
+
+/**
+ * One listing's explicit "still available" confirmation (LE-15). The server action re-checks everything. A day-14
+ * listing says so in the approved frame's words (CE-01 `414:5668`): the "Waiting for the poster to confirm" chip and
+ * what it means for the listing.
+ */
+function ReconfirmItem({ job, now }: { job: MarketplaceJobCardView; now: string }) {
   const canConfirm = pilotMarketplaceV2.supportsPublishing
   const noteId = `reconfirm-${job.id}-note`
+  const waiting = confirmedDaysAgoAtLeast14(job, now)
 
   return (
-    <li className={styles.confirmItem}>
+    <li className={styles.confirmItem} data-reconfirm-item="">
       <h3 className={styles.confirmTitle}>{job.title}</h3>
+      {waiting ? (
+        <p className={styles.waitingChip}>
+          <span aria-hidden="true" className={styles.waitingIcon} />
+          {MARKETPLACE_JOB_UNCONFIRMED_LABEL}
+        </p>
+      ) : null}
       <p className={styles.confirmMeta}>
         Confirmed available: {job.lastConfirmedAt ? formatDay(job.lastConfirmedAt) : "Never confirmed"} · Last edited: {formatDay(job.lastModifiedAt)}
       </p>
+      {waiting ? (
+        <p className={styles.waitingText}>
+          {`No one has confirmed this job for ${MARKETPLACE_JOB_UNCONFIRMED_HIDDEN_DAYS} days. It stays published, but it is off Find Work and takes no new interest until you confirm it.`}
+        </p>
+      ) : null}
       <form action={reconfirmJobAction} className={styles.confirmForm}>
         <input name="jobId" type="hidden" value={job.id} />
         {/* The explicit attestation: never pre-ticked. Editing a job never confirms it. */}

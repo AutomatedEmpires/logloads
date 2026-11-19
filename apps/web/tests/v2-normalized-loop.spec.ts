@@ -213,34 +213,30 @@ test("1. a verified landing publishes a real job through the job editor", { tag:
   await page.waitForURL((url) => url.pathname === "/v2/landing/jobs/new")
   await expect(page.locator("[data-ds-page='job-editor']")).toBeVisible()
 
-  // Step 1: Basics & location, from one of the business's own active landings.
+  // Step 1: The job, from one of the business's own active landings (#431: three steps, as the page 03 frames).
   const landing = page.getByLabel("Landing", { exact: true })
   const landingId = await landing.locator("option", { hasText: NORTH_PINE.landing }).getAttribute("value")
   expect(landingId, `${NORTH_PINE.landing} is one of the business's landings`).toMatch(UUID)
   await landing.selectOption(landingId!)
-  await page.getByLabel("Title", { exact: true }).fill(title)
+  await page.getByLabel("Job title", { exact: true }).fill(title)
   await page.getByLabel("Product", { exact: true }).selectOption("Saw logs")
   await page.getByLabel("Destination (optional)", { exact: true }).fill("Valley Mill · Sweet Home, OR")
   await page.getByLabel("One-way miles (optional)", { exact: true }).fill("42")
-  await page.getByRole("button", { name: "Next: pay & scope" }).click()
+  await page.getByRole("button", { exact: true, name: "Next" }).click()
   await page.waitForURL((url) => url.searchParams.get("step") === "pay")
 
-  // Step 2: Pay & scope.
+  // Step 2: Pay and trucks, with the truck and trailer.
   const startsOn = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10)
   await page.getByLabel("Pay basis", { exact: true }).selectOption("per_load")
-  await page.getByLabel("Amount ($)", { exact: true }).fill("480")
+  await page.getByLabel("Pay amount", { exact: true }).fill("480")
   await page.getByLabel("Work starts", { exact: true }).fill(startsOn)
   await page.getByLabel("Duration (days)", { exact: true }).fill("10")
-  await page.getByLabel("Trucks needed for the job", { exact: true }).fill("2")
-  await page.getByRole("button", { name: "Next: equipment & volume" }).click()
-  await page.waitForURL((url) => url.searchParams.get("step") === "equipment")
-
-  // Step 3: Equipment & volume.
+  await page.getByLabel("Trucks needed", { exact: true }).fill("2")
   await page.getByRole("checkbox", { exact: true, name: "Log truck" }).check()
-  await page.getByRole("button", { name: "Next: review & publish" }).click()
+  await page.getByRole("button", { exact: true, name: "Next" }).click()
   await page.waitForURL((url) => url.pathname === "/v2/landing/jobs/preview")
 
-  // Step 4: Review & publish. The private details are named as never shown; the three statements are ticked by hand.
+  // Step 3: Review and publish. The private details are named as never shown; the three statements are ticked by hand.
   await expect(page.getByText("How haulers see it in search")).toBeVisible()
   await expect(page.getByText(`The exact location of ${NORTH_PINE.landing}`)).toBeVisible()
   await expect(page.locator("#publish-unavailable"), "the normalized store publishes").toHaveCount(0)
