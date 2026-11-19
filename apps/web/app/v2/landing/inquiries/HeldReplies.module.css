@@ -1,0 +1,120 @@
+/* Flow C held answers (#411): the picked decline reason in words, and the inbox's "waiting to send" list.
+   Design-system tokens only. Colour helps; the words say what happened. */
+
+/* The picked reason chip carries a check mark beside its tint. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ll-space-2);
+}
+
+.chip > svg { flex: none; color: var(--ll-color-selected-indicator); }
+
+.reasonLine {
+  margin: 0;
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+/* The inbox's held answers, above the list. The status line stays in the page so every change is announced. */
+.inbox {
+  display: grid;
+  gap: var(--ll-space-3);
+}
+
+.announce {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-2);
+  margin: 0;
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-normal);
+}
+
+.announce:not(:empty) {
+  padding: var(--ll-space-3) var(--ll-space-4);
+  border: 1px solid var(--ll-color-border);
+  border-left: 4px solid var(--ll-color-status-neutral);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-sunken);
+}
+
+.announce[data-tone="positive"] { border-left-color: var(--ll-color-status-positive); background: var(--ll-color-status-positive-bg); }
+.announce[data-tone="critical"] { border-left-color: var(--ll-color-status-critical); background: var(--ll-color-status-critical-bg); }
+.announce > svg { flex: none; margin-top: 2px; color: var(--ll-color-status-positive); }
+
+.card {
+  display: grid;
+  gap: var(--ll-space-3);
+  padding: var(--ll-space-4);
+  border: 1px solid var(--ll-color-border);
+  border-left: 4px solid var(--ll-color-status-neutral);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+}
+
+.list {
+  display: grid;
+  gap: var(--ll-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: var(--ll-space-2);
+  min-width: 0;
+}
+
+.item + .item {
+  padding-top: var(--ll-space-4);
+  border-top: 1px solid var(--ll-color-border);
+}
+
+.what {
+  margin: 0;
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.quote {
+  margin: 0;
+  padding: var(--ll-space-2) var(--ll-space-3);
+  border-left: 2px solid var(--ll-color-border);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.quote :where(p) { margin: 0; }
+
+.state {
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+}
+
+.item[data-phase="error"] .state { color: var(--ll-color-text); }
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ll-space-2);
+}

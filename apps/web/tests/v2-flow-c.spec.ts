@@ -9,10 +9,16 @@ import { expect, test, type Locator, type Page } from "@playwright/test"
  * Figma 07 Flows frames C3 (`124:390`), C4 (`124:509`), C7 (`124:577`), C-offline (`124:609`), C-error (`124:641`)
  * and C-denied (`315:1506`), at 390 and 1440 px (C3 at 1440: `313:1254`).
  *
+ * Held answers (#411, review of PR 401): until the server records an answer the page says it is waiting to send,
+ * never that it was sent. The inbox sends the held answers of the inquiries that are not open and says what is
+ * waiting. One whose minute ran out unseen is never sent the moment a page opens. A held answer belongs to the person
+ * and business that held it, and sign-out clears them all.
+ *
  * Runs with the design-system server (Marketplace V2 on, design-system.config.mjs), last in file order. Writes: New
  * River Hauling's inquiry with North Pine Logging (the design-system cases send it, or `newRiverInquiry` does when
- * this file runs alone) gets ready replies from North Pine. Nothing here declines or withdraws: the decline case
- * stops at Undo, so every case can run again on the same state.
+ * this file runs alone) gets ready replies from North Pine, and the last case declines it for real, with a reason.
+ * A decline is final, so that case runs last, and the file runs once per seeded state (CI and every local run start
+ * from the seed: design-system.config.mjs). When the state has no open North Pine job the cases fail; they never skip.
  *
  * Tap counting follows the frames' notes: opening the inquiry link in the email (or the text, once texts are on) is
  * tap 1, and pressing an answer is tap 2. The one-minute hold for Undo is the page's own timer; the cases move the
@@ -26,6 +32,9 @@ const OTHER_LANDING = "cole@summit.example"
 
 const READY_YES = "Yes, we can use you."
 const HOLD = "01:01"
+/** Long enough for a held answer's rest-of-minute and, when its minute ran out unseen, the fresh one a page gives it. */
+const TWO_HOLDS = "02:02"
+const HELD_PREFIX = "logloads:flow-c:held:"
 /** apps/web/tests/test-results/flow-c, wherever Playwright was started from (ignored by Git). */
 const shotsDir = () => join(test.info().project.testDir, "test-results", "flow-c")
 const NO_INQUIRY = "No North Pine Logging job accepts interest in this run's state, so New River Hauling has no inquiry to answer"
@@ -69,6 +78,11 @@ const conversation = (page: Page) => page.locator("#conversation")
 const readyBar = (page: Page) => page.getByRole("group", { name: "Reply in one tap" })
 const composer = (page: Page) => page.locator("form:has(textarea[aria-label^='Reply to'])")
 const messages = (page: Page) => page.getByRole("log").locator("li")
+const heldInbox = (page: Page) => page.locator("[data-held-inbox]")
+const accountMenu = (page: Page) => page.locator(".ll-app > header details")
+
+/** The inbox without New River's inquiry open: its Closed tab. The inbox there sends held answers of other inquiries. */
+const INBOX_ELSEWHERE = "/v2/landing/inquiries?tab=closed"
 
 /**
  * The id of New River Hauling's inquiry with North Pine Logging, sending New River's interest in North Pine's first
@@ -123,9 +137,9 @@ function tapCounter() {
  * The whole page, without the fixed bottom tabs (a stitched capture would draw them over the middle of the page),
  * and the screen as the phone shows it, scrolled to flow C's last part (the bar, the held answer or the panel).
  */
-async function shoot(page: Page, name: string, width: number) {
+async function shoot(page: Page, name: string, width: number, focus = "[data-flow-c]") {
   await page.screenshot({ fullPage: true, path: join(shotsDir(), `${name}-${width}.png`), style: ".ll-app > nav { display: none !important; }" })
-  await page.locator("[data-flow-c]").last().evaluate((element) => element.scrollIntoView({ behavior: "instant", block: "center" }))
+  await page.locator(focus).last().evaluate((element) => element.scrollIntoView({ behavior: "instant", block: "center" }))
   await page.screenshot({ path: join(shotsDir(), `${name}-${width}-screen.png`) })
 }
 
@@ -133,6 +147,35 @@ async function expectNoSeriousAxeViolations(page: Page) {
   const results = await new AxeBuilder({ page }).include(".ll-app #main").analyze()
   const serious = results.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical")
   expect(serious.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(" ")).join(", ")}`)).toEqual([])
+}
+
+/**
+ * Every 44 px target the quality bar asks for (A3), on the controls inside flow C's own parts: buttons and links drawn
+ * as buttons (`data-variant`). A link inside a sentence, such as the job card's title, is exempt (WCAG 2.5.8, inline).
+ */
+async function expectTouchTargets(page: Page) {
+  const short = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-flow-c] button, [data-flow-c] a[data-variant]")]
+      .filter((element) => element.getBoundingClientRect().width > 0)
+      .map((element) => ({ box: element.getBoundingClientRect(), text: (element.textContent ?? "").trim().slice(0, 40) }))
+      .filter(({ box }) => Math.min(box.width, box.height) + 0.5 < 44)
+      .map(({ box, text }) => `${text} ${Math.round(box.width)}x${Math.round(box.height)}`)
+  )
+  expect(short, "44 px targets").toEqual([])
+}
+
+/** The held answers this phone keeps, by storage key. */
+const heldKeys = (page: Page) => page.evaluate((prefix) => Object.keys(localStorage).filter((name) => name.startsWith(prefix)), HELD_PREFIX)
+
+/** Every POST to the inbox fails, as with no signal or a server that is down, until `unroute`. */
+async function failInboxPosts(page: Page) {
+  await page.route("**/v2/landing/inquiries**", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({ body: "unavailable", status: 503 })
+      return
+    }
+    await route.fallback()
+  })
 }
 
 /** The field floors of field-conditions.spec.ts (#327) on this page: 16 px body, 48 and 56 px targets, no side scroll. */
@@ -196,7 +239,8 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
 
   test.beforeEach(async ({ page }) => {
     if (!inquiryId) inquiryId = await newRiverInquiry(page)
-    test.skip(!inquiryId, NO_INQUIRY)
+    // Fail, never skip (#411): a run with nothing to answer has tested nothing.
+    expect(inquiryId, NO_INQUIRY).toBeTruthy()
   })
 
   for (const width of [390, 1440]) {
@@ -216,13 +260,15 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
       await shoot(page, "c3-thread", width)
       const before = await messages(page).count()
 
-      // Undo within the minute: nothing was sent, and the bar is back.
+      // Undo within the minute: nothing was sent, and the bar is back. While held it is waiting, never "sent" (#411).
       await readyBar(page).getByRole("button", { name: READY_YES }).click()
-      const held = conversation(page).getByRole("status").filter({ hasText: "Reply sent" })
-      await expect(held).toContainText("You can undo it for the next minute.")
+      const held = conversation(page).getByRole("status").filter({ hasText: "Reply waiting to send" })
+      await expect(held).toContainText(`${NEW_RIVER.name} gets it in 1 minute. You can undo it until then.`)
       await expect(held).toContainText(READY_YES)
+      await expect(conversation(page)).not.toContainText("Reply sent")
       await expect(readyBar(page)).toHaveCount(0)
       await expectNoSeriousAxeViolations(page)
+      await expectTouchTargets(page)
       await shoot(page, "c4-reply-held", width)
       await held.getByRole("button", { name: "Undo reply" }).click()
       await expect(readyBar(page).getByRole("button", { name: READY_YES })).toBeVisible()
@@ -231,9 +277,10 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
       await openV2(page, inquiryLink(inquiryId!))
       await expect(messages(page)).toHaveCount(before)
 
-      // Tap 2: the ready reply. When the minute is up it goes, once, and the thread shows it.
+      // Tap 2: the ready reply. When the minute is up it goes, once, and only then does the page say it was sent.
       await taps.tap(readyBar(page).getByRole("button", { name: READY_YES }))
-      await expect(conversation(page).getByRole("status").filter({ hasText: "Reply sent" })).toBeVisible()
+      await expect(conversation(page).getByRole("status").filter({ hasText: "Reply waiting to send" })).toBeVisible()
+      await expect(conversation(page)).not.toContainText("Reply sent")
       await page.clock.fastForward(HOLD)
       await page.waitForURL((url) => url.searchParams.get("updated") === "replied" && url.searchParams.get("inquiry") === inquiryId)
       await expect(messages(page)).toHaveCount(before + 1)
@@ -242,13 +289,14 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
       expect(taps.count, "flow C target: 2 taps from the message").toBe(2)
       await shoot(page, "c4-reply-sent", width)
 
-      // Opening the page again sends nothing more.
+      // Opening the page again sends nothing more, and nothing is left on the phone.
       await openV2(page, inquiryLink(inquiryId!))
       await expect(messages(page)).toHaveCount(before + 1)
+      expect(await heldKeys(page)).toEqual([])
     })
   }
 
-  test("a decline is held a minute with a reason to pick, and Undo keeps the inquiry open (C7)", async ({ page }) => {
+  test("a decline is held a minute with a reason to pick, shown in words, and Undo keeps the inquiry open (C7)", async ({ page }) => {
     await page.setViewportSize(viewportFor(390))
     await signIn(page, NORTH_PINE.landing)
     await page.clock.install()
@@ -259,13 +307,24 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
     const dialog = page.getByRole("dialog", { name: "Decline this inquiry?" })
     await taps.tap(dialog.getByRole("button", { name: "Decline inquiry" }))
 
-    const held = conversation(page).getByRole("status").filter({ hasText: "Declined" })
+    const held = conversation(page).getByRole("status").filter({ hasText: "Decline waiting to send" })
     await expect(held).toContainText(`${NEW_RIVER.name} is told in 1 minute. Undo before then.`)
+    await expect(conversation(page)).not.toContainText("Declined.")
     const reason = held.getByRole("button", { name: "We have enough trucks" })
     await reason.click()
     await expect(reason).toHaveAttribute("aria-pressed", "true")
+    // Not by colour alone (#411, quality bar V4): a check mark on the chip and the reason in words.
+    await expect(reason.locator("svg")).toHaveCount(1)
+    await expect(held.getByRole("button", { name: "Wrong truck or trailer" }).locator("svg")).toHaveCount(0)
+    await expect(held.getByText("Reason: We have enough trucks", { exact: true })).toBeVisible()
     await expectNoSeriousAxeViolations(page)
+    await expectTouchTargets(page)
     await shoot(page, "c7-declined-held", 390)
+
+    // A second press takes the reason back, and the words go with it.
+    await reason.click()
+    await expect(reason).toHaveAttribute("aria-pressed", "false")
+    await expect(held).not.toContainText("Reason:")
 
     // The frame counts 2 taps; the Decline Dialog the design-system suite pins (#287) adds the confirm, so 3.
     expect(taps.count).toBe(3)
@@ -294,6 +353,7 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
     const waiting = conversation(page).getByRole("status").filter({ hasText: "Your reply is saved." })
     await expect(waiting).toContainText("We send it once when you are back in range.")
     await expect(waiting).toContainText(words)
+    await expect(waiting).toContainText("Waiting to send")
     await expect(waiting.getByRole("button", { name: "Retry" })).toBeVisible()
     await shoot(page, "c-offline", 390)
 
@@ -340,13 +400,7 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
     await signIn(page, NORTH_PINE.landing)
     await page.clock.install()
     await openV2(page, inquiryLink(inquiryId!))
-    await page.route("**/v2/landing/inquiries**", async (route) => {
-      if (route.request().method() === "POST") {
-        await route.fulfill({ body: "unavailable", status: 503 })
-        return
-      }
-      await route.fallback()
-    })
+    await failInboxPosts(page)
 
     await readyBar(page).getByRole("button", { name: READY_YES }).click()
     await page.clock.fastForward(HOLD)
@@ -357,6 +411,138 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
     // The words survive a reload: the composer keeps its draft on the phone (#288).
     await openV2(page, inquiryLink(inquiryId!))
     await expect(composer(page).locator("textarea")).toHaveValue(READY_YES)
+  })
+
+  test("a held reply that did not go is not sent unseen: the inbox says it is waiting, and opening it gives Undo first (#411)", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    await signIn(page, NORTH_PINE.landing)
+    await page.clock.install()
+    await openV2(page, inquiryLink(inquiryId!))
+    const before = await messages(page).count()
+
+    // The send fails, as with poor signal before the tab is closed: the answer stays on the phone.
+    await failInboxPosts(page)
+    await readyBar(page).getByRole("button", { name: READY_YES }).click()
+    await page.clock.fastForward(HOLD)
+    await expect(conversation(page).getByRole("alert").filter({ hasText: "Your reply did not send" })).toBeVisible()
+    await page.unroute("**/v2/landing/inquiries**")
+
+    // Back on the inbox, elsewhere: it says what is waiting, with a way to stop it, and has not sent it.
+    for (const width of [390, 1440]) {
+      await page.setViewportSize(viewportFor(width))
+      await openV2(page, INBOX_ELSEWHERE)
+      const waiting = heldInbox(page).getByRole("region", { name: "1 reply waiting to send" })
+      await expect(waiting).toContainText(`Your reply to ${NEW_RIVER.name}`)
+      await expect(waiting).toContainText(READY_YES)
+      await expect(waiting).toContainText("It has not gone yet. It goes in 1 minute unless you stop it.")
+      await expect(waiting.getByRole("button", { name: "Don’t send" })).toBeVisible()
+      await expect(waiting.getByRole("link", { name: "Open inquiry" })).toHaveAttribute("href", new RegExp(`inquiry=${inquiryId}`))
+      await expectNoSeriousAxeViolations(page)
+      await expectTouchTargets(page)
+      await shoot(page, "c-inbox-waiting", width, "[data-held-inbox]")
+    }
+
+    // Opening the thread does not send it either (the review's Monday-to-Thursday decline): the bar holds it, with Undo.
+    await page.setViewportSize(viewportFor(390))
+    await openV2(page, inquiryLink(inquiryId!))
+    const held = conversation(page).getByRole("status").filter({ hasText: "Reply waiting to send" })
+    await expect(held).toContainText(`It has not gone yet. ${NEW_RIVER.name} gets it in 1 minute.`)
+    await expect(held.getByRole("button", { name: "Undo reply" })).toBeVisible()
+    await expect(messages(page)).toHaveCount(before)
+    await expect(heldInbox(page).getByRole("region")).toHaveCount(0)
+    await shoot(page, "c4-reply-reopened", 390)
+
+    // Then it goes, once.
+    await page.clock.fastForward(TWO_HOLDS)
+    await page.waitForURL((url) => url.searchParams.get("updated") === "replied" && url.searchParams.get("inquiry") === inquiryId)
+    await expect(messages(page)).toHaveCount(before + 1)
+    expect(await heldKeys(page)).toEqual([])
+  })
+
+  test("the inbox sends a held reply from another inquiry once its minute is up, without leaving the page (#411)", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    await signIn(page, NORTH_PINE.landing)
+    await page.clock.install()
+    await openV2(page, inquiryLink(inquiryId!))
+    const before = await messages(page).count()
+    const second = readyBar(page).getByRole("button").nth(1)
+    const words = (await second.innerText()).trim()
+
+    await failInboxPosts(page)
+    await second.click()
+    await page.clock.fastForward(HOLD)
+    await expect(conversation(page).getByRole("alert")).toBeVisible()
+    await page.unroute("**/v2/landing/inquiries**")
+
+    await openV2(page, INBOX_ELSEWHERE)
+    await expect(heldInbox(page).getByRole("region", { name: "1 reply waiting to send" })).toContainText(words)
+    await page.clock.fastForward(TWO_HOLDS)
+
+    // Sent in place: announced, gone from the list, and the page did not move.
+    await expect(heldInbox(page).getByRole("status")).toHaveText(`Reply sent to ${NEW_RIVER.name}.`)
+    await expect(heldInbox(page).getByRole("region")).toHaveCount(0)
+    await expect(page).toHaveURL(/[?&]tab=closed/)
+    await expect(page).not.toHaveURL(/[?&](updated|inquiry)=/)
+    await expectNoSeriousAxeViolations(page)
+    await shoot(page, "c-inbox-sent", 390, "[data-held-inbox]")
+    expect(await heldKeys(page)).toEqual([])
+
+    await openV2(page, inquiryLink(inquiryId!))
+    await expect(messages(page)).toHaveCount(before + 1)
+    await expect(messages(page).last()).toContainText(words)
+    await openV2(page, INBOX_ELSEWHERE)
+    await page.clock.fastForward(TWO_HOLDS)
+    await openV2(page, inquiryLink(inquiryId!))
+    await expect(messages(page), "sent once").toHaveCount(before + 1)
+  })
+
+  test("a colleague's held decline on this computer is never sent under this person's name, and sign-out clears it (#411)", async ({ page }) => {
+    await page.setViewportSize(viewportFor(390))
+    await signIn(page, NORTH_PINE.landing)
+    await page.clock.install()
+    await openV2(page, inquiryLink(inquiryId!))
+    await conversation(page).getByRole("link", { exact: true, name: "Decline" }).click()
+    await page.getByRole("dialog", { name: "Decline this inquiry?" }).getByRole("button", { name: "Decline inquiry" }).click()
+    const held = conversation(page).getByRole("status").filter({ hasText: "Decline waiting to send" })
+    await expect(held).toBeVisible()
+    const [record] = await page.evaluate(
+      (prefix) => Object.keys(localStorage).filter((name) => name.startsWith(prefix)).map((name) => ({ name, value: localStorage.getItem(name)! })),
+      HELD_PREFIX
+    )
+    expect(record, "the held decline is on the phone").toBeDefined()
+    await held.getByRole("button", { exact: true, name: "Undo" }).click()
+    await expect(composer(page)).toHaveCount(1)
+
+    // Another person of North Pine held that decline on this computer and closed the tab: the same record, their name.
+    const colleague = "99999999-9999-4999-8999-999999999999"
+    await page.evaluate(
+      ({ prefix, other, saved }) => {
+        const [, organization, interest] = saved.name.slice(prefix.length).split(":")
+        const theirs = { ...(JSON.parse(saved.value) as Record<string, unknown>), heldBy: other }
+        localStorage.setItem(`${prefix}${other}:${organization}:${interest}`, JSON.stringify(theirs))
+      },
+      { other: colleague, prefix: HELD_PREFIX, saved: record! }
+    )
+
+    // This person opens the inquiry: nothing of the colleague's shows, and nothing goes.
+    await openV2(page, inquiryLink(inquiryId!))
+    await expect(composer(page)).toHaveCount(1)
+    await expect(heldInbox(page).getByRole("region")).toHaveCount(0)
+    await page.clock.fastForward(TWO_HOLDS)
+    await openV2(page, inquiryLink(inquiryId!))
+    await expect(composer(page), "the colleague's decline was not sent").toHaveCount(1)
+    await expect(page.getByRole("log")).not.toContainText("You declined this inquiry.")
+
+    // Sign-out leaves no held answer on the phone; the server refused to send the colleague's.
+    expect(await heldKeys(page)).toHaveLength(1)
+    await accountMenu(page).locator("summary").click()
+    await accountMenu(page).getByRole("button", { name: "Sign out" }).click()
+    await page.waitForURL((url) => url.pathname === "/")
+    expect(await heldKeys(page)).toEqual([])
+
+    await signIn(page, NORTH_PINE.landing)
+    await openV2(page, inquiryLink(inquiryId!))
+    await expect(composer(page), "still open after sign-out").toHaveCount(1)
   })
 
   test("another business's inquiry link shows permission denied and nothing of the inquiry (C-denied)", async ({ page }) => {
@@ -400,5 +586,45 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
     await expect(readyBar(page)).toBeVisible()
     await expectFieldFloors(page)
     await shoot(page, "c3-thread", 320)
+  })
+
+  // Last: a decline is final, so nothing after this needs the inquiry open.
+  test("a held decline goes when its minute is up, with the picked reason, and the hauler sees that reason once (C7, #411)", async ({ page }) => {
+    await page.setViewportSize(viewportFor(1440))
+    await signIn(page, NORTH_PINE.landing)
+    await page.clock.install()
+    await openV2(page, inquiryLink(inquiryId!))
+    const reasonText = "Wrong truck or trailer"
+
+    await conversation(page).getByRole("link", { exact: true, name: "Decline" }).click()
+    await page.getByRole("dialog", { name: "Decline this inquiry?" }).getByRole("button", { name: "Decline inquiry" }).click()
+    const held = conversation(page).getByRole("status").filter({ hasText: "Decline waiting to send" })
+    await held.getByRole("button", { name: reasonText }).click()
+    await expect(held.getByText(`Reason: ${reasonText}`, { exact: true })).toBeVisible()
+    await expectNoSeriousAxeViolations(page)
+    await shoot(page, "c7-declined-held", 1440)
+
+    // The minute ends; the decline and its reason go once, and only now does the page say it was declined.
+    await page.clock.fastForward(HOLD)
+    await page.waitForURL((url) => url.searchParams.get("updated") === "declined" && url.searchParams.get("inquiry") === inquiryId)
+    await expect(conversation(page).getByRole("status").filter({ hasText: `Declined. ${NEW_RIVER.name} can see it.` })).toBeVisible()
+    await expect(page.getByRole("log")).toContainText("You declined this inquiry.")
+    await expect(messages(page).filter({ hasText: reasonText })).toHaveCount(1)
+    await expect(composer(page)).toHaveCount(0)
+    // Delivered: the closed inquiry has no reply bar, so the inbox settles it rather than offering it again.
+    await expect(heldInbox(page).getByRole("region")).toHaveCount(0)
+    await expect.poll(() => heldKeys(page)).toEqual([])
+    await expectNoSeriousAxeViolations(page)
+    await shoot(page, "c7-declined-sent", 1440)
+
+    // Opening it again sends nothing more.
+    await openV2(page, inquiryLink(inquiryId!))
+    await expect(messages(page).filter({ hasText: reasonText })).toHaveCount(1)
+
+    // The hauler sees the landing's reason, once, and that the landing closed the inquiry.
+    await signIn(page, NEW_RIVER.email)
+    await openV2(page, `/v2/inquiries?inquiry=${inquiryId}#conversation`)
+    await expect(page.getByRole("log")).toContainText("The landing declined this inquiry.")
+    await expect(messages(page).filter({ hasText: reasonText })).toHaveCount(1)
   })
 })

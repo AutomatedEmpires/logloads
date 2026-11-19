@@ -30,7 +30,7 @@ vi.mock("@/lib/marketplace-v2/viewer", () => ({
   resolveV2Actor: mocks.resolveV2Actor,
   withBusinessSwitchNote: (refusal: string) => refusal
 }))
-vi.mock("@/lib/marketplace-v2/actions", () => ({ respondToInterestAction: async () => undefined }))
+vi.mock("@/lib/marketplace-v2/actions", () => ({ respondToInterestAction: async () => undefined, sendHeldAnswerAction: async () => ({ ok: true }) }))
 vi.mock("@/lib/marketplace-v2/disclosure/load", () => ({ loadInquiryPhone: mocks.loadInquiryPhone }))
 vi.mock("@/app/v2/landing/inquiries/actions", () => ({ hidePhoneAction: async () => undefined, sharePhoneAction: async () => undefined }))
 vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
@@ -50,6 +50,7 @@ const HAULER_ORG = "33333333-bbbb-4bbb-8bbb-333333333333"
 const USER_ID = "55555555-dddd-4ddd-8ddd-555555555555"
 const JOB_ID = "11111111-1111-4111-8111-111111111111"
 const FIRST = "44444444-cccc-4ccc-8ccc-444444444444"
+const SECOND = "66666666-eeee-4eee-8eee-666666666666"
 const STRANGER = "99999999-9999-4999-8999-999999999999"
 
 function interest(overrides: Partial<MarketplaceInterestView> = {}): MarketplaceInterestView {
@@ -159,11 +160,49 @@ describe("flow C on the landing inbox (#328)", () => {
     expect(await render({ inquiry: STRANGER })).toContain('href="/v2/switch"')
   })
 
-  it("opens the inquiry the link names, not permission denied, whatever the case of its id", async () => {
-    const html = await render({ inquiry: FIRST.toUpperCase() })
+  it("opens the inquiry the link names, not the first row or permission denied, whatever the case of its id", async () => {
+    // Two new inquiries: the link names the second, in capitals. Opening the first instead would put its one-tap
+    // replies under the wrong hauler (review of PR 401, finding 5).
+    mocks.listLandingInterests.mockResolvedValue([
+      interest(),
+      interest({ haulerOrganization: { id: HAULER_ORG, name: "Cedar Flat Trucking", type: "hauler" }, id: SECOND })
+    ])
+    const html = await render({ inquiry: SECOND.toUpperCase(), updated: "replied" })
+    const text = textOf(html)
+    const ready = forms(html).filter((form) => hiddenValue(form, "decision") === "replied" && !form.includes("textarea"))
 
-    expect(textOf(html)).not.toContain("You can’t open this inquiry")
-    expect(html).toContain('id="conversation"')
+    expect(text).not.toContain("You can’t open this inquiry")
+    expect(html).toContain('aria-label="Reply to Cedar Flat Trucking"')
+    expect(html).not.toContain('aria-label="Reply to Granite Creek Hauling"')
+    for (const form of ready) expect(hiddenValue(form, "interestId")).toBe(SECOND)
+    // The server's confirmation is for the named inquiry, whatever the case of its id.
+    expect(text).toContain("Reply sent to Cedar Flat Trucking.")
+  })
+})
+
+describe("flow C held answers on the landing inbox (#411)", () => {
+  it("puts the inbox's waiting-to-send list above the inquiries, with a status line that is always there", async () => {
+    const html = await render({ inquiry: FIRST })
+    const inbox = html.match(/<div[^>]*data-held-inbox=""[^>]*>[\s\S]*?<\/div>/)?.[0] ?? ""
+
+    expect(inbox).not.toBe("")
+    expect(inbox).toMatch(/<p[^>]*role="status"[^>]*><\/p>/)
+    expect(html.indexOf("data-held-inbox")).toBeLessThan(html.indexOf('aria-label="New inquiries"'))
+  })
+
+  it("never says an answer was sent before the server recorded it", async () => {
+    // The first render has nothing held: the bar offers the replies, and no card claims a send.
+    const text = textOf(await render({ inquiry: FIRST }))
+
+    expect(text).toContain("Reply in one tap")
+    expect(text).not.toContain("Reply sent")
+    expect(text).not.toContain("Declined")
+  })
+
+  it("has no held-answer list for someone the inbox refuses", async () => {
+    mocks.listLandingInterests.mockRejectedValue(new Error("Your role cannot act on inquiries for this business"))
+
+    expect(await render()).not.toContain("data-held-inbox")
   })
 })
 
