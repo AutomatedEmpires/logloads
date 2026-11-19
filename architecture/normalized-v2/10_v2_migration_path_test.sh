@@ -36,6 +36,8 @@
 #   42  changes no stored row either (it adds one function and nothing else).
 #   44  changes no stored row either. It adds the reveal ledger, which starts with one row per landing_private.shared
 #       audit row already on record, a column and a check on the empty pause table, and a check on abuse_reports.
+#   46  changes no stored row either (it adds the empty email suppression list, four functions and the new-inquiry
+#       trigger, which fires only for an inquiry sent after it).
 # =============================================================================
 set -euo pipefail
 
@@ -341,6 +343,11 @@ apply1 "$SCRIPT_DIR/44_v2_reveal_ledger.sql"
 AFTER_44="$(all_data schema_migrations,phone_reveal_events)"
 expect_eq "44 changes no stored row in any marketplace table (the ledger and the new reveal ledger aside)" "$AFTER_44" "$BEFORE_44"
 expect_eq "44's reveal ledger starts with the share history already in the audit log" "$(q "select count(*) from marketplace.phone_reveal_events;")" "$SHARED_44"
-expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38, 40, 42 and 44 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33,35,38,40,42,44"
+BEFORE_46="$(all_data schema_migrations)"
+apply1 "$SCRIPT_DIR/46_v2_email_suppression.sql"
+AFTER_46="$(all_data schema_migrations,email_suppressions)"
+expect_eq "46 changes no stored row in any marketplace table (the ledger and the new suppression list aside)" "$AFTER_46" "$BEFORE_46"
+expect_eq "46's suppression list starts empty" "$(q "select count(*) from marketplace.email_suppressions;")" "0"
+expect_eq "the ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38, 40, 42, 44 and 46 in order" "$(q "select string_agg(version, ',' order by applied_at, version) from marketplace.schema_migrations;")" "06,11,12,16,18,23,26,29,31,33,35,38,40,42,44,46"
 x "drop schema if exists marketplace cascade;"
 echo "MIGRATION PATH TEST PASSED."

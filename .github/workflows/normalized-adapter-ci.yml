@@ -181,6 +181,10 @@ jobs:
         timeout-minutes: 5
         run: bash tools/normalized-v2-ci/run-stage.sh 44
 
+      - name: "Stage 46: 46_v2_email_suppression.sql"
+        timeout-minutes: 5
+        run: bash tools/normalized-v2-ci/run-stage.sh 46
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -212,6 +216,7 @@ jobs:
             lib/marketplace-v2/basins/basins.contract.test.ts \
             lib/marketplace-v2/disclosure/disclosure.contract.test.ts \
             lib/marketplace-v2/liquidity/liquidity.contract.test.ts \
+            lib/marketplace-v2/notify/worker.contract.test.ts \
             --no-file-parallelism --testTimeout=60000 --reporter=verbose 2>&1 | tee "$RUNNER_TEMP/normalized-v2-ci/logs/adapter-contract.log"
           {
             echo "### Normalized adapter contract tests"
@@ -356,7 +361,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
-          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38,40,42,44)" "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38,40,42,44,46)" "$RUNNER_TEMP/schema-again.log"
           grep -q "keep logloads_marketplace_adapter and its password" "$RUNNER_TEMP/schema-again.log"
 
       - name: "Owner tool: seed dry run, then --apply"
@@ -509,7 +514,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/normalized-store.mjs schema --expected-project-ref local --apply | tee "$RUNNER_TEMP/schema-again.log"
-          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38,40,42,44)" "$RUNNER_TEMP/schema-again.log"
+          grep -q "up to date (ledger 06,11,12,16,18,23,26,29,31,33,35,38,40,42,44,46)" "$RUNNER_TEMP/schema-again.log"
 
       # The staging order (docs/INTEGRATIONS.md §15.1): the normalized store first, so PostGIS lives in `extensions`,
       # then the pilot migrations on the same database, each in one transaction as the migration role, and their own
