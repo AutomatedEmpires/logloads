@@ -8,6 +8,7 @@
     "./icons": "./src/icons/index.ts",
     "./layout": "./src/layout/index.ts",
     "./marketplace": "./src/marketplace/index.ts",
+    "./marketplace/format": "./src/marketplace/format.ts",
     "./primitives": "./src/primitives/index.ts",
     "./tokens": "./src/tokens/index.ts",
     "./tokens.css": "./src/tokens/tokens.css"
