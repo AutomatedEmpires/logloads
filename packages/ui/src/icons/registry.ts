@@ -17,6 +17,7 @@ import {
   Eye,
   Funnel,
   GearSix,
+  Info,
   Lock,
   MagnifyingGlass,
   MapPin,
@@ -35,6 +36,7 @@ import {
   UsersThree,
   Van,
   Warning,
+  WifiSlash,
   Wrench
 } from "@phosphor-icons/react"
 
@@ -72,8 +74,11 @@ export type IconKey =
   | "ops.notice"
   | "ops.queue"
   | "status.assigned"
+  | "status.confirmed"
   | "status.freshness"
+  | "status.info"
   | "status.lock"
+  | "status.offline"
   | "status.open"
   | "status.scheduled"
   | "status.verified"
@@ -121,8 +126,12 @@ export const ICON_REGISTRY = {
   "ops.notice": { key: "ops.notice", icon: Megaphone, label: "Notice" },
   "ops.queue": { key: "ops.queue", icon: ChartDonut, label: "Queue" },
   "status.assigned": { key: "status.assigned", icon: CheckCircle, label: "Assigned", weight: "fill" },
+  // Field layer (#281; FG00 Icon/status.confirmed 203:21203, status.info 203:21228, status.offline 203:21245).
+  "status.confirmed": { key: "status.confirmed", icon: CheckCircle, label: "Confirmed", weight: "bold" },
   "status.freshness": { key: "status.freshness", icon: CircleNotch, label: "Freshness" },
+  "status.info": { key: "status.info", icon: Info, label: "Information", weight: "bold" },
   "status.lock": { key: "status.lock", icon: Lock, label: "Protected" },
+  "status.offline": { key: "status.offline", icon: WifiSlash, label: "Offline", weight: "bold" },
   "status.open": { key: "status.open", icon: CircleDashed, label: "Open" },
   "status.scheduled": { key: "status.scheduled", icon: CalendarBlank, label: "Scheduled" },
   "status.verified": { key: "status.verified", icon: SealCheck, label: "Verified", weight: "duotone" },

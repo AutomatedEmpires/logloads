@@ -3,8 +3,9 @@ import { notFound } from "next/navigation"
 import { haulerProfileFormValues, type HaulerProfileView, type MarketplaceHaulerEquipmentOption } from "@logloads/contracts"
 import { publicHaulerProfile } from "@logloads/services"
 import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
-import { Button, EmptyState, StepIndicator, Tabs } from "@logloads/ui/primitives"
+import { StepIndicator, Tabs } from "@logloads/ui/primitives"
 
+import { ProfileRefusal } from "@/app/v2/hauler/profile/_lib/ProfileRefusal"
 import styles from "@/components/v2/onboarding/Onboarding.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
 import profileStyles from "@/components/v2/profile/HaulerProfile.module.css"
@@ -33,30 +34,7 @@ function one(value: string | string[] | undefined): string {
 }
 
 function Refusal({ body, title }: { body: string; title: string }) {
-  return (
-    <div data-ds-page="hauler-profile">
-      <PageHeader title="Business profile" />
-      <PageContainer>
-        <ContentGrid
-          layout="single"
-          main={
-            <Section variant="flush">
-              <EmptyState
-                actions={
-                  <>
-                    <Button href="/v2/work" label="Browse public jobs" size="sm" variant="secondary" />
-                    <Button href="/v2/start" label="Set up a business" size="sm" variant="ghost" />
-                  </>
-                }
-                body={body}
-                title={title}
-              />
-            </Section>
-          }
-        />
-      </PageContainer>
-    </div>
-  )
+  return <ProfileRefusal body={body} page="hauler-profile" pageTitle="Business profile" title={title} />
 }
 
 /**
@@ -125,7 +103,7 @@ export default async function HaulerProfilePage({ searchParams }: { searchParams
                     <PageNotice role="note">
                       This is your saved profile exactly as a landing operator sees it; changes you have not saved are not in it.
                       {profile.listed
-                        ? " Every landing operator can see it."
+                        ? " It is listed: landing businesses signed in to LogLoads can see it in Find trucks."
                         : " Right now only landings you send interest to can see it."}
                     </PageNotice>
                     <PublicHaulerProfile now={new Date().toISOString()} profile={publicHaulerProfile(profile, equipment)} />
