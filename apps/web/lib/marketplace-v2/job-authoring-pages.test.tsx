@@ -1,10 +1,14 @@
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 /**
- * Frontend regression tests for the V2 job editor and job list (#105, #128): four validated steps with a progress
- * indicator, grouped equipment, a review step built from the real marketplace components, three explicit
+ * Frontend regression tests for the V2 job editor and job list (#105, #128): three validated steps, as the approved
+ * page 03 frames draw them (#431: CE-03 "The job", CE-04 "Pay and trucks", CE-06 "Review and publish"), with the step
+ * line and progress bar, grouped equipment, a review step built from the real marketplace components, three explicit
  * publish statements that are never pre-ticked or carried, Publish unavailable until they are ticked (and
  * always on the pilot store), and the job list's status tabs with the per-job reconfirmation (LE-15).
  */
@@ -57,7 +61,7 @@ const ORGANIZATION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 const OWN_LANDING_ID = "66666666-6666-4666-8666-666666666666"
 const OTHER_LANDING_ID = "99999999-9999-4999-8999-999999999999"
 const { field, label, value } = MARKETPLACE_AVAILABILITY_ATTESTATION
-const STEP_LABELS = ["Basics &amp; location", "Pay &amp; scope", "Equipment &amp; volume", "Review &amp; publish"]
+const STEP_LABELS = ["The job", "Pay and trucks", "Review and publish"]
 
 const COMPLETE = {
   durationDays: "10",
@@ -169,27 +173,47 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("job editor: four steps", () => {
-  it("shows the four-step progress indicator on every step, with the current one marked", async () => {
+describe("job editor: three steps, as the page 03 frames draw them (#431)", () => {
+  it("shows the step line, the progress bar and the draft line on every step, with no four-step grid", async () => {
     const screens = [
       await render(NewJobPage, {}),
       await render(NewJobPage, { ...COMPLETE, step: "pay" }),
-      await render(NewJobPage, { ...COMPLETE, step: "equipment" }),
       await render(JobPreviewPage, COMPLETE)
     ]
+    const ids = ["basics", "pay", "review"]
 
     screens.forEach((html, index) => {
       expect(html).toContain('data-ds-page="job-editor"')
-      const indicator = html.match(/<ol aria-label="Progress"[^>]*>.*?<\/ol>/)?.[0] ?? ""
-      for (const stepLabel of STEP_LABELS) expect(indicator).toContain(stepLabel)
-      const current = indicator.match(/<li aria-current="step"[^>]*>.*?<\/li>/)?.[0] ?? ""
-      expect(current).toContain(STEP_LABELS[index])
-      expect(html).toContain(`Step ${index + 1} of 4`)
+      // CE-03 153:2413, CE-04 153:2639, CE-06 153:2915: "Step N of 3 · Label", the step's heading.
+      expect(html).toMatch(new RegExp(`<h2[^>]*id="job-editor-step"[^>]*>Step ${index + 1} of 3 · ${STEP_LABELS[index]}</h2>`))
+      expect(html).toMatch(new RegExp(`<section[^>]*aria-labelledby="job-editor-step"[^>]*data-step="${ids[index]}"`))
+      // The bar is decorative: the step line says the same.
+      expect(html).toMatch(/<div aria-hidden="true"[^>]*data-job-progress=""[^>]*><span[^>]*><\/span><\/div>/)
+      expect(html).toContain("Your draft stays in this browser tab as you go: LogLoads doesn&#x27;t save drafts on the server yet.")
+      expect(html).not.toContain('aria-label="Progress"')
+      expect(html).not.toContain("of 4")
     })
   })
 
-  it("step 1 asks for the landing, title, product and destination, and moves on to pay", async () => {
+  it("lays the steps out in one column, with no card and no aside", async () => {
+    for (const html of [await render(NewJobPage, {}), await render(NewJobPage, { ...COMPLETE, step: "pay" }), await render(JobPreviewPage, COMPLETE)]) {
+      expect(html).toContain('data-layout="single"')
+      expect(html).not.toContain('data-layout="main-aside"')
+      expect(html).not.toContain("Exactly the row haulers see in search")
+    }
+  })
+
+  it("names the business and, once chosen, the landing under the title, as the frames' North Pine Logging · Oak Landing", async () => {
+    expect(await render(NewJobPage, {})).toMatch(/<div[^>]*>North Pine<\/div>/)
+    expect(await render(NewJobPage, { ...COMPLETE, step: "pay" })).toContain("North Pine · Landing 7")
+    expect(await render(JobPreviewPage, COMPLETE)).toContain("North Pine · Landing 7")
+  })
+
+  it("step 1 asks for the job title, product, landing and destination in the frame's order, and moves on to pay", async () => {
     const html = await render(NewJobPage, {})
+    const order = ['name="title"', 'name="product"', 'name="productOther"', 'name="landingId"', 'name="destinationLabel"', 'name="estOneWayMiles"', 'name="publicRoadNotes"', 'name="description"'].map((name) =>
+      html.indexOf(name)
+    )
 
     expect(html).toMatch(/<select[^>]*name="landingId"/)
     expect(html).toMatch(/<input[^>]*name="title"/)
@@ -197,6 +221,14 @@ describe("job editor: four steps", () => {
     expect(html).toMatch(/<input[^>]*maxLength="120"[^>]*name="productOther"/)
     expect(html).toMatch(/<input[^>]*name="destinationLabel"/)
     expect(html).toMatch(/<input[^>]*name="estOneWayMiles"/)
+    // The road notes and the description describe the job, so they are on this step now, folded away.
+    expect(html).toMatch(/<textarea[^>]*name="publicRoadNotes"/)
+    expect(html).toMatch(/<textarea[^>]*name="description"/)
+    expect(order.every((at) => at > 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+    expect(html).toMatch(/<label[^>]*for="title"[^>]*>Job title<\/label>/)
+    expect(html).toContain("Name the work so a hauler can tell jobs apart.")
+    expect(html).toContain("A mill or area. Keep the gate out of this field.")
     expect(html).not.toMatch(/name="payUnit"/)
     expect(html).not.toMatch(/name="equipment"/)
     expect(hasHiddenInput(html, "from", "basics")).toBe(true)
@@ -206,27 +238,85 @@ describe("job editor: four steps", () => {
     const next = namedTag(html, "button", "step")
     expect(next).toContain('type="submit"')
     expect(next).toContain('value="pay"')
-    expect(html).toContain("Next: pay &amp; scope")
+    // The frames' BottomActionBar: one 56 px "Next" (Button size lg).
+    expect(next).toContain('data-size="lg"')
+    expect(html).toMatch(/<button[^>]*name="step"[^>]*>(?:(?!<\/button>).)*>Next<\/span>/)
   })
 
-  it("offers the controlled product list with a described Other (UX-DEC-03)", async () => {
+  it("offers the controlled product list, with the frame's hint (UX-DEC-03; CE-03 Haulers filter jobs by product.)", async () => {
     const html = await render(NewJobPage, {})
 
-    for (const product of ["Saw logs", "Pulpwood", "Poles and pilings", "Chips", "Hog fuel and biomass", "Hardwood logs"]) {
+    for (const product of ["Saw logs", "Pulpwood", "Poles and pilings", "Chips", "Hog fuel and biomass", "Hardwood logs", "Other"]) {
       expect(html).toContain(`<option value="${product}">${product}</option>`)
     }
-    expect(html).toContain('<option value="Other">Other (describe)</option>')
+    expect(tagWithId(html, "product-hint")).not.toBe("")
+    expect(html).toMatch(/<span[^>]*id="product-hint"[^>]*>Haulers filter jobs by product\.<\/span>/)
+    expect(html).not.toContain("Required to publish.")
   })
 
-  it("has no attestation and no contact field on any input step", async () => {
-    for (const step of ["basics", "pay", "equipment"]) {
+  it("shows Describe the product only for Other, following the select without JavaScript (CE-03b 359:5109)", async () => {
+    /** The wrapper around Describe the product, and whether the server marks it shown. */
+    const otherField = (html: string) => html.match(/<div(?=[^>]*\bdata-other-field="")[^>]*>/)?.[0] ?? ""
+    const sawLogs = await render(NewJobPage, { ...COMPLETE, step: "basics" })
+    const other = await render(NewJobPage, { ...COMPLETE, product: "Other", productOther: "Treated fence posts", step: "basics" })
+    const rules = sawLogs.match(/<style>(.*?)<\/style>/)?.[1] ?? ""
+
+    // The field is in the page for every product, so the select can show it, but only Other's is marked shown.
+    expect(otherField(sawLogs)).not.toBe("")
+    expect(otherField(sawLogs)).not.toContain("data-current")
+    expect(otherField(other)).toContain('data-current=""')
+    expect(otherField(await render(NewJobPage, {}))).not.toContain("data-current")
+    expect(rules).toContain('form:has(#product option[value="Other"]:checked) [data-other-field]{display:block}')
+    expect(sawLogs).toContain("Up to 120 characters. Haulers see this.")
+    expect(sawLogs).not.toContain("Only for Other")
+    // An error on it is never hidden, whatever product is chosen.
+    const refused = await render(NewJobPage, { ...COMPLETE, from: "basics", productOther: "Call 541-555-0100", step: "pay" })
+    if (refused.includes('id="productOther-error"')) expect(otherField(refused)).toContain('data-force=""')
+  })
+
+  it("has no attestation and no contact field on any input step, and says so where contact details could go", async () => {
+    for (const step of ["basics", "pay"]) {
       const html = await render(NewJobPage, { ...COMPLETE, step })
 
       expect(attestationInputs(html)).toHaveLength(0)
       expect(publishAttestationInputs(html)).toHaveLength(0)
-      expect(html).toContain("Haulers contact you through LogLoads messages")
       expect(html).not.toMatch(/name="(phone|email|contact)/i)
     }
+    // The frames have no aside, so the guidance moved to the hints of the free-text fields on each step.
+    expect(await render(NewJobPage, { ...COMPLETE, step: "basics" })).toContain(
+      "Haulers contact you through LogLoads messages, so leave phone numbers and email addresses out."
+    )
+    expect(await render(NewJobPage, { ...COMPLETE, step: "pay" })).toContain("No phone numbers, email addresses or access details.")
+  })
+
+  it("lists what's required as one row per step, done or to do, each input step linking back to itself (CE-03 153:2455)", async () => {
+    const rowsOf = (html: string) => {
+      const list = html.match(/<ul aria-labelledby="job-editor-required"[^>]*>(.*?)<\/ul>/)?.[1] ?? ""
+      return [...list.matchAll(/<li([^>]*)>(.*?)<\/li>/g)].map((row) => ({
+        done: /data-met=""/.test(row[1] ?? ""),
+        href: row[2]?.match(/href="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&") ?? null,
+        text: (row[2] ?? "").replace(/<[^>]+>/g, "").trim()
+      }))
+    }
+    const fresh = await render(NewJobPage, {})
+    const halfway = await render(NewJobPage, { landingId: OWN_LANDING_ID, product: "Saw logs", step: "pay", title: "Oak saw logs" })
+
+    expect(fresh).toMatch(/<h3[^>]*id="job-editor-required"[^>]*>What&#x27;s required<\/h3>/)
+    expect(rowsOf(fresh).map((row) => [row.text, row.done])).toEqual([
+      ["The job (to do)", false],
+      ["Pay and trucks (to do)", false],
+      ["Review and publish (to do)", false]
+    ])
+    expect(rowsOf(halfway).map((row) => [row.text, row.done])).toEqual([
+      ["The job (done)", true],
+      ["Pay and trucks (to do)", false],
+      ["Review and publish (to do)", false]
+    ])
+    expect(rowsOf(halfway)[0]?.href).toMatch(/^\/v2\/landing\/jobs\/new\?step=basics&.*title=Oak/)
+    expect(rowsOf(halfway)[1]?.href).toMatch(/^\/v2\/landing\/jobs\/new\?step=pay&/)
+    expect(rowsOf(halfway)[2]?.href).toBeNull()
+    // Not on the review: CE-06 draws none there.
+    expect(await render(JobPreviewPage, COMPLETE)).not.toContain('id="job-editor-required"')
   })
 
   it("step 2 asks for required pay, timing (end date, duration or Ongoing) and trucks, carrying step 1 along", async () => {
@@ -246,10 +336,17 @@ describe("job editor: four steps", () => {
     expect(namedTag(html, "input", "trucksRequested")).toContain('value="1"')
     expect(hasHiddenInput(html, "title", "Oak saw logs")).toBe(true)
     expect(html).toMatch(/<a[^>]*data-job-draft="carry"[^>]*href="\/v2\/landing\/jobs\/new\?step=basics&amp;/)
+    // CE-04's order: pay, then trucks, then the start, then the truck and trailer.
+    const order = ['name="payUnit"', 'name="payAmount"', 'name="trucksRequested"', 'name="trucksPerDay"', 'name="startsOn"', 'name="equipment"'].map((name) => html.indexOf(name))
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+    expect(html).toMatch(/<label[^>]*for="payAmount"[^>]*>Pay amount<\/label>/)
+    expect(html).toMatch(/<label[^>]*for="trucksRequested"[^>]*>Trucks needed<\/label>/)
+    const next = namedTag(html, "button", "step")
+    expect(next).toContain('value="review"')
   })
 
-  it("step 3 groups equipment by truck, trailer and attachment", async () => {
-    const html = await render(NewJobPage, { ...COMPLETE, equipment: "pole_trailer", step: "equipment" })
+  it("step 2 also groups equipment by truck, trailer and attachment, under Truck and trailer", async () => {
+    const html = await render(NewJobPage, { ...COMPLETE, equipment: "pole_trailer", step: "pay" })
     const groups = [...html.matchAll(/<fieldset[^>]*><legend[^>]*>(Truck|Trailer|Attachments)<\/legend>(.*?)<\/fieldset>/g)]
 
     expect(groups.map((group) => group[1])).toEqual(["Truck", "Trailer", "Attachments"])
@@ -260,9 +357,9 @@ describe("job editor: four steps", () => {
     }
     expect(inputsNamed(html, "equipment").filter((input) => input.includes('type="checkbox"'))).toHaveLength(MARKETPLACE_EQUIPMENT_TYPES.length)
     expect(inputsNamed(html, "equipment").find((input) => input.includes('value="pole_trailer"'))).toContain("checked")
-    expect(html).toMatch(/<textarea[^>]*name="publicRoadNotes"/)
+    expect(html).toMatch(/<fieldset[^>]*><legend[^>]*>Truck and trailer<\/legend>/)
     expect(html).toMatch(/<input[^>]*name="estTonsPerLoad"/)
-    expect(html).toContain("Next: review &amp; publish")
+    expect(html).not.toMatch(/<textarea[^>]*name="publicRoadNotes"/)
   })
 })
 
@@ -274,10 +371,14 @@ describe("job editor: validation per step on the server", () => {
     expect(html).toContain('id="landingId-error"')
     expect(html).toContain('id="title-error"')
     expect(html).toContain('id="product-error"')
-    expect(tagWithId(html, "landingId")).toContain('autofocus=""')
+    // The job title comes first in the frames, so it takes focus.
+    expect(tagWithId(html, "title")).toContain('autofocus=""')
     expect(tagWithId(html, "landingId")).toContain('aria-invalid="true"')
     expect(html.match(/autofocus=""/g)).toHaveLength(1)
-    expect(html).toContain("Fix the 3 highlighted fields to continue.")
+    expect(html).toContain("Fix the 3 highlighted fields to continue. Your draft is kept.")
+    // CE-05: the notice sits under the step line and the draft line, before the fields.
+    expect(html.indexOf("Fix the 3 highlighted fields")).toBeGreaterThan(html.indexOf('id="job-editor-step"'))
+    expect(html.indexOf("Fix the 3 highlighted fields")).toBeLessThan(html.indexOf('name="title"'))
   })
 
   it("checks Other's description on step 1, before the later steps exist", async () => {
@@ -286,6 +387,7 @@ describe("job editor: validation per step on the server", () => {
     expect(html).toContain('id="productOther-error"')
     expect(html).toContain("Describe the product (up to 120 characters)")
     expect(tagWithId(html, "productOther")).toContain('autofocus=""')
+    expect(html).toMatch(/<div(?=[^>]*\bdata-other-field="")(?=[^>]*\bdata-current="")(?=[^>]*\bdata-force="")[^>]*>/)
   })
 
   it("moves on when the step passes, without blocking on later steps", async () => {
@@ -297,7 +399,7 @@ describe("job editor: validation per step on the server", () => {
   })
 
   it("requires pay on step 2 and focuses the pay basis", async () => {
-    const html = await render(NewJobPage, { ...COMPLETE, from: "pay", payAmount: "", payUnit: "", step: "equipment" })
+    const html = await render(NewJobPage, { ...COMPLETE, from: "pay", payAmount: "", payUnit: "", step: "review" })
 
     expect(html).toContain('id="payUnit-error"')
     expect(html).toContain("State the pay: an amount and what it is per, or Negotiable with a note")
@@ -305,24 +407,26 @@ describe("job editor: validation per step on the server", () => {
   })
 
   it("requires the start and the work period on step 2 (UX-DEC-02)", async () => {
-    const html = await render(NewJobPage, { ...COMPLETE, durationDays: "", from: "pay", startsOn: "", step: "equipment" })
+    const html = await render(NewJobPage, { ...COMPLETE, durationDays: "", from: "pay", startsOn: "", step: "review" })
 
     expect(html).toContain('id="startsOn-error"')
     expect(html).toContain('id="workPeriod-error"')
     expect(tagWithId(html, "startsOn")).toContain('autofocus=""')
   })
 
-  it("requires at least one equipment type on step 3", async () => {
-    const html = await render(NewJobPage, { ...COMPLETE, equipment: "", from: "equipment", step: "review" })
+  it("requires at least one equipment type on step 2", async () => {
+    const html = await render(NewJobPage, { ...COMPLETE, equipment: "", from: "pay", step: "review" })
 
     expect(html).toContain('id="equipment-error"')
     expect(tagWithId(html, "equipment-log_truck")).toContain('autofocus=""')
   })
 
-  it("rejects private access details in public road notes", async () => {
-    const html = await render(NewJobPage, { ...COMPLETE, from: "equipment", publicRoadNotes: "Gate code 4521 at the yard", step: "review" })
+  it("rejects private access details in public road notes, on step 1 where they now are", async () => {
+    const html = await render(NewJobPage, { ...COMPLETE, from: "basics", publicRoadNotes: "Gate code 4521 at the yard", step: "pay" })
 
+    expect(hasHiddenInput(html, "from", "basics")).toBe(true)
     expect(html).toContain('id="publicRoadNotes-error"')
+    expect(html).toMatch(/<details[^>]*open=""[^>]*>\s*<summary>Road notes and description \(optional\)<\/summary>/)
     expect(html).toContain("Remove coordinates and gate or lock codes.")
   })
 
@@ -333,8 +437,8 @@ describe("job editor: validation per step on the server", () => {
     expect(html).not.toContain("-error\"")
   })
 
-  it("sends a draft whose three steps pass to the review step", async () => {
-    const href = await redirectOf(NewJobPage, { ...COMPLETE, from: "equipment", step: "review" })
+  it("sends a draft whose two input steps pass to the review step", async () => {
+    const href = await redirectOf(NewJobPage, { ...COMPLETE, from: "pay", step: "review" })
 
     expect(href).toMatch(/^\/v2\/landing\/jobs\/preview\?/)
     expect(queryOf(href)).toMatchObject({ landingId: OWN_LANDING_ID, title: COMPLETE.title })
@@ -461,6 +565,30 @@ describe("job editor: review and publish", () => {
     expect(hasHiddenInput(form, "title", COMPLETE.title)).toBe(true)
     expect(hasHiddenInput(form, "equipment", "log_truck")).toBe(true)
     expect(form).not.toMatch(/name="(step|from|error)"/)
+  })
+
+  it("goes Back to step 2 with the draft, and publishes from the frames' 56 px bottom bar", async () => {
+    const html = await render(JobPreviewPage, COMPLETE)
+    const back = html.match(/<a[^>]*data-job-draft="carry"[^>]*>(?:(?!<\/a>).)*>Back<\/span>/)?.[0] ?? ""
+
+    expect(back).toMatch(/href="\/v2\/landing\/jobs\/new\?step=pay&amp;/)
+    expect(back).toContain("title=Oak")
+    expect(publishButton(html)).toContain('data-size="lg"')
+    expect(html).toMatch(/<noscript><button[^>]*data-size="lg"/)
+  })
+
+  it("sets the Before you publish legend in 16 px regular, as CE-06 238:3597 draws it", async () => {
+    const html = await render(JobPreviewPage, COMPLETE)
+    const legend = html.match(/<legend([^>]*)>Before you publish<\/legend>/)?.[1] ?? ""
+    const css = readFileSync(fileURLToPath(new URL("../../components/v2/JobEditor.module.css", import.meta.url)), "utf8")
+    const rule = (name: string) => css.match(new RegExp(`\\.${name} \\{([^}]*)\\}`))?.[1] ?? ""
+
+    expect(legend).toMatch(/class="[^"]*legendPlain/)
+    expect(rule("legendPlain")).toContain("font-size: var(--ll-text-base);")
+    expect(rule("legendPlain")).toContain("font-weight: var(--ll-weight-regular);")
+    // The field groups keep the frames' semibold label, now 16 px too (CE-04 "Pay basis", "Truck and trailer").
+    expect(rule("legend")).toContain("font-size: var(--ll-text-base);")
+    expect(rule("legend")).toContain("font-weight: var(--ll-weight-semibold);")
   })
 })
 
@@ -699,6 +827,29 @@ describe("job postings page", () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>).)*Confirm still available/)
     expect(html).toContain("Never confirmed")
     expect(html).toContain("Not saved in this preview")
+  })
+
+  it("says a day-14 job is waiting for its confirmation, in the frame's words (CE-01 414:5668)", async () => {
+    const day = 86_400_000
+    const stale = new Date(Date.now() - 20 * day).toISOString()
+    const fresh = new Date(Date.now() - 2 * day).toISOString()
+    mocks.listJobs.mockResolvedValue([
+      job({ id: "79999999-9999-4999-8999-999999999999", lastConfirmedAt: stale, status: "active", title: "Pulpwood to the Albany mill" }),
+      job({ id: "7aaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", lastConfirmedAt: fresh, status: "active", title: "Oak saw-log morning run" })
+    ])
+
+    const html = await render(LandingJobsPage, {})
+    const items = [...html.matchAll(/<li[^>]*data-reconfirm-item=""[^>]*>(.*?)<\/li>/g)].map((item) => item[1] ?? "")
+    const waiting = items.find((item) => item.includes("Pulpwood to the Albany mill")) ?? ""
+    const recent = items.find((item) => item.includes("Oak saw-log morning run")) ?? ""
+
+    expect(waiting).toContain("Waiting for the poster to confirm")
+    expect(waiting).toContain("No one has confirmed this job for 14 days. It stays published, but it is off Find Work and takes no new interest until you confirm it.")
+    expect(recent).not.toContain("Waiting for the poster to confirm")
+    expect(recent).not.toContain("for 14 days")
+    // Still its own explicit, unticked confirmation.
+    expect(attestationInputs(waiting)).toHaveLength(1)
+    expect(attestationInputs(waiting)[0]).not.toContain("checked")
   })
 
   it("offers no reconfirmation outside the Published tab", async () => {

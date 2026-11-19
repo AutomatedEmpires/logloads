@@ -1,7 +1,7 @@
 import type { MarketplaceDraftIssue, MarketplaceDraftLandingContext, MarketplaceJobDetailView } from "@logloads/contracts"
-import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
+import { ContentGrid, PageContainer, PageHeader } from "@logloads/ui/layout"
 import { JobResultList, JobResultRow } from "@logloads/ui/marketplace"
-import { Button, FormActions, StepIndicator } from "@logloads/ui/primitives"
+import { Button, FormActions } from "@logloads/ui/primitives"
 import type { ReactNode } from "react"
 
 import { DRAFT_TEXT_FIELDS, draftQueryString, type DraftFormValues } from "@/lib/marketplace-v2/draft-params"
@@ -10,7 +10,6 @@ import {
   JOB_EDITOR_NEXT_STEP,
   JOB_EDITOR_PREVIOUS_STEP,
   JOB_EDITOR_STEP_FIELDS,
-  JOB_EDITOR_STEP_LABELS,
   JOB_EDITOR_STEPS,
   jobEditorStepIndex,
   jobEditorStepLabel,
@@ -24,9 +23,11 @@ import styles from "./JobEditor.module.css"
 import { BasicsFields, EquipmentFields, PayFields } from "./JobEditorFields"
 
 /**
- * The job editor (UX-05, #128; 06_DESIGN_SYSTEM §4 "Job editor"): PageHeader, then ContentGrid main-aside with
- * the step's Section (StepIndicator, FormFields, FormActions) and an aside with the hauler preview and the
- * required-items checklist. `data-ds-page` on the root names the page for the DS-05 regression suite.
+ * The job editor, as the approved page 03 Create and edit frames draw it (#431; Figma file bh4lvK95UsdRT1WVEbeOB6,
+ * CE-03 to CE-06, node ids in docs/product/figma/FG03-create-edit/README.md): PageHeader, then one column with the
+ * step line ("Step N of 3 · The job"), a progress bar, the draft line, any notice, the step's fields, "What's
+ * required" and the bottom action bar. No card and no aside. `data-ds-page` on the root names the page for the DS-05
+ * regression suite.
  */
 
 export const JOB_EDITOR_FORM_ID = "job-editor-form"
@@ -37,22 +38,26 @@ export function jobEditorStepHref(step: JobEditorStepId, values: DraftFormValues
   return `${NEW_JOB_PATH}?step=${step}${draft ? `&${draft}` : ""}`
 }
 
-export function JobEditorLayout({ aside, children, organizationName }: { aside?: ReactNode; children: ReactNode; organizationName: string }) {
+/**
+ * The page frame. The description names the business and, once the draft has one of its landings, that landing, as
+ * the frames' "North Pine Logging · Oak Landing".
+ */
+export function JobEditorLayout({ children, landingName, organizationName }: { children: ReactNode; landingName?: string | null; organizationName: string }) {
   return (
     <div data-ds-page="job-editor">
       <PageHeader
         breadcrumbs={[{ href: "/v2/landing/jobs", label: "Your job postings" }, { label: "Post a job" }]}
-        description={`${organizationName}. Your draft stays in this browser tab as you go: LogLoads doesn't save drafts on the server yet.`}
+        description={landingName ? `${organizationName} · ${landingName}` : organizationName}
         title="Post a job"
       />
       <PageContainer>
-        <ContentGrid aside={aside} layout="main-aside" main={children} />
+        <ContentGrid layout="single" main={children} />
       </PageContainer>
     </div>
   )
 }
 
-/** A short notice above the editor. `critical` is announced as an alert, the others as a status. */
+/** A short notice above the editor's fields. `critical` is announced as an alert, the others as a status. */
 export function EditorNotice({ children, tone = "info" }: { children: ReactNode; tone?: "info" | "critical" }) {
   return (
     <div className={styles.notice} data-tone={tone} role={tone === "critical" ? "alert" : "status"}>
@@ -73,11 +78,11 @@ export function RestoredNotice() {
   )
 }
 
-/** The count of what blocks the next step, above the form; each field shows its own message. */
+/** The count of what blocks the next step (CE-05's notice); each field shows its own message. */
 export function StepIssuesNotice({ count }: { count: number }) {
   return count > 0 ? (
     <EditorNotice tone="critical">
-      {count === 1 ? "Fix the highlighted field to continue." : `Fix the ${count} highlighted fields to continue.`}
+      {count === 1 ? "Fix the highlighted field to continue." : `Fix the ${count} highlighted fields to continue.`} Your draft is kept.
     </EditorNotice>
   ) : null
 }
@@ -94,35 +99,84 @@ export function DraftHiddenFields({ except = [], values }: { except?: readonly s
   )
 }
 
-/** The editor's Section heading and progress, shared by every step. */
-export function JobEditorStepSection({ children, step }: { children: ReactNode; step: JobEditorStepId }) {
+/**
+ * The top of every step, as the frames draw it: the step line (the step's heading, "Step 1 of 3 · The job"), the
+ * progress bar (decorative: the line says the same), the draft line, then any notices, then the step itself. The
+ * frames' "Draft saved 10:42 am." becomes what is true today: the draft is kept in this browser tab.
+ */
+export function JobEditorStepSection({ children, notices, step }: { children: ReactNode; notices?: ReactNode; step: JobEditorStepId }) {
   const index = jobEditorStepIndex(step)
 
   return (
-    <Section description={<p className={styles.step}>Step {index + 1} of {JOB_EDITOR_STEPS.length}</p>} title={jobEditorStepLabel(step)}>
-      <div className={styles.stack}>
-        <StepIndicator current={index} steps={[...JOB_EDITOR_STEP_LABELS]} />
-        {children}
+    <section aria-labelledby="job-editor-step" className={styles.step} data-step={step}>
+      <h2 className={styles.stepLine} id="job-editor-step">{`Step ${index + 1} of ${JOB_EDITOR_STEPS.length} · ${jobEditorStepLabel(step)}`}</h2>
+      <div aria-hidden="true" className={styles.progress} data-job-progress="">
+        <span className={styles.progressFill} />
       </div>
-    </Section>
+      <p className={styles.draftLine}>Your draft stays in this browser tab as you go: LogLoads doesn&apos;t save drafts on the server yet.</p>
+      {notices}
+      {children}
+    </section>
+  )
+}
+
+/**
+ * "What's required" (CE-03, CE-03b): one line per step, done or to do by the same rules as the steps rather than by
+ * how far the poster has clicked. Each input step links to itself, carrying the draft, so a finished step can be
+ * edited again. Review and publish is never done before publishing: its statements are ticked per request.
+ */
+export function JobEditorChecklist({
+  checklist,
+  values
+}: {
+  checklist: ReadonlyArray<{ label: string; step: JobEditorInputStepId; met: boolean }>
+  values: DraftFormValues
+}) {
+  return (
+    <div className={styles.required}>
+      <h3 className={styles.requiredTitle} id="job-editor-required">What&apos;s required</h3>
+      <ul aria-labelledby="job-editor-required" className={styles.checklist}>
+        {checklist.map((item) => (
+          <li className={styles.checkItem} data-met={item.met ? "" : undefined} key={item.step}>
+            <span aria-hidden="true" className={styles.checkIcon} />
+            <a data-job-draft="carry" href={jobEditorStepHref(item.step, values)}>
+              {item.label}
+              <span className={styles.srOnly}>{item.met ? " (done)" : " (to do)"}</span>
+            </a>
+          </li>
+        ))}
+        <li className={styles.checkItem}>
+          <span aria-hidden="true" className={styles.checkIcon} />
+          <span>
+            {jobEditorStepLabel("review")}
+            <span className={styles.srOnly}> (to do)</span>
+          </span>
+        </li>
+      </ul>
+    </div>
   )
 }
 
 /**
  * One input step as a GET form to the editor. The Next button asks for the next step (`step`), and `from` names
  * this one, so the server validates it before moving on. Back is a link (the default button stays Next, so Enter
- * moves forward); with JavaScript it takes unsubmitted edits along.
+ * moves forward); with JavaScript it takes unsubmitted edits along. The actions are the frames' BottomActionBar:
+ * the 56 px Next fills the bar, with Back (or Cancel on step 1) beside it.
  */
 export function JobEditorStepForm({
+  checklist,
   issues,
   landings,
+  notices,
   restorable,
   scope,
   step,
   values
 }: {
+  checklist: ReadonlyArray<{ label: string; step: JobEditorInputStepId; met: boolean }>
   issues: readonly MarketplaceDraftIssue[]
   landings: readonly MarketplaceDraftLandingContext[]
+  notices?: ReactNode
   restorable: boolean
   scope: string
   step: JobEditorInputStepId
@@ -134,20 +188,26 @@ export function JobEditorStepForm({
   const fields = { focus, issues, values }
 
   return (
-    <JobEditorStepSection step={step}>
+    <JobEditorStepSection notices={notices} step={step}>
       <form action={NEW_JOB_PATH} className={styles.form} id={JOB_EDITOR_FORM_ID} method="get" noValidate>
         <input name="from" type="hidden" value={step} />
         <DraftHiddenFields except={JOB_EDITOR_STEP_FIELDS[step]} values={values} />
         {step === "basics" ? <BasicsFields {...fields} landings={landings} /> : null}
-        {step === "pay" ? <PayFields {...fields} /> : null}
-        {step === "equipment" ? <EquipmentFields {...fields} /> : null}
+        {step === "pay" ? (
+          <>
+            <PayFields {...fields} />
+            <EquipmentFields {...fields} />
+          </>
+        ) : null}
+        <JobEditorChecklist checklist={checklist} values={values} />
         <FormActions
-          primary={<Button label={`Next: ${jobEditorStepLabel(next).toLowerCase()}`} name="step" type="submit" value={next} />}
+          className={styles.actions}
+          primary={<Button label="Next" name="step" size="lg" type="submit" value={next} />}
           secondary={
             previous ? (
-              <Button data-job-draft="carry" href={jobEditorStepHref(previous, values)} label="Back" variant="secondary" />
+              <Button data-job-draft="carry" href={jobEditorStepHref(previous, values)} label="Back" size="lg" variant="secondary" />
             ) : (
-              <Button data-job-draft="discard" href="/v2/landing/jobs" label="Cancel" variant="ghost" />
+              <Button data-job-draft="discard" href="/v2/landing/jobs" label="Cancel" size="lg" variant="ghost" />
             )
           }
         />
@@ -165,58 +225,5 @@ export function JobPreviewRow({ job, now }: { job: MarketplaceJobDetailView | nu
     </JobResultList>
   ) : (
     <p className={styles.hint}>The preview appears once the job has a landing, a title, pay, a truck count and at least one equipment type.</p>
-  )
-}
-
-/**
- * The aside: the live preview (the real JobResultRow, `context="preview"`) and what publishing requires. Each
- * requirement links to the step that sets it.
- */
-export function JobEditorAside({
-  checklist,
-  now,
-  preview,
-  values
-}: {
-  checklist: ReadonlyArray<{ label: string; step: JobEditorInputStepId; met: boolean }>
-  now: string
-  /** Omitted on the review step, which shows the preview in the main column. */
-  preview?: { job: MarketplaceJobDetailView | null }
-  values: DraftFormValues
-}) {
-  return (
-    <>
-      {preview ? (
-        <Section description="Exactly the row haulers see in search. It updates each time you continue." title="Preview">
-          <JobPreviewRow job={preview.job} now={now} />
-        </Section>
-      ) : null}
-      <Section title="What's required">
-        <div className={styles.stack}>
-          <ul className={styles.checklist}>
-            {checklist.map((item) => (
-              <li className={styles.checkItem} data-met={item.met ? "" : undefined} key={item.label}>
-                <span aria-hidden="true" className={styles.checkIcon}>{item.met ? "✓" : "–"}</span>
-                <span>
-                  <a data-job-draft="carry" href={jobEditorStepHref(item.step, values)}>{item.label}</a>
-                  <span className={styles.srOnly}>{item.met ? " (done)" : " (to do)"}</span>
-                </span>
-              </li>
-            ))}
-            <li className={styles.checkItem}>
-              <span aria-hidden="true" className={styles.checkIcon}>–</span>
-              <span>
-                Your three confirmations, on the review step
-                <span className={styles.srOnly}> (to do)</span>
-              </span>
-            </li>
-          </ul>
-          <p className={styles.hint}>
-            Haulers contact you through LogLoads messages, so the posting has no contact field. Leave phone numbers and email
-            addresses out of it; you can share them in a conversation with a business you choose.
-          </p>
-        </div>
-      </Section>
-    </>
   )
 }

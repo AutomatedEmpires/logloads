@@ -17,8 +17,10 @@ import { FormCheckbox } from "./FormCheckbox"
 import styles from "./JobEditor.module.css"
 
 /**
- * The fields of the job editor's three input steps (UX 02 §B4–B6), as design-system FormFields inside a GET form,
- * so each works without JavaScript. Field ids are the draft field names, and errors render as `<id>-error`.
+ * The fields of the job editor's two input steps, as the approved page 03 frames draw them (#431): step 1 "The job"
+ * (CE-03 `58:2523`, `156:1626`, `58:2377`; CE-03b `359:4602`) and step 2 "Pay and trucks" (CE-04 `58:2836`, `156:1751`,
+ * `58:2715`; CE-05 `58:3230`, `156:1901`, `58:3043`). They are design-system FormFields inside a GET form, so each works
+ * without JavaScript. Field ids are the draft field names, and errors render as `<id>-error`.
  * Pay is always required (V2-DEC-02); product and timing are required to publish (UX-DEC-03, UX-DEC-02). There is
  * no contact field (UX-DEC-04) and no publish statement: those are ticked on the review step, so editing a
  * draft never confirms anything.
@@ -60,18 +62,19 @@ const PRODUCT_NOTICES = MARKETPLACE_PRODUCTS.flatMap((product) => {
 const cssString = (text: string) => `"${text.replace(/["\\]/g, "\\$&").replace(/</g, "\\3c ").replace(/\n/g, "\\a ")}"`
 
 /**
- * Step 1 carries one notice variant per notice product. Where :has() exists, the checked product option shows its
- * variant, so the notice follows the select with or without JavaScript and adds no script to the page. Without
- * :has(), the variant for the saved product shows (`data-current`, JobEditor.module.css).
+ * Step 1 carries one notice variant per notice product, and "Describe the product" shows only for Other (CE-03b
+ * `359:5109`; CE-03 draws no description for Saw logs). Where :has() exists, the checked product option shows its
+ * variant and the description, so both follow the select with or without JavaScript and add no script to the page.
+ * Without :has(), the saved product's variant and, for a saved Other, the description show (`data-current`,
+ * JobEditor.module.css).
  */
 const PRODUCT_NOTICE_RULES = `@supports selector(:has(*)){${PRODUCT_NOTICES.map(
   ({ product }, index) => `form:has(#product option[value=${cssString(product)}]:checked) [data-notice-for="${index}"]{display:flex}`
-).join("")}}`
+).join("")}form:has(#product option[value=${cssString(MARKETPLACE_OTHER_PRODUCT)}]:checked) [data-other-field]{display:block}}`
 
 function ProductNotices({ product }: { product: string }) {
   return (
     <>
-      <style dangerouslySetInnerHTML={{ __html: PRODUCT_NOTICE_RULES }} />
       {PRODUCT_NOTICES.map((entry, index) => (
         <AdvertisingOnlyNotice data-current={entry.product === product ? "" : undefined} data-notice-for={String(index)} key={entry.product} notice={entry.notice} />
       ))}
@@ -102,13 +105,43 @@ function GroupError({ id, message }: { id: string; message: string | undefined }
   return message ? <p className={styles.error} id={id} role="alert">{message}</p> : null
 }
 
-/** Step 1: Basics & location. */
+/**
+ * Step 1, "The job" (CE-03, CE-03b), in the frames' order: the job title, the product (with its description for Other
+ * and the advertising-only notice), the landing, the destination and the miles. The public road notes and the
+ * description stay on this step, folded away, because they describe the job.
+ */
 export function BasicsFields({ values, issues, focus, landings }: StepFieldsProps & { landings: readonly MarketplaceDraftLandingContext[] }) {
   const v = (name: DraftTextField) => valueOf(values, name)
+  const otherError = errorFor(issues, "productOther")
+  const detailsOpen = (["publicRoadNotes", "description"] as const).some((name) => v(name) || errorFor(issues, name))
 
   return (
     <>
-      <FormField error={errorFor(issues, "landingId")} hint="Only your business's active landings can post jobs." id="landingId" label="Landing">
+      <style dangerouslySetInnerHTML={{ __html: PRODUCT_NOTICE_RULES }} />
+      <FormField error={errorFor(issues, "title")} hint="Name the work so a hauler can tell jobs apart." id="title" label="Job title">
+        <input autoFocus={focus === "title"} defaultValue={v("title")} maxLength={140} name="title" required />
+      </FormField>
+      <FormField error={errorFor(issues, "product")} hint="Haulers filter jobs by product." id="product" label="Product">
+        <select autoFocus={focus === "product"} defaultValue={v("product")} name="product" required>
+          <option value="">Choose a product</option>
+          {MARKETPLACE_PRODUCTS.map((product) => (
+            <option key={product} value={product}>{product}</option>
+          ))}
+        </select>
+      </FormField>
+      {/* Only for Other. An error on it always shows it, whatever the select says, so no message is ever hidden. */}
+      <div
+        className={styles.otherField}
+        data-current={v("product") === MARKETPLACE_OTHER_PRODUCT ? "" : undefined}
+        data-force={otherError ? "" : undefined}
+        data-other-field=""
+      >
+        <FormField error={otherError} hint="Up to 120 characters. Haulers see this." id="productOther" label="Describe the product">
+          <input autoFocus={focus === "productOther"} defaultValue={v("productOther")} maxLength={120} name="productOther" />
+        </FormField>
+      </div>
+      <ProductNotices product={v("product")} />
+      <FormField error={errorFor(issues, "landingId")} hint="Haulers see the landing and its area, not the gate." id="landingId" label="Landing">
         <select autoFocus={focus === "landingId"} defaultValue={v("landingId")} name="landingId" required>
           <option value="">Choose a landing</option>
           {landings.map((landing) => (
@@ -116,67 +149,70 @@ export function BasicsFields({ values, issues, focus, landings }: StepFieldsProp
           ))}
         </select>
       </FormField>
-      <FormField error={errorFor(issues, "title")} hint="Haulers see this first, for example “Oak saw logs to Springfield”." id="title" label="Title">
-        <input autoFocus={focus === "title"} defaultValue={v("title")} maxLength={140} name="title" required />
+      <FormField error={errorFor(issues, "destinationLabel")} hint="A mill or area. Keep the gate out of this field." id="destinationLabel" label="Destination" optional>
+        <input autoFocus={focus === "destinationLabel"} defaultValue={v("destinationLabel")} maxLength={160} name="destinationLabel" />
       </FormField>
-      <FormField error={errorFor(issues, "product")} hint="Required to publish." id="product" label="Product">
-        <select autoFocus={focus === "product"} defaultValue={v("product")} name="product" required>
-          <option value="">Choose a product</option>
-          {MARKETPLACE_PRODUCTS.map((product) => (
-            <option key={product} value={product}>{product === MARKETPLACE_OTHER_PRODUCT ? "Other (describe)" : product}</option>
-          ))}
-        </select>
+      <FormField error={errorFor(issues, "estOneWayMiles")} hint="Your estimate, shown as one." id="estOneWayMiles" label="One-way miles" optional>
+        <input
+          autoFocus={focus === "estOneWayMiles"}
+          defaultValue={v("estOneWayMiles")}
+          inputMode="numeric"
+          max={MARKETPLACE_DRAFT_LIMITS.estOneWayMiles}
+          min={1}
+          name="estOneWayMiles"
+          type="number"
+        />
       </FormField>
-      <FormField
-        error={errorFor(issues, "productOther")}
-        hint="Only for Other: what is being hauled, up to 120 characters."
-        id="productOther"
-        label="Describe the product"
-      >
-        <input autoFocus={focus === "productOther"} defaultValue={v("productOther")} maxLength={120} name="productOther" />
-      </FormField>
-      <ProductNotices product={v("product")} />
-      <div className={styles.pair}>
-        <FormField error={errorFor(issues, "destinationLabel")} hint="Mill or yard and town. Public." id="destinationLabel" label="Destination" optional>
-          <input autoFocus={focus === "destinationLabel"} defaultValue={v("destinationLabel")} maxLength={160} name="destinationLabel" />
-        </FormField>
-        <FormField error={errorFor(issues, "estOneWayMiles")} hint="Your estimate, shown as one." id="estOneWayMiles" label="One-way miles" optional>
-          <input
-            autoFocus={focus === "estOneWayMiles"}
-            defaultValue={v("estOneWayMiles")}
-            inputMode="numeric"
-            max={MARKETPLACE_DRAFT_LIMITS.estOneWayMiles}
-            min={1}
-            name="estOneWayMiles"
-            type="number"
-          />
-        </FormField>
-      </div>
+
+      <details className={styles.more} open={detailsOpen}>
+        <summary>Road notes and description (optional)</summary>
+        <div className={styles.moreBody}>
+          <FormField
+            error={errorFor(issues, "publicRoadNotes")}
+            hint="Public conditions only. Never gate codes, combinations or exact coordinates: share access details privately with haulers you approve."
+            id="publicRoadNotes"
+            label="Public road notes"
+            optional
+          >
+            <textarea autoFocus={focus === "publicRoadNotes"} defaultValue={v("publicRoadNotes")} maxLength={1000} name="publicRoadNotes" rows={3} />
+          </FormField>
+          <FormField
+            error={errorFor(issues, "description")}
+            hint="Anything else haulers should know. Public. Haulers contact you through LogLoads messages, so leave phone numbers and email addresses out."
+            id="description"
+            label="Description"
+            optional
+          >
+            <textarea autoFocus={focus === "description"} defaultValue={v("description")} maxLength={6000} name="description" rows={4} />
+          </FormField>
+        </div>
+      </details>
     </>
   )
 }
 
-/** Step 2: Pay & scope (pay, timing and truck demand). */
+/**
+ * Step 2, "Pay and trucks" (CE-04, CE-05), in the frames' order: the pay basis and amount, the trucks needed and per
+ * working day, when work starts, then the truck and trailer (EquipmentFields). How long the job runs sits with the
+ * start, because publishing needs one of an end date, a duration or Ongoing (UX-DEC-02).
+ */
 export function PayFields({ values, issues, focus }: StepFieldsProps) {
   const v = (name: DraftTextField) => valueOf(values, name)
   const workPeriodError = errorFor(issues, "workPeriod")
 
   return (
     <>
-      <p className={styles.hint}>Every published job states pay: an amount with what it is per, or Negotiable with a note on how pay is set.</p>
-      <div className={styles.pair}>
-        <FormField error={errorFor(issues, "payUnit")} id="payUnit" label="Pay basis">
-          <select autoFocus={focus === "payUnit"} defaultValue={v("payUnit")} name="payUnit" required>
-            <option value="">Choose a basis</option>
-            {marketplacePayUnitSchema.options.map((unit) => (
-              <option key={unit} value={unit}>{sentence(MARKETPLACE_PAY_UNIT_LABELS[unit])}</option>
-            ))}
-          </select>
-        </FormField>
-        <FormField error={errorFor(issues, "payAmount")} hint="Leave blank for negotiable pay." id="payAmount" label="Amount ($)">
-          <input autoFocus={focus === "payAmount"} defaultValue={v("payAmount")} inputMode="decimal" name="payAmount" placeholder="525" />
-        </FormField>
-      </div>
+      <FormField error={errorFor(issues, "payUnit")} id="payUnit" label="Pay basis">
+        <select autoFocus={focus === "payUnit"} defaultValue={v("payUnit")} name="payUnit" required>
+          <option value="">Choose a basis</option>
+          {marketplacePayUnitSchema.options.map((unit) => (
+            <option key={unit} value={unit}>{sentence(MARKETPLACE_PAY_UNIT_LABELS[unit])}</option>
+          ))}
+        </select>
+      </FormField>
+      <FormField error={errorFor(issues, "payAmount")} hint="Leave this blank only if you mark pay as negotiable." id="payAmount" label="Pay amount">
+        <input autoFocus={focus === "payAmount"} defaultValue={v("payAmount")} inputMode="decimal" name="payAmount" placeholder="525.00" />
+      </FormField>
       <FormField
         error={errorFor(issues, "payNote")}
         hint="Required for negotiable pay or another basis. No phone numbers, email addresses or access details."
@@ -187,7 +223,31 @@ export function PayFields({ values, issues, focus }: StepFieldsProps) {
         <input autoFocus={focus === "payNote"} defaultValue={v("payNote")} maxLength={300} name="payNote" />
       </FormField>
 
-      <FormField error={errorFor(issues, "startsOn")} hint="Required to publish." id="startsOn" label="Work starts">
+      <FormField error={errorFor(issues, "trucksRequested")} id="trucksRequested" label="Trucks needed">
+        <input
+          autoFocus={focus === "trucksRequested"}
+          defaultValue={v("trucksRequested") || "1"}
+          inputMode="numeric"
+          max={MARKETPLACE_DRAFT_LIMITS.trucksRequested}
+          min={1}
+          name="trucksRequested"
+          required
+          type="number"
+        />
+      </FormField>
+      <FormField error={errorFor(issues, "trucksPerDay")} id="trucksPerDay" label="Trucks per working day" optional>
+        <input
+          autoFocus={focus === "trucksPerDay"}
+          defaultValue={v("trucksPerDay")}
+          inputMode="numeric"
+          max={MARKETPLACE_DRAFT_LIMITS.trucksRequested}
+          min={1}
+          name="trucksPerDay"
+          type="number"
+        />
+      </FormField>
+
+      <FormField error={errorFor(issues, "startsOn")} id="startsOn" label="Work starts">
         <input autoFocus={focus === "startsOn"} defaultValue={v("startsOn")} name="startsOn" type="date" />
       </FormField>
       <fieldset aria-describedby={workPeriodError ? "workPeriod-error workPeriod-hint" : "workPeriod-hint"} className={styles.fieldset}>
@@ -228,32 +288,6 @@ export function PayFields({ values, issues, focus }: StepFieldsProps) {
         <GroupError id="ongoing-error" message={errorFor(issues, "ongoing")} />
         <GroupError id="workPeriod-error" message={workPeriodError} />
       </fieldset>
-
-      <div className={styles.pair}>
-        <FormField error={errorFor(issues, "trucksRequested")} id="trucksRequested" label="Trucks needed for the job">
-          <input
-            autoFocus={focus === "trucksRequested"}
-            defaultValue={v("trucksRequested") || "1"}
-            inputMode="numeric"
-            max={MARKETPLACE_DRAFT_LIMITS.trucksRequested}
-            min={1}
-            name="trucksRequested"
-            required
-            type="number"
-          />
-        </FormField>
-        <FormField error={errorFor(issues, "trucksPerDay")} id="trucksPerDay" label="Trucks per working day" optional>
-          <input
-            autoFocus={focus === "trucksPerDay"}
-            defaultValue={v("trucksPerDay")}
-            inputMode="numeric"
-            max={MARKETPLACE_DRAFT_LIMITS.trucksRequested}
-            min={1}
-            name="trucksPerDay"
-            type="number"
-          />
-        </FormField>
-      </div>
     </>
   )
 }
@@ -264,18 +298,20 @@ const EQUIPMENT_GROUPS = [
   { category: "attachment", label: "Attachments" }
 ] as const
 
-/** Step 3: Equipment & volume. Equipment is grouped by truck, trailer and attachment (MARKETPLACE_EQUIPMENT_TYPES). */
+/**
+ * The end of step 2: the truck and trailer (CE-04 "Truck and trailer", CE-05's error), grouped by truck, trailer and
+ * attachment (MARKETPLACE_EQUIPMENT_TYPES), then the optional volume estimates, folded away.
+ */
 export function EquipmentFields({ values, issues, focus }: StepFieldsProps) {
   const v = (name: DraftTextField) => valueOf(values, name)
   const equipmentError = errorFor(issues, "equipment")
   const firstCode = MARKETPLACE_EQUIPMENT_TYPES[0].code
   const estimatesOpen = (["estLoadsPerTruckPerDay", "estDailyLoads", "estTonsPerLoad"] as const).some((name) => v(name) || errorFor(issues, name))
-  const detailsOpen = (["publicRoadNotes", "description"] as const).some((name) => v(name) || errorFor(issues, name))
 
   return (
     <>
       <fieldset aria-describedby={equipmentError ? "equipment-error" : undefined} className={styles.fieldset}>
-        <legend className={styles.legend}>Equipment required</legend>
+        <legend className={styles.legend}>Truck and trailer</legend>
         <p className={styles.hint}>Choose every truck, trailer and attachment that fits the job. At least one is required.</p>
         <div className={styles.groups}>
           {EQUIPMENT_GROUPS.map((group) => (
@@ -323,24 +359,6 @@ export function EquipmentFields({ values, issues, focus }: StepFieldsProps) {
           </div>
           <FormField error={errorFor(issues, "estTonsPerLoad")} id="estTonsPerLoad" label="Tons per load" optional>
             <input autoFocus={focus === "estTonsPerLoad"} defaultValue={v("estTonsPerLoad")} inputMode="decimal" name="estTonsPerLoad" />
-          </FormField>
-        </div>
-      </details>
-
-      <details className={styles.more} open={detailsOpen}>
-        <summary>Road notes and description (optional)</summary>
-        <div className={styles.moreBody}>
-          <FormField
-            error={errorFor(issues, "publicRoadNotes")}
-            hint="Public conditions only. Never gate codes, combinations or exact coordinates: share access details privately with haulers you approve."
-            id="publicRoadNotes"
-            label="Public road notes"
-            optional
-          >
-            <textarea autoFocus={focus === "publicRoadNotes"} defaultValue={v("publicRoadNotes")} maxLength={1000} name="publicRoadNotes" rows={3} />
-          </FormField>
-          <FormField error={errorFor(issues, "description")} hint="Anything else haulers should know. Public." id="description" label="Description" optional>
-            <textarea autoFocus={focus === "description"} defaultValue={v("description")} maxLength={6000} name="description" rows={4} />
           </FormField>
         </div>
       </details>

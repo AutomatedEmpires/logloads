@@ -35,3 +35,35 @@
 .confirmCheck { flex: 1 1 18rem; min-width: 0; }
 
 .confirmNote { font-size: var(--ll-text-sm); color: var(--ll-color-text-muted); }
+
+/* A day-14 listing (CE-01 414:5668): the FreshnessChip's waiting state, the status.open icon and the words in
+   color/text on the neutral tint, never colour alone, then what it means in text-secondary. */
+.waitingChip {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: var(--ll-space-2);
+  margin: 0;
+  padding: 6px var(--ll-space-3) 6px var(--ll-space-2);
+  border-radius: var(--ll-radius-pill);
+  background: var(--ll-color-status-neutral-bg);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+}
+
+.waitingIcon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: var(--ll-color-text);
+  -webkit-mask: url("../../../../components/v2/status-open.svg") center / 20px 20px no-repeat;
+  mask: url("../../../../components/v2/status-open.svg") center / 20px 20px no-repeat;
+}
+
+.waitingText { margin: 0; font-size: var(--ll-text-base); line-height: var(--ll-leading-normal); color: var(--ll-color-text-secondary); }
+
+@media (forced-colors: active) {
+  .waitingChip { outline: 1px solid CanvasText; }
+  .waitingIcon { forced-color-adjust: none; background-color: CanvasText; }
+}
