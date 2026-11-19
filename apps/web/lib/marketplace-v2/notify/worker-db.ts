@@ -29,25 +29,27 @@ export interface NotificationWorkerDb extends NotificationWorkerStore {
 const SESSION_SETUP =
   "select set_config('search_path', '', true), set_config('role', 'service_role', true), set_config('request.jwt.claims', '{\"role\":\"service_role\"}', true)"
 
+// Every parameter is sent as text and cast in SQL (as normalized-db.ts does): postgres.js would otherwise serialize a
+// value by the type it infers, and JSON-encode a JSON string a second time for a jsonb parameter.
 const CLAIM =
   "select notification_id::text as notification_id, claim_token::text as claim_token, category, recipient_user_id::text as recipient_user_id, " +
   "recipient_org_id::text as recipient_org_id, delivery_address, payload, attempt_count::int as attempt_count " +
-  "from marketplace.claim_email_notifications($1::int, make_interval(secs => $2::int))"
+  "from marketplace.claim_email_notifications($1::text::int, make_interval(secs => $2::text::int))"
 
 const COMPLETE =
-  "select marketplace.complete_email_notification($1::uuid, $2::uuid, $3::text, $4::text, $5::text, " +
-  "case when $6::int is null then null else make_interval(secs => $6::int) end) as status"
+  "select marketplace.complete_email_notification($1::text::uuid, $2::text::uuid, $3::text, $4::text, $5::text, " +
+  "case when $6::text is null then null else make_interval(secs => $6::text::int) end) as status"
 
 const CONTEXT =
   "select c.queued_at, c.unsubscribe_token, c.invitation_send_count::int as invitation_send_count " +
-  "from marketplace.notification_email_context($1::uuid, $2::uuid) c"
+  "from marketplace.notification_email_context($1::text::uuid, $2::text::uuid) c"
 
 const SUPPRESSED =
-  "select address_hash from marketplace.email_suppressed_hashes(array(select jsonb_array_elements_text($1::jsonb)))"
+  "select address_hash from marketplace.email_suppressed_hashes(array(select jsonb_array_elements_text($1::text::jsonb)))"
 
 const SUPPRESS = "select marketplace.suppress_email_address($1::text, $2::text) as added"
 
-const PROVIDER_EVENT = "select marketplace.record_email_provider_event($1::text, $2::text, $3::timestamptz) as updated"
+const PROVIDER_EVENT = "select marketplace.record_email_provider_event($1::text, $2::text, $3::text::timestamptz) as updated"
 
 const CATEGORIES: readonly MarketplaceNoticeCategory[] = ["team_invitation", "inquiry_reply", "job_alert"]
 
@@ -127,13 +129,13 @@ export function createPostgresNotificationWorker(options: { url?: string; sql?: 
 
   return {
     async claim(limit, leaseSeconds) {
-      return (await run(CLAIM, [limit, leaseSeconds])).map(claimOf)
+      return (await run(CLAIM, [String(Math.trunc(limit)), String(Math.trunc(leaseSeconds))])).map(claimOf)
     },
 
     async complete(notificationId, claimToken, outcome: MarketplaceEmailNoticeOutcome) {
       const providerId = outcome.outcome === "sent" ? outcome.providerMessageId : null
       const failure = outcome.outcome === "sent" ? null : outcome.failure
-      const retryAfter = outcome.outcome === "retry" && outcome.retryAfterSeconds ? Math.round(outcome.retryAfterSeconds) : null
+      const retryAfter = outcome.outcome === "retry" && outcome.retryAfterSeconds ? String(Math.round(outcome.retryAfterSeconds)) : null
       const [row] = await run(COMPLETE, [notificationId, claimToken, outcome.outcome, providerId, failure, retryAfter])
 
       return String(row?.status ?? "")
