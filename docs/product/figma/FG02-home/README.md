@@ -1,6 +1,6 @@
 # FG02 Home: landing Overview and hauler Find Work in Figma
 
-**Status:** TARGET. First built on 2026-11-10 (#258). Revised on 2026-11-11 (#295) to pass design audit 2 (#285) with zero blockers. Updated on 2026-11-18 (#367) to use the components promoted in #352 and to fix design audit 4's page 02 findings (see [the #367 section](#00-system-swap-and-design-audit-4-367-2026-11-18)). Updated on 2026-11-19 (#434) to use the 00 System variants that #426 added (see [the #434 section](#00-system-variants-from-426-adopted-434-2026-11-19)). It is not approved yet. These are key screens, so they need the founder's approval before anyone builds a change from them (AE-Control `policy/designops.md`).
+**Status:** TARGET. First built on 2026-11-10 (#258). Revised on 2026-11-11 (#295) to pass design audit 2 (#285) with zero blockers. Updated on 2026-11-18 (#367) to use the components promoted in #352 and to fix design audit 4's page 02 findings (see [the #367 section](#00-system-swap-and-design-audit-4-367-2026-11-18)). Updated on 2026-11-19 (#434) to use the 00 System variants that #426 added (see [the #434 section](#00-system-variants-from-426-adopted-434-2026-11-19)). Updated again on 2026-11-19 (#439): Pickup shows only the approximate area before a release, and wide rows word truck demand as narrow rows do (see [the #439 section](#approximate-pickup-and-the-434-follow-ups-439-2026-11-19)). It is not approved yet. These are key screens, so they need the founder's approval before anyone builds a change from them (AE-Control `policy/designops.md`).
 **Figma page:** [02 Home](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-79) in the LogLoads file (jackson.cole's team).
 **Built from:** page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) (#256, #281, #352, `docs/product/figma/FG00-system/README.md`): its components, variables and text styles, including the #281 field layer merged at `13dc399` (FreshnessChip, BottomActionBar, Notice, Offline, PermissionDenied, Fact, Input, FormField at 16 px, the Touch mode and the Dark mode) and the parts #352 promoted from page 02 (JobResultRow narrow, PageHeader, FindWorkSummary, SegmentedControl, ResponsiveNavigation landing). Since #434 it also uses the #426 variants: JobResultRow `Layout=wide`, JobDetail with its JobSummary, and PageHeader's Show title action and `Breakpoint=tablet`. Page 00 was not edited in #295, #367 or #434. No UI code changed in any of these tasks.
 **Standards:** quality bar v1 (#235 comment 6783016152) and the field design bar FD1 to FD8 (#235 comment 6784066522).
@@ -15,6 +15,30 @@ The page now has 61 screen frames in four sections (51 Light frames at 390, 768 
 - The dark theme is decided: it follows the phone. The 10 key 390 px screens have a Dark copy that sets the Color collection to Dark.
 - Overlays are one viewport tall (390 × 844, 768 × 1024, 1440 × 900). The page behind is an inert copy of the matching results frame under the backdrop.
 - The example data is the same in every frame: the hauler is Granite Creek Hauling (GC, the hauler on page 03), the landing business is North Ridge Logging on the Pro plan, and the new subscriber is Cedar Flat Logging on Basic. Places are Oregon towns from `apps/web/lib/marketplace-v2/places.ts`.
+
+## Approximate pickup and the #434 follow-ups (#439, 2026-11-19)
+
+The lead approved #434 with one privacy condition ([#434 comment 6999508665](https://github.com/AutomatedEmpires/logloads/issues/434#issuecomment-6999508665), lead decision 2026-11-19). On every public view, and on every hauler view before the poster releases the details, Pickup shows only the approximate area. It never shows the landing name. The landing name belongs with the private details that #403 releases. #433 keeps the code on the approximate area.
+
+| Change | Count | Where |
+|---|---|---|
+| Pickup reads "Near Sweet Home, OR · approximate area". It read "Quartzville landing, near Sweet Home, OR". This is the 00 JobSummary default. The Pickup Fact's Value property was set, so every instance stays linked. | 12 | Job selected [261:14303](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14303), [261:14407](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14407), [261:14511](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14511); Interest sent [261:14799](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14799), [261:14901](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-14901), [261:15002](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-15002); Interest waiting for signal [261:15283](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-15283), [261:15385](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-15385), [261:15486](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=261-15486); and the Dark sheets [293:10028](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-10028), [293:10048](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-10048), [293:10069](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=293-10069) |
+| Wide rows read "6 trucks for the job · 3 a day" (they read "6 trucks, 3 a day") | 14 | The Lebanon mill row in every 768 and 1440 px Find Work frame that shows it, including the 3 selected rows |
+| Wide rows read "4 trucks for the job · 2 a day" (they read "4 trucks, 2 a day") | 2 | More than 100 jobs at 768 and 1440 px |
+| The verification mark fits its column. The 00 mark's minimum width is 380 px since #439 (it was 420), so at 768 px the mark is 404 px wide, the same as its column. | 8 | The 768 px rows that show the mark |
+
+What looks different, on purpose:
+
+- At 768 px the Lebanon mill row is 300 px tall (it was 272). The dates and the demand now take a line each ("Nov 17 – Dec 8 · about 22 days", then "6 trucks for the job · 3 a day"). At 1440 px they still share one line, and the row is 228 px (256 px beside the open panel), as before.
+- Nothing else moved. A script compared the mark's position and size in all 16 wide rows that show it, before and after the 00 change. Only the eight 768 px marks changed (420 px to 404 px).
+
+Not changed, and why:
+
+- **JobSummary's short line** still reads "About 22 days · 6 trucks, 3 a day" (audit 2, H7). It joins the duration and the demand on one line, and the Trucks needed fact under it reads "6 for the job · 3 a day".
+- **The Overview frames** still name "Quartzville landing" and "Green Peter landing". That is the landing business reading its own landings, not a hauler view.
+- **The Near field's hint** in the filter form still reads "A town or landing name". It names no landing, but it says a hauler can search by landing name. That is a question for the lead now that landing names are private before a release.
+
+Gaps 8 and 9 below are closed.
 
 ## 00 System variants from #426 adopted (#434, 2026-11-19)
 
@@ -214,10 +238,25 @@ These are follow-ups. Gaps 1 to 4 of the #295 revision were closed by #352 and #
 5. **Not designed here:** the saved-jobs list that Save leads to, a "Mark filled" action (flow E), the map view, alerts and saved searches in the empty state, and the inquiry screens behind "See inquiries" and "See my inquiries" (flow C).
 6. **Dark frames at 768 and 1440 px** are not drawn. They switch through the Color collection the same way as the 390 px ones.
 7. **Code.** The loading, error, offline, more-than-100, interest-sent and waiting states, the reconfirm-with-Undo flow and one-tap Send interest are not in the code yet. They need their own build tasks after approval.
-8. **00 System JobResultRow `Layout=wide`: the mark's minimum width** (from #434). The verification mark inside the wide row has a 420 px minimum width, so that it takes its own line. At 768 px the row's content column is 404 px, so in the eight 768 px rows that show the mark its layer is 16 px wider than the column that clips it. The sentence wraps inside the column and nothing is cut (checked by screenshot). An instance cannot override a minimum width. The fix is in 00: lower the minimum to 380 px or less, or let the mark fill the column. Page 00 was not edited here.
-9. **The wide and narrow rows word one demand differently** (found in #434, not changed). The Lebanon mill job reads "6 trucks, 3 a day" in the wide rows and "6 trucks for the job · 3 a day" in the narrow rows. Both were copied as written. Pick one wording when the rows are next touched.
+8. **Closed (#439). 00 System JobResultRow `Layout=wide`: the mark's minimum width** (from #434). The minimum is 380 px since #439, and the eight marks are 404 px wide, inside their column. What #434 recorded: The verification mark inside the wide row has a 420 px minimum width, so that it takes its own line. At 768 px the row's content column is 404 px, so in the eight 768 px rows that show the mark its layer is 16 px wider than the column that clips it. The sentence wraps inside the column and nothing is cut (checked by screenshot). An instance cannot override a minimum width. The fix is in 00: lower the minimum to 380 px or less, or let the mark fill the column. Page 00 was not edited here.
+9. **Closed (#439). The wide and narrow rows word one demand differently** (found in #434). Both now read "6 trucks for the job · 3 a day". What #434 recorded: The Lebanon mill job reads "6 trucks, 3 a day" in the wide rows and "6 trucks for the job · 3 a day" in the narrow rows. Both were copied as written. Pick one wording when the rows are next touched.
 
 ## Checks
+
+### After #439 (2026-11-19)
+
+- **Changed:** 12 Pickup values and 16 wide-row demand lines. A script returned each changed frame and its new text. The 00 change to the mark's minimum width reached the eight 768 px rows.
+- **Screenshots.** All 22 changed frames were captured on their own with `get_screenshot` and looked at: the 6 sheets at 390 px, Light and Dark; the 8 frames at 768 px; and the 8 frames at 1440 px. Pickup reads the approximate area in all 12 job details. The mark wraps inside its column at 768 px. Nothing was clipped or overlapping.
+- **Read-only audit of the page** (every frame but the annotation: 10,373 visible nodes, 2,787 instances, 3,306 texts).
+  - Text under 14 px: none.
+  - Controls under 44 px: none.
+  - Fills or strokes without a variable or a style: none.
+  - Text outside its frame or a clipping container: none. The eight marks that #434 reported are inside their column.
+  - Overlapping children in an auto-layout frame: none.
+  - "verified" in any text: none.
+  - Instances without a main component: none.
+  - A landing name on a hauler view: none. "Quartzville landing" and "Green Peter landing" are only in the Overview frames and the local Landings component, which the landing business reads about itself.
+- Nothing was checked in a browser.
 
 ### After #434 (2026-11-19)
 
