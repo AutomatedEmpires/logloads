@@ -88,7 +88,7 @@ describe.skipIf(!DISPOSABLE)("basin adapter contract (disposable PostgreSQL 17)"
 
     try {
       const ledger = await admin.unsafe("select string_agg(version, ',' order by applied_at, version) as versions from marketplace.schema_migrations")
-      expect(ledger[0]?.versions).toBe("06,11,12,16,18,23,26,29,31,33,35,38,40,42")
+      expect(ledger[0]?.versions).toBe("06,11,12,16,18,23,26,29,31,33,35,38,40,42,44")
 
       await expect(pilotBasins().createBasin()).rejects.toThrow(/not available until the normalized marketplace store is connected/)
       await expect(basins.createBasin(person, { counties: ["Deschutes"], name: "Contract Sisters", reason: "A person is not staff", stateCode: "OR" }))

@@ -1,6 +1,15 @@
 import { notFound } from "next/navigation"
+import type { ReactNode } from "react"
 
-import { marketplaceEquipmentFit, toPublicJobView, type HaulerFleetView, type MarketplaceInterestView } from "@logloads/contracts"
+import {
+  formatPhoneForDisplay,
+  marketplaceEquipmentFit,
+  phoneHref,
+  toPublicJobView,
+  type HaulerFleetView,
+  type MarketplaceHaulerJobAccess,
+  type MarketplaceInterestView
+} from "@logloads/contracts"
 import { fleetCapacity } from "@logloads/services"
 import { ContentGrid, PageContainer, PageHeader, Section } from "@logloads/ui/layout"
 import { formatDay, inquiryStatus, JobDetail, jobClosureText, jobSummaryId } from "@logloads/ui/marketplace"
@@ -16,6 +25,7 @@ import { ReportListing } from "@/components/v2/ReportListing"
 import { ShareListing } from "@/components/v2/ShareListing"
 import { FlowClockStop, FlowTapCounter } from "@/lib/analytics/beacons"
 import { clientAnalyticsEnabled } from "@/lib/analytics/client"
+import { loadHaulerJobAccess } from "@/lib/marketplace-v2/disclosure/load"
 import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
 import { contradictionText, UPDATE_AVAILABILITY, type CapacityContradiction } from "@/lib/marketplace-v2/interest-capacity"
@@ -46,6 +56,42 @@ function SentContradictions({ contradictions }: { contradictions: CapacityContra
       <AppLink className={styles.link} href={contradiction.href}>{UPDATE_AVAILABILITY}</AppLink>
     </p>
   ))
+}
+
+/**
+ * The landing's access details and site phone, released to the viewer's own hauling business after the landing
+ * replied and chose Show my number (#403, #325). Server-rendered text and a `tel:` link: no script on this page.
+ * Only the business named on the release reads them, and only while it lasts; a Hide, a decline or a withdrawal
+ * takes them away on the next load.
+ */
+function ReleasedAccess({ access, posterName }: { access: MarketplaceHaulerJobAccess; posterName: string }) {
+  const facts: Array<{ label: string; value: ReactNode }> = [
+    access.siteContactPhone
+      ? {
+          label: "Phone",
+          value: <a className={styles.link} href={phoneHref(access.siteContactPhone)}>{formatPhoneForDisplay(access.siteContactPhone)}</a>
+        }
+      : null,
+    access.siteContactName ? { label: "Site contact", value: access.siteContactName } : null,
+    access.directions ? { label: "Directions", value: access.directions } : null,
+    access.gateInstructions ? { label: "Gate", value: access.gateInstructions } : null
+  ].filter((fact): fact is NonNullable<typeof fact> => fact !== null)
+
+  if (facts.length === 0) return null
+
+  return (
+    <Section title="Access details" variant="open">
+      <dl className={styles.facts}>
+        {facts.map((fact) => (
+          <div className={styles.fact} key={fact.label}>
+            <dt className={styles.factLabel}>{fact.label}</dt>
+            <dd className={styles.factValue}>{fact.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className={styles.hint}>{posterName} shared these with your business only, after replying. They are never public.</p>
+    </Section>
+  )
 }
 
 /**
@@ -130,6 +176,8 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const measured = clientAnalyticsEnabled()
   const now = new Date()
   const standing = standingInterest(existing)
+  // #403: what the landing released to this business, read only once it has replied to the business's inquiry.
+  const released = viewer && standing?.status === "replied" ? await loadHaulerJobAccess(viewer.organizationId, job.id) : null
   const justSent = sent && standing !== null
   const showForm = job.acceptingInterest && canExpress && !standing
   const showSimilar = !job.acceptingInterest || justSent
@@ -235,6 +283,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                   <ReportListing jobId={job.id} signedIn={Boolean(actor)} signInHref={`/sign-in?next=${encodeURIComponent(`${path}#report`)}`} />
                 </div>
               </Section>
+              {released ? <ReleasedAccess access={released} posterName={job.posterName} /> : null}
               {showSimilar ? <SimilarJobs jobs={similar} /> : null}
               <Section title="Listing dates" variant="open">
                 <dl className={styles.facts}>
