@@ -1,0 +1,60 @@
+/* Flow C, C4 and C5 (#403): the number offer after a reply, and the number showing. Design-system tokens only. */
+.card {
+  display: grid;
+  gap: var(--ll-space-3);
+  margin: var(--ll-space-4) var(--ll-space-5) 0;
+  padding: var(--ll-space-4);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface);
+  color: var(--ll-color-text);
+}
+
+.card[data-state="showing"] {
+  border-left: 4px solid var(--ll-color-status-positive);
+  background: var(--ll-color-status-positive-bg);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-2);
+}
+
+.head > svg { flex: none; margin-top: 2px; color: var(--ll-color-status-positive); }
+
+.title {
+  margin: 0;
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+}
+
+.text {
+  margin: 0;
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.number { font-weight: var(--ll-weight-semibold); white-space: nowrap; }
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ll-space-2);
+}
+
+.actions > form { display: contents; }
+
+.primary { flex: 1 1 100%; }
+
+.primary :where(button) { width: 100%; }
+
+/* After a show that did not reach the hauler, or a hide: one line, as the reply's own notice. */
+.notice {
+  margin: var(--ll-space-4) var(--ll-space-5) 0;
+  font-size: var(--ll-text-base);
+  font-weight: var(--ll-weight-semibold);
+}
