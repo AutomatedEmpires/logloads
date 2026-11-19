@@ -9,3 +9,11 @@
 }
 
 .mark { color: var(--ll-color-status-positive); }
+
+/* #412: on profile pages the limits sentence is text on its own line under the mark, until the sheet holds it (#419). */
+.verified[data-limits] {
+  flex-wrap: wrap;
+  row-gap: var(--ll-space-1);
+}
+
+.limits { flex-basis: 100%; }
