@@ -85,21 +85,53 @@ export function marketplaceProductNeedsNotice(product: string | null | undefined
   return marketplaceCommodityClass(product) === "notice"
 }
 
+/** The notice's body for one haul ("this haul", or "this haul of <product>"), so every wording has the same sentences. */
+function advertisingOnlyNoticeBody(haul: string): string {
+  return `You and the hauler are responsible for any operating authority ${haul} needs. LogLoads does not arrange the haul or check authority.`
+}
+
 /**
- * The notice a notice-class job shows its poster, on the product step and in the preview. Rendering it waits for the
- * #336 frames and founder approval. DRAFT FOR COUNSEL: it describes what LogLoads does and who is responsible, and
- * never states a legal conclusion such as "LogLoads is not a broker" or that a haul is exempt (spec §11.5).
+ * The notice a notice-class job shows its poster, on the product step and in the preview (#422). The words are the
+ * approved #336 frame's (Figma CE-03b `359:4602`; lead decision on #422, 2026-11-19), which replaced the #339 draft
+ * ("The poster and the hauler make their own agreement. ...", id `advertising-only-notice-draft-2026-11-18`). This
+ * body leaves the product out, as the "Other" frame does; `advertisingOnlyNotice` names a listed product. DRAFT FOR
+ * COUNSEL: it describes what LogLoads does and who is responsible, and never states a legal conclusion such as
+ * "LogLoads is not a broker" or that a haul is exempt (spec §11.5). Counsel's review of the final words stays a launch
+ * gate.
  */
 export const ADVERTISING_ONLY_NOTICE = Object.freeze({
-  body: "The poster and the hauler make their own agreement. They are responsible for any operating authority the haul needs.",
-  id: "advertising-only-notice-draft-2026-11-18",
+  body: advertisingOnlyNoticeBody("this haul"),
+  id: "advertising-only-notice-draft-2026-11-19",
   status: "draft_for_counsel",
   title: "LogLoads only advertises this job"
 } as const)
 
-/** The notice as one passage: the title as its first sentence, then the body. */
-export function advertisingOnlyNoticeText(): string {
-  return `${ADVERTISING_ONLY_NOTICE.title}. ${ADVERTISING_ONLY_NOTICE.body}`
+/** One wording of the notice. Every wording shares the version id, status and title; only the body names a product. */
+export type AdvertisingOnlyNotice = Readonly<{
+  body: string
+  id: typeof ADVERTISING_ONLY_NOTICE.id
+  status: typeof ADVERTISING_ONLY_NOTICE.status
+  title: typeof ADVERTISING_ONLY_NOTICE.title
+}>
+
+/**
+ * The notice for a job's product, or null when the product needs none (`marketplaceProductNeedsNotice` decides). A
+ * listed notice-class product is named, as the poles frame draws it ("this haul of poles and pilings"). Other, a
+ * poster's own description and a missing product get the body without a name, as the "Other" frame does.
+ */
+export function advertisingOnlyNotice(product: string | null | undefined): AdvertisingOnlyNotice | null {
+  if (!marketplaceProductNeedsNotice(product)) return null
+
+  const listed = marketplaceCommodityProduct(product)
+
+  return listed === MARKETPLACE_OTHER_PRODUCT
+    ? ADVERTISING_ONLY_NOTICE
+    : Object.freeze({ ...ADVERTISING_ONLY_NOTICE, body: advertisingOnlyNoticeBody(`this haul of ${listed.toLowerCase()}`) })
+}
+
+/** A wording of the notice as one passage, the text shown: the title as its first sentence, then the body. */
+export function advertisingOnlyNoticeText(notice: AdvertisingOnlyNotice = ADVERTISING_ONLY_NOTICE): string {
+  return `${notice.title}. ${notice.body}`
 }
 
 /**

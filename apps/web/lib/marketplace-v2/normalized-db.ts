@@ -77,7 +77,8 @@ interface FunctionSpec {
 
 /**
  * The closed list of database functions the adapter may call. Names, argument names and argument types match the SQL
- * exactly (architecture/normalized-v2, stages 01-42; 38 adds the basin staff calls and the public area notice, 42 the liquidity board).
+ * exactly (architecture/normalized-v2, stages 01-44; 38 adds the basin staff calls and the public area notice, 42 the liquidity board,
+ * 44 the reveal-pause list and clear and the two views of released access details).
  *
  * Every function here is SECURITY DEFINER with a pinned `search_path`, is granted EXECUTE to `authenticated` (and to
  * `anon` only where `anonymous` is true) and never to `service_role`; `normalized-adapter.contract.test.ts` proves
@@ -198,9 +199,14 @@ export const MARKETPLACE_FUNCTIONS = {
     returns: "value"
   },
   reconfirm_job_posting: { anonymous: false, args: { p_job_id: "uuid" }, returns: "value" },
+  // `inquiry.respond` on the job's landing business and its landing scope (29). `p_share_private_details` releases
+  // (true) or revokes (false) the landing's private details to this one hauling business (31, #325): a release needs
+  // a reply first, a decline never shares, and since 44 (#403) a share the reveal pause withholds keeps the rest of
+  // the call (the reply stands) and is audited for staff only. Only the disclosure adapter sends it
+  // (`disclosure/normalized.ts`); `respondToInterest` never does.
   respond_to_interest: {
     anonymous: false,
-    args: { p_body: "text", p_interest_id: "uuid", p_reply_id: "uuid", p_status: "text" },
+    args: { p_body: "text", p_interest_id: "uuid", p_reply_id: "uuid", p_share_private_details: "boolean", p_status: "text" },
     returns: "void"
   },
   submit_expression_of_interest: {
@@ -388,6 +394,21 @@ export const MARKETPLACE_FUNCTIONS = {
   // Reason 5-500. An unknown or already cleared pause is "Reveal pause not found" (P0002). A non-moderator is 42501.
   // The call does not read or return a phone number.
   admin_clear_hauler_reveal_pause: { anonymous: false, args: { p_org_id: "uuid", p_reason: "text" }, returns: "void" },
+  // Role: moderator (44, #403). Closes one pause (a business or a person). An open or reviewing report is dismissed
+  // with a fixed note; a report already resolved in the queue is left as it is. Reason 5-500, written to the audit
+  // row only. A closed or unknown pause is "Reveal pause not found" (P0002). No phone is read or returned.
+  admin_clear_reveal_pause: { anonymous: false, args: { p_pause_id: "uuid", p_reason: "text" }, returns: "void" },
+  // Role: moderator or support (44, #403). The open pauses: subject, name, opened, report status, landings in the
+  // window. No phone, landing or job. Anyone else is 42501.
+  list_reveal_pauses: { anonymous: false, args: {}, returns: "rows" },
+  // Authenticated (44, #403). A member (owner, manager, staff or driver) of `p_org_id` reads the job's landing
+  // directions, gate instructions, site contact and phone while that business's inquiry on the job is replied and
+  // shared; no row for anyone else, another business, or a revoked, declined or withdrawn inquiry. Stable.
+  hauler_job_access: { anonymous: false, args: { p_job_id: "uuid", p_org_id: "uuid" }, returns: "rows" },
+  // Authenticated (44, #403). Owners, managers and staff with a landing seat whose scope covers the job, of the
+  // inquiry's own landing business (`p_org_id`): its status, whether it is shared, and the landing's own site phone.
+  // No row for anyone else. Stable.
+  landing_interest_disclosure: { anonymous: false, args: { p_interest_id: "uuid", p_org_id: "uuid" }, returns: "rows" },
   // Anonymous and authenticated (38, #324). Null, or exactly "not in your area yet". An unknown job id is null, the
   // same as a launched one. Stable, so anon's only volatile function stays unsubscribe_with_token.
   public_area_notice: {

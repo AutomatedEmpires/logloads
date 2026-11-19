@@ -8,6 +8,7 @@ import {
   type MarketplaceDraftIssue,
   type MarketplaceDraftLandingContext
 } from "@logloads/contracts"
+import { advertisingOnlyNotice, type AdvertisingOnlyNotice as AdvertisingOnlyNoticeWords } from "@logloads/contracts/src/marketplace-commodity"
 import { FormField } from "@logloads/ui/primitives"
 
 import type { DraftFormValues, DraftTextField } from "@/lib/marketplace-v2/draft-params"
@@ -22,6 +23,61 @@ import styles from "./JobEditor.module.css"
  * no contact field (UX-DEC-04) and no publish statement: those are ticked on the review step, so editing a
  * draft never confirms anything.
  */
+
+/**
+ * The advertising-only notice (#422; Figma CE-03b `359:4602`, the Notice component `207:1206` in its info tone): the
+ * info icon, a 4 px edge, the title and the body. The words come from the contracts module only. The tone is carried
+ * by the icon, the edge and the words, never by colour alone; the icon is decorative and the words are the content.
+ */
+export function AdvertisingOnlyNotice({
+  notice,
+  ...data
+}: {
+  notice: AdvertisingOnlyNoticeWords
+  /** On the product step: set on the variant for the saved product. */
+  "data-current"?: ""
+  /** On the product step: the variant's key, which PRODUCT_NOTICE_RULES ties to its product option. */
+  "data-notice-for"?: string
+}) {
+  return (
+    <div className={styles.adNotice} data-advertising-notice={notice.id} role="note" {...data}>
+      <span aria-hidden="true" className={styles.adNoticeIcon} />
+      <div className={styles.adNoticeText}>
+        <p className={styles.adNoticeTitle}>{notice.title}</p>
+        <p>{notice.body}</p>
+      </div>
+    </div>
+  )
+}
+
+/** The listed products whose jobs show the notice, each with its wording (marketplaceProductNeedsNotice decides). */
+const PRODUCT_NOTICES = MARKETPLACE_PRODUCTS.flatMap((product) => {
+  const notice = advertisingOnlyNotice(product)
+  return notice ? [{ notice, product }] : []
+})
+
+/** A product label as a CSS string. The labels are contracts constants; this keeps a quote or "<" inert anyway. */
+const cssString = (text: string) => `"${text.replace(/["\\]/g, "\\$&").replace(/</g, "\\3c ").replace(/\n/g, "\\a ")}"`
+
+/**
+ * Step 1 carries one notice variant per notice product. Where :has() exists, the checked product option shows its
+ * variant, so the notice follows the select with or without JavaScript and adds no script to the page. Without
+ * :has(), the variant for the saved product shows (`data-current`, JobEditor.module.css).
+ */
+const PRODUCT_NOTICE_RULES = `@supports selector(:has(*)){${PRODUCT_NOTICES.map(
+  ({ product }, index) => `form:has(#product option[value=${cssString(product)}]:checked) [data-notice-for="${index}"]{display:flex}`
+).join("")}}`
+
+function ProductNotices({ product }: { product: string }) {
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: PRODUCT_NOTICE_RULES }} />
+      {PRODUCT_NOTICES.map((entry, index) => (
+        <AdvertisingOnlyNotice data-current={entry.product === product ? "" : undefined} data-notice-for={String(index)} key={entry.product} notice={entry.notice} />
+      ))}
+    </>
+  )
+}
 
 export interface StepFieldsProps {
   values: DraftFormValues
@@ -79,6 +135,7 @@ export function BasicsFields({ values, issues, focus, landings }: StepFieldsProp
       >
         <input autoFocus={focus === "productOther"} defaultValue={v("productOther")} maxLength={120} name="productOther" />
       </FormField>
+      <ProductNotices product={v("product")} />
       <div className={styles.pair}>
         <FormField error={errorFor(issues, "destinationLabel")} hint="Mill or yard and town. Public." id="destinationLabel" label="Destination" optional>
           <input autoFocus={focus === "destinationLabel"} defaultValue={v("destinationLabel")} maxLength={160} name="destinationLabel" />

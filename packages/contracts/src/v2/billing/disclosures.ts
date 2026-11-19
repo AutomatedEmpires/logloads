@@ -10,6 +10,16 @@
  * - the billing settings that the provider and the store must match: retries, grace days, data kept and notice days
  *   (Blueprint §16.2 leaves them open, so they are required, never defaulted).
  * The wording itself is the draft's position. Changing it means a new `BILLING_DISCLOSURES_VERSION`.
+ *
+ * The founding offer has two builders, because the store treats a business that has the offer differently from one
+ * that does not (#409). Only a billing admin grants the offer (`admin_grant_founding_promotion`, 03_entitlements.sql),
+ * before the business subscribes, so a checkout never takes up an open offer: it describes one the business holds.
+ * - `foundingOfferDisclosure`: the offer page, for a business without the offer. It states the places left and the
+ *   closing date, and refuses an offer that is full or has closed.
+ * - `heldFoundingOfferDisclosure`: the checkout, for a business that holds the offer. The store attaches its grant
+ *   whenever a subscription turns active with cycles left (`apply_subscription_cycle`,
+ *   26_v2_team_seats_saved_jobs_outbox.sql), and checks neither the places nor the closing date then. So this builder
+ *   takes neither, states no limit, and counts the full-price date from the cycles left.
  */
 
 import { MARKETPLACE_VERIFICATION_SCOPE_LABELS } from "../../marketplace-v2"
@@ -27,15 +37,15 @@ import {
   type LandingPlanCode
 } from "../../membership"
 
-/** Stored with each acceptance, so a record shows which words the customer saw. */
-export const BILLING_DISCLOSURES_VERSION = "billing-disclosures-draft-2026-11-18"
+/** Stored with each acceptance, so a record shows which words the customer saw. `-r2` is the #409 wording. */
+export const BILLING_DISCLOSURES_VERSION = "billing-disclosures-draft-2026-11-18-r2"
 
 /** The tax words that sit with every price (legal review §10 Q1, item 3; the same words as /pricing). */
 export const BILLING_TAX_SUFFIX = "plus applicable taxes"
 
 /**
  * Promises no disclosure may make, because no term makes them true (legal review §10 Q4, item 10, and Q1 on "free
- * forever"). The builders refuse an input that uses one, so a cohort name or contact cannot slip one in.
+ * forever"). The builders refuse a text input that uses one, so a billing contact cannot slip one in.
  */
 export const BILLING_DISCLOSURE_FORBIDDEN_WORDS = /\b(?:lifetime|lock(?:ed|s|-in)?|guarantee[ds]?|guaranteeing|forever|permanent(?:ly)?)\b/i
 
@@ -48,11 +58,12 @@ export function withApplicableTaxes(price: string): string {
 // Statement keys, in the order a page shows them
 // ---------------------------------------------------------------------------
 
-/** Legal review §10 Q4, items 1 to 10. */
+/** Legal review §10 Q4, items 1 to 10, on the offer page, with its own taxes line (item 3). */
 export const FOUNDING_OFFER_DISCLOSURE_KEYS = [
   "qualifier",
   "limit",
   "price",
+  "taxes",
   "duration",
   "renewal",
   "planChange",
@@ -62,6 +73,14 @@ export const FOUNDING_OFFER_DISCLOSURE_KEYS = [
   "closing"
 ] as const
 export type FoundingOfferDisclosureKey = (typeof FOUNDING_OFFER_DISCLOSURE_KEYS)[number]
+
+/**
+ * Legal review §10 Q4 at checkout, for a business that holds the offer. `held` answers items 1 and 9 for a business
+ * that already has its place. There is no `limit` (item 2): the places left say nothing about an offer already
+ * granted. The plan checkout's own `taxes` line follows these.
+ */
+export const HELD_FOUNDING_OFFER_DISCLOSURE_KEYS = ["held", "price", "duration", "renewal", "planChange", "cancellation", "reminder", "ending"] as const
+export type HeldFoundingOfferDisclosureKey = (typeof HELD_FOUNDING_OFFER_DISCLOSURE_KEYS)[number]
 
 /** Legal review §10 Q7, items 1 to 9, 11 and 12. Item 10 (boosts) is `boostCheckoutDisclosure`. */
 export const PLAN_CHECKOUT_DISCLOSURE_KEYS = [
@@ -102,21 +121,53 @@ export type BoostCheckoutDisclosureKey = (typeof BOOST_CHECKOUT_DISCLOSURE_KEYS)
 export const FOUNDING_OFFER_AFTER_CANCEL_RULES = ["cycles_resume", "offer_ends"] as const
 export type FoundingOfferAfterCancelRule = (typeof FOUNDING_OFFER_AFTER_CANCEL_RULES)[number]
 
-/** The founding offer's terms. All of them are the founder's to set (COM-1); none has a default. */
+/**
+ * The founding offer's terms on the offer page, for a business that does not have it. All of them are the founder's to
+ * set (COM-1); none has a default. Each must equal the promotion record, because the store grants the offer and counts
+ * its places (`admin_grant_founding_promotion`), and the words state the store's rule.
+ */
 export interface FoundingOfferDisclosureTerms {
   /** Percent off the chosen plan's monthly price: more than 0, less than 100, to two decimals (`promotions.percent_off`). */
   percentOff: number
   /** Paid monthly billing cycles at the founding price, 1 to 36 (`promotions.billing_cycles`). */
   paidCycles: number
-  /** Where the limit is counted, as a customer reads it, for example "the Willamette Valley basin". */
-  cohort: string
-  /** Landing businesses the offer is limited to in that cohort. */
-  cohortLimit: number
-  /** Places still open, as the store counts them now. At least 1: a closed offer is never shown. */
+  /**
+   * `promotions.state_code`: a US state's two-letter code. The store grants the offer only to a business whose
+   * `organizations.home_state` is that state, wherever its landings are, so the words name the home state.
+   */
+  stateCode: string
+  /** `promotions.max_redemptions`: the most businesses LogLoads grants the offer to. */
+  grantLimit: number
+  /**
+   * Places still open, as the store counts them now: `grantLimit` less the redemptions that are not revoked. A grant
+   * takes its place before the business subscribes. At least 1: a full offer is never shown.
+   */
   placesLeft: number
-  /** The last day a business can take the offer (YYYY-MM-DD), or `null` when only the limit closes it. */
+  /** The last day LogLoads grants the offer (YYYY-MM-DD; `promotions.ends_at`), or `null` when only the limit closes it. */
   closesOn: string | null
   /** Days before the first full-price charge that the reminder email goes out: 7 to 21 (legal review §10 Q4, item 7). */
+  reminderDaysBefore: number
+  afterCancel: FoundingOfferAfterCancelRule
+}
+
+/**
+ * A founding offer the business already holds, at checkout. Read the terms from its promotion and the cycles from its
+ * redemption (`MarketplaceFoundingOfferSummaryView`). The places left and the closing date are not inputs: the store
+ * keeps a granted business's offer after the last place is granted and after the offer closes.
+ */
+export interface HeldFoundingOfferDisclosureTerms {
+  /** `promotions.percent_off`, as for the offer page. */
+  percentOff: number
+  /** `promotions.billing_cycles`: the founding cycles the offer has in all, 1 to 36. */
+  paidCycles: number
+  /**
+   * Founding cycles still to come, 1 to `paidCycles`: `paidCycles` less `promotion_redemptions.cycles_applied`
+   * (`MarketplaceFoundingOfferSummaryView.cyclesRemaining`). A business that cancelled and subscribes again has the
+   * cycles it had left (`cycles_resume`, what the store does today). With none left there is no discount, so the
+   * checkout has no founding offer.
+   */
+  cyclesLeft: number
+  /** As for the offer page. */
   reminderDaysBefore: number
   afterCancel: FoundingOfferAfterCancelRule
 }
@@ -155,7 +206,7 @@ interface BillingDisclosureBase<K extends string> {
   lines: readonly string[]
 }
 
-/** The founding offer as the offer page and the checkout state it (legal review §10 Q4). */
+/** The founding offer as the offer page states it (legal review §10 Q4). */
 export interface FoundingOfferDisclosure extends BillingDisclosureBase<FoundingOfferDisclosureKey> {
   planCode: LandingPlanCode
   /** The plan's own monthly price, from `LANDING_PLANS`. */
@@ -163,8 +214,19 @@ export interface FoundingOfferDisclosure extends BillingDisclosureBase<FoundingO
   /** The plan's price for a founding cycle, in integer cents rounded half up. */
   foundingPriceCents: number
   paidCycles: number
-  /** The date of the first full-price charge if each payment before it goes through; `null` before a start date is known. */
-  firstFullPriceChargeOn: string | null
+}
+
+/** A founding offer the business holds, as the checkout states it (legal review §10 Q4; #409). */
+export interface HeldFoundingOfferDisclosure extends BillingDisclosureBase<HeldFoundingOfferDisclosureKey> {
+  planCode: LandingPlanCode
+  basePriceCents: number
+  foundingPriceCents: number
+  /** The founding cycles the offer has in all. */
+  paidCycles: number
+  /** The founding cycles from this checkout's first charge on. */
+  cyclesLeft: number
+  /** The charge after the cycles left, if each payment before it goes through. */
+  firstFullPriceChargeOn: string
 }
 
 /** A landing plan's checkout (legal review §10 Q7). */
@@ -173,13 +235,13 @@ export interface LandingPlanCheckoutDisclosure extends BillingDisclosureBase<Pla
   basePriceCents: number
   /** The first charge (YYYY-MM-DD). It sets the billing day. */
   firstChargeOn: string
-  /** The first charge at the plan's own price: the first charge, or the one after the founding cycles. */
+  /** The first charge at the plan's own price: the first charge, or the one after the founding cycles left. */
   firstFullPriceChargeOn: string
   /**
-   * The founding offer's statements when the business has the offer, else `null`. `lines` then shows them first and
+   * The founding offer's statements when the business holds the offer, else `null`. `lines` then shows them first and
    * leaves out the plan's `renewal`, `price` and `cancellation`, which they already state.
    */
-  foundingOffer: FoundingOfferDisclosure | null
+  foundingOffer: HeldFoundingOfferDisclosure | null
 }
 
 /** A boost's checkout (legal review §10 Q7, item 10). */
@@ -309,6 +371,29 @@ function linesOf<K extends string>(keys: readonly K[], statements: Readonly<Reco
   return keys.map((key) => statements[key])
 }
 
+/** The 50 states by the two-letter code that `promotions.state_code` and `organizations.home_state` store. */
+const US_STATE_NAMES: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    AK: "Alaska", AL: "Alabama", AR: "Arkansas", AZ: "Arizona", CA: "California", CO: "Colorado", CT: "Connecticut", DE: "Delaware",
+    FL: "Florida", GA: "Georgia", HI: "Hawaii", IA: "Iowa", ID: "Idaho", IL: "Illinois", IN: "Indiana", KS: "Kansas", KY: "Kentucky",
+    LA: "Louisiana", MA: "Massachusetts", MD: "Maryland", ME: "Maine", MI: "Michigan", MN: "Minnesota", MO: "Missouri", MS: "Mississippi",
+    MT: "Montana", NC: "North Carolina", ND: "North Dakota", NE: "Nebraska", NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico",
+    NV: "Nevada", NY: "New York", OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
+    SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VA: "Virginia", VT: "Vermont", WA: "Washington", WI: "Wisconsin",
+    WV: "West Virginia", WY: "Wyoming"
+  })
+)
+
+function stateName(code: string): string {
+  const name = typeof code === "string" ? US_STATE_NAMES.get(code) : undefined
+
+  if (name === undefined) {
+    throw new RangeError("stateCode must be a US state's two-letter code, as promotions.state_code stores it")
+  }
+
+  return name
+}
+
 // ---------------------------------------------------------------------------
 // Dates and prices
 // ---------------------------------------------------------------------------
@@ -343,97 +428,181 @@ export function foundingOfferPriceCents(planCode: LandingPlanCode, percentOff: n
 // Founding offer (legal review §10 Q4)
 // ---------------------------------------------------------------------------
 
-function checkedOffer(offer: FoundingOfferDisclosureTerms, startsOn: CalendarDate | null) {
-  const cohortLimit = wholeNumber(offer.cohortLimit, "cohortLimit", 1, 10_000)
-  const closesOn = offer.closesOn === null ? null : calendarDate(offer.closesOn, "closesOn")
-
-  if (closesOn !== null && startsOn !== null && isoDate(closesOn) < isoDate(startsOn)) {
-    throw new RangeError("closesOn is before startsOn, so the offer has already closed")
-  }
-
-  return {
-    afterCancel: oneOf(offer.afterCancel, FOUNDING_OFFER_AFTER_CANCEL_RULES, "afterCancel"),
-    closesOn,
-    cohort: oneLine(offer.cohort, "cohort", 80),
-    cohortLimit,
-    paidCycles: wholeNumber(offer.paidCycles, "paidCycles", 1, 36),
-    percentOff: checkedPercentOff(offer.percentOff),
-    placesLeft: wholeNumber(offer.placesLeft, "placesLeft", 1, cohortLimit),
-    reminderDaysBefore: wholeNumber(offer.reminderDaysBefore, "reminderDaysBefore", 7, 21)
-  }
-}
-
-const QUALIFYING_REVIEW = `${MARKETPLACE_VERIFICATION_SCOPE_LABELS.business_identity.toLowerCase()} review by LogLoads`
-
-export interface FoundingOfferDisclosureInput {
-  planCode: LandingPlanCode
-  /** The first charge (YYYY-MM-DD) at checkout; `null` on the offer page, before the business subscribes. */
-  startsOn: string | null
-  offer: FoundingOfferDisclosureTerms
-}
-
-/** What the offer page and, again, the checkout must state before payment details are taken (legal review §10 Q4). */
-export function foundingOfferDisclosure(input: FoundingOfferDisclosureInput): FoundingOfferDisclosure {
-  const plan = planOf(input.planCode)
-  const startsOn = input.startsOn === null ? null : calendarDate(input.startsOn, "startsOn")
-  const offer = checkedOffer(input.offer, startsOn)
-  const basePriceCents = plan.monthlyPriceCents
-  const foundingPriceCents = foundingOfferPriceCents(plan.code, offer.percentOff)
-  const firstFullPriceChargeOn = startsOn === null ? null : landingBillingCycleDate(isoDate(startsOn), offer.paidCycles + 1)
-  const cycles = offer.paidCycles === 1 ? "paid monthly billing cycle" : `${offer.paidCycles} paid monthly billing cycles`
-  const single = offer.cohortLimit === 1
-
-  const firstFullPrice =
-    firstFullPriceChargeOn === null
-      ? `Your first full-price charge is your ${ordinal(offer.paidCycles + 1)} monthly charge, if each payment before it goes through.`
-      : `Your first full-price charge is on ${spokenDate(calendarDate(firstFullPriceChargeOn, "firstFullPriceChargeOn"))}, if each payment before then goes through.`
-  const afterCancel =
-    offer.afterCancel === "cycles_resume"
-      ? "If you subscribe again later, the founding price applies to the cycles you had left."
-      : "The founding offer ends when you cancel, and subscribing again does not bring it back."
-  const closes = single ? "its place is taken" : `all ${offer.cohortLimit} places are taken`
-  const closesBy = offer.closesOn === null ? "" : ` or on ${spokenDate(offer.closesOn)}, whichever comes first`
-
+/** The terms both founding builders state: the discount, the cycles, the reminder and the rule after cancelling. */
+function checkedCycleTerms(offer: Pick<FoundingOfferDisclosureTerms, "afterCancel" | "paidCycles" | "percentOff" | "reminderDaysBefore">) {
   if (FOUNDING_OPERATOR_OFFER.discountsBoosts) {
     throw new Error("The founding offer now discounts boosts. Word that rule before using these disclosures.")
   }
 
-  const statements: Record<FoundingOfferDisclosureKey, string> = {
+  return {
+    afterCancel: oneOf(offer.afterCancel, FOUNDING_OFFER_AFTER_CANCEL_RULES, "afterCancel"),
+    paidCycles: wholeNumber(offer.paidCycles, "paidCycles", 1, 36),
+    percentOff: checkedPercentOff(offer.percentOff),
+    reminderDaysBefore: wholeNumber(offer.reminderDaysBefore, "reminderDaysBefore", 7, 21)
+  }
+}
+
+type CycleTerms = ReturnType<typeof checkedCycleTerms>
+
+const QUALIFYING_REVIEW = `${MARKETPLACE_VERIFICATION_SCOPE_LABELS.business_identity.toLowerCase()} review by LogLoads`
+
+const CYCLE_COUNTS = "A cycle counts only once its payment goes through, so a failed payment does not use one up."
+
+const NO_TRANSFER = "It can't be transferred to another business or combined with any other discount, and it does not apply to boosts."
+
+/** The taxes line of the offer page and the plan checkout. */
+const TAXES = `Prices are ${BILLING_TAX_SUFFIX}. Any tax is added to the charge and shown on its invoice.`
+
+/** "6 paid monthly billing cycles", or "paid monthly billing cycle" for one, after "your first" or "your next". */
+function paidMonthlyCycles(cycles: number): string {
+  return cycles === 1 ? "paid monthly billing cycle" : `${cycles} paid monthly billing cycles`
+}
+
+/** The founding cycles a checkout's charges start with: "first 6 paid ..." on a first checkout, "next 4 paid ..." after some are used. */
+function cyclesFromCheckout(paidCycles: number, cyclesLeft: number): string {
+  return `${cyclesLeft === paidCycles ? "first" : "next"} ${paidMonthlyCycles(cyclesLeft)}`
+}
+
+/** The statements both founding builders share: `price`, `planChange`, `cancellation`, `reminder` and `renewal`. */
+function foundingStatements(plan: LandingPlan, foundingPriceCents: number, terms: CycleTerms, cyclesBeforeFullPrice: number, firstFullPrice: string) {
+  const fullPrice = withApplicableTaxes(perMonth(plan.monthlyPriceCents))
+  const afterCancel =
+    terms.afterCancel === "cycles_resume"
+      ? "If you subscribe again later, the founding price applies to the cycles you had left."
+      : "The founding offer ends when you cancel, and subscribing again does not bring it back."
+
+  return {
     cancellation:
       "How to cancel: online, at any time, in Billing, in no more steps than it took to subscribe. Your plan stays active until the end of the " +
       `billing cycle you paid for. ${afterCancel}`,
-    closing:
-      `The offer closes when ${closes}${closesBy}. It can't be transferred to another business or combined with any other discount, ` +
-      "and it does not apply to boosts.",
-    duration: `How long: your first ${cycles}. A cycle counts only once its payment goes through, so a failed payment does not use one up.`,
-    ending:
-      `The founding price ends after your ${ordinal(offer.paidCycles)} paid monthly billing cycle. It also ends, and the full price applies ` +
-      "from your next charge, if we find that your business does not qualify or already has a founding offer under another account.",
-    limit: single
-      ? `Limit: the first qualifying landing business to subscribe in ${offer.cohort}. That place is still open.`
-      : `Limit: the first ${offer.cohortLimit} qualifying landing businesses to subscribe in ${offer.cohort}. ` +
-        `${offer.placesLeft} of the ${offer.cohortLimit} places ${offer.placesLeft === 1 ? "is" : "are"} left.`,
     planChange:
       "If you change plans: the discount applies to the new plan's price for the cycles you have left, and the change does not use one up.",
-    price:
-      `Price: the ${plan.name} plan at ${perMonth(foundingPriceCents)} instead of ${withApplicableTaxes(perMonth(basePriceCents))}. ` +
-      `That is ${offer.percentOff}% off.`,
-    qualifier:
-      `Who qualifies: a landing business with a current ${QUALIFYING_REVIEW} and an operation in ${offer.cohort}. ` +
-      "Each legal organization can get one founding offer, however many accounts it has.",
-    reminder: `Reminder: we email you ${offer.reminderDaysBefore} days before your first full-price charge, with the full price and the date.`,
+    price: `Price: the ${plan.name} plan at ${withApplicableTaxes(perMonth(foundingPriceCents))}, instead of ${fullPrice}. That is ${terms.percentOff}% off.`,
+    reminder: `Reminder: we email you ${terms.reminderDaysBefore} days before your first full-price charge, with the full price and the date.`,
     renewal:
-      `What happens next: after ${offer.paidCycles === 1 ? "that cycle" : `those ${offer.paidCycles} cycles`}, your ${plan.name} plan renews ` +
-      `automatically at the full price of ${withApplicableTaxes(perMonth(basePriceCents))}, each month until you cancel. ${firstFullPrice}`
+      `What happens next: after ${cyclesBeforeFullPrice === 1 ? "that cycle" : `those ${cyclesBeforeFullPrice} cycles`}, your ${plan.name} plan ` +
+      `renews automatically at the full price of ${fullPrice}, each month until you cancel. ${firstFullPrice}`
+  }
+}
+
+export interface FoundingOfferDisclosureInput {
+  planCode: LandingPlanCode
+  /** The day the page is shown (YYYY-MM-DD). A closing date before it is refused: the offer has closed. */
+  today: string
+  offer: FoundingOfferDisclosureTerms
+}
+
+/**
+ * What the offer page must state to a business that does not have the offer (legal review §10 Q4). The limit is
+ * worded as the store counts it: grants by a billing admin, to businesses whose home state is the promotion's state.
+ * It refuses an offer with no place left or a closing date already passed.
+ */
+export function foundingOfferDisclosure(input: FoundingOfferDisclosureInput): FoundingOfferDisclosure {
+  const plan = planOf(input.planCode)
+  const today = calendarDate(input.today, "today")
+  const terms = checkedCycleTerms(input.offer)
+  const grantLimit = wholeNumber(input.offer.grantLimit, "grantLimit", 1, 10_000)
+  const placesLeft = wholeNumber(input.offer.placesLeft, "placesLeft", 1, grantLimit)
+  const state = stateName(input.offer.stateCode)
+  const closesOn = input.offer.closesOn === null ? null : calendarDate(input.offer.closesOn, "closesOn")
+
+  if (closesOn !== null && isoDate(closesOn) < isoDate(today)) {
+    throw new RangeError("closesOn is before today, so the offer has already closed")
+  }
+
+  const foundingPriceCents = foundingOfferPriceCents(plan.code, terms.percentOff)
+  const single = grantLimit === 1
+  const closes = single ? "its place is taken" : `all ${grantLimit} places are taken`
+  const closesBy = closesOn === null ? "" : ` or on ${spokenDate(closesOn)}, whichever comes first`
+  const shared = foundingStatements(
+    plan,
+    foundingPriceCents,
+    terms,
+    terms.paidCycles,
+    `Your first full-price charge is your ${ordinal(terms.paidCycles + 1)} monthly charge, if each payment before it goes through.`
+  )
+
+  const statements: Record<FoundingOfferDisclosureKey, string> = {
+    ...shared,
+    closing: `The offer closes to new businesses when ${closes}${closesBy}. Closing does not end the offer for a business that already has it. ${NO_TRANSFER}`,
+    duration: `How long: your first ${paidMonthlyCycles(terms.paidCycles)}. ${CYCLE_COUNTS}`,
+    ending: `The founding price ends after your ${ordinal(terms.paidCycles)} paid monthly billing cycle.`,
+    limit: single
+      ? `Limit: LogLoads grants the offer to one qualifying landing business whose home state is ${state}. The place is taken when LogLoads ` +
+        "grants the offer, not when the business subscribes. That place is still open."
+      : `Limit: LogLoads grants the offer to no more than ${grantLimit} qualifying landing businesses whose home state is ${state}. A place is ` +
+        `taken when LogLoads grants the offer, not when the business subscribes. ${placesLeft} of the ${grantLimit} places ` +
+        `${placesLeft === 1 ? "is" : "are"} left.`,
+    qualifier:
+      `Who qualifies: a landing business with a current ${QUALIFYING_REVIEW} and ${state} as the home state on its LogLoads account. ` +
+      "Each legal organization can get one founding offer, however many accounts it has.",
+    taxes: TAXES
   }
 
   return {
-    basePriceCents,
+    basePriceCents: plan.monthlyPriceCents,
     counselApproved: false,
-    firstFullPriceChargeOn,
     foundingPriceCents,
     lines: linesOf(FOUNDING_OFFER_DISCLOSURE_KEYS, statements),
-    paidCycles: offer.paidCycles,
+    paidCycles: terms.paidCycles,
+    planCode: plan.code,
+    statements,
+    version: BILLING_DISCLOSURES_VERSION
+  }
+}
+
+export interface HeldFoundingOfferDisclosureInput {
+  planCode: LandingPlanCode
+  /** This checkout's first charge (YYYY-MM-DD): the first of the cycles left. */
+  startsOn: string
+  offer: HeldFoundingOfferDisclosureTerms
+}
+
+/**
+ * What the checkout must state about a founding offer the business holds (legal review §10 Q4; #409). It never checks
+ * the places left or the closing date, because the store checks neither when it attaches the grant, and it counts the
+ * first full-price charge from the cycles left: 4 left from 2027-03-10 is full price from 2027-07-10.
+ */
+export function heldFoundingOfferDisclosure(input: HeldFoundingOfferDisclosureInput): HeldFoundingOfferDisclosure {
+  const plan = planOf(input.planCode)
+  const start = calendarDate(input.startsOn, "startsOn")
+  const terms = checkedCycleTerms(input.offer)
+  const cyclesLeft = wholeNumber(input.offer.cyclesLeft, "cyclesLeft", 1, terms.paidCycles)
+  const used = terms.paidCycles - cyclesLeft
+  const foundingPriceCents = foundingOfferPriceCents(plan.code, terms.percentOff)
+  const firstFullPriceChargeOn = landingBillingCycleDate(isoDate(start), cyclesLeft + 1)
+  const fullOn = spokenDate(calendarDate(firstFullPriceChargeOn, "firstFullPriceChargeOn"))
+  const shared = foundingStatements(
+    plan,
+    foundingPriceCents,
+    terms,
+    cyclesLeft,
+    `Your first full-price charge is on ${fullOn}, if each payment before then goes through.`
+  )
+
+  const statements: Record<HeldFoundingOfferDisclosureKey, string> = {
+    ...shared,
+    duration:
+      used === 0
+        ? `How long: your first ${paidMonthlyCycles(cyclesLeft)}. ${CYCLE_COUNTS}`
+        : `How long: your next ${paidMonthlyCycles(cyclesLeft)}. You have used ${used} of your ${terms.paidCycles} founding cycles, and ` +
+          `${cyclesLeft} ${cyclesLeft === 1 ? "is" : "are"} left. ${CYCLE_COUNTS}`,
+    ending:
+      used === 0
+        ? `The founding price ends after your ${ordinal(terms.paidCycles)} paid monthly billing cycle.`
+        : `The founding price ends after your ${ordinal(terms.paidCycles)} founding cycle in all, which is the ${ordinal(cyclesLeft)} paid ` +
+          "monthly billing cycle from this checkout.",
+    held: `Founding offer: LogLoads has granted it to your business, and the offer closing to other businesses does not end yours. ${NO_TRANSFER}`
+  }
+
+  return {
+    basePriceCents: plan.monthlyPriceCents,
+    counselApproved: false,
+    cyclesLeft,
+    firstFullPriceChargeOn,
+    foundingPriceCents,
+    lines: linesOf(HELD_FOUNDING_OFFER_DISCLOSURE_KEYS, statements),
+    paidCycles: terms.paidCycles,
     planCode: plan.code,
     statements,
     version: BILLING_DISCLOSURES_VERSION
@@ -449,8 +618,8 @@ export interface LandingPlanCheckoutDisclosureInput {
   /** The first charge (YYYY-MM-DD). It sets the billing day. */
   startsOn: string
   policy: LandingBillingPolicyTerms
-  /** The business's founding offer, when it has one. */
-  foundingOffer?: FoundingOfferDisclosureTerms | null
+  /** The founding offer the business holds, with the cycles it has left; `null` or absent when it has none left. */
+  foundingOffer?: HeldFoundingOfferDisclosureTerms | null
 }
 
 /** What a plan checkout must state before payment details are taken (legal review §10 Q7, items 1 to 9, 11 and 12). */
@@ -465,25 +634,23 @@ export function landingPlanCheckoutDisclosure(input: LandingPlanCheckoutDisclosu
     priceChangeNoticeDays: wholeNumber(input.policy.priceChangeNoticeDays, "priceChangeNoticeDays", 1, 365),
     unpaidDataKeptDays: wholeNumber(input.policy.unpaidDataKeptDays, "unpaidDataKeptDays", 1, 365)
   }
-  const foundingOffer = input.foundingOffer ? foundingOfferDisclosure({ offer: input.foundingOffer, planCode: plan.code, startsOn }) : null
+  const foundingOffer = input.foundingOffer ? heldFoundingOfferDisclosure({ offer: input.foundingOffer, planCode: plan.code, startsOn }) : null
   const base = withApplicableTaxes(perMonth(plan.monthlyPriceCents))
   const grace = count(policy.graceDays, "day", "days")
 
   let renewal = `Your ${plan.name} plan renews automatically at ${base}, each month until you cancel. Your first charge is on ${spokenDate(start)}.`
-  let price = `Price: ${perMonth(plan.monthlyPriceCents)} for the ${plan.name} plan, ${BILLING_TAX_SUFFIX}.`
+  let price = `Price: ${base}, for the ${plan.name} plan.`
   let firstFullPriceChargeOn = startsOn
 
-  if (foundingOffer !== null && foundingOffer.firstFullPriceChargeOn !== null) {
-    const cycles = foundingOffer.paidCycles === 1 ? "paid monthly billing cycle" : `${foundingOffer.paidCycles} paid monthly billing cycles`
+  if (foundingOffer !== null) {
+    const cycles = cyclesFromCheckout(foundingOffer.paidCycles, foundingOffer.cyclesLeft)
     const fullOn = calendarDate(foundingOffer.firstFullPriceChargeOn, "firstFullPriceChargeOn")
 
     firstFullPriceChargeOn = isoDate(fullOn)
     renewal =
-      `Your ${plan.name} plan renews automatically each month until you cancel. After your first ${cycles} at the founding price, it renews ` +
+      `Your ${plan.name} plan renews automatically each month until you cancel. After your ${cycles} at the founding price, it renews ` +
       `at the full price of ${base}. Your first full-price charge is on ${spokenDate(fullOn)}, if each payment before then goes through.`
-    price =
-      `Price: ${perMonth(foundingOffer.foundingPriceCents)} for the ${plan.name} plan for your first ${cycles}, then ` +
-      `${withApplicableTaxes(perMonth(plan.monthlyPriceCents))}.`
+    price = `Price: ${withApplicableTaxes(perMonth(foundingOffer.foundingPriceCents))}, for the ${plan.name} plan for your ${cycles}, then ${base}.`
   }
 
   const statements: Record<PlanCheckoutDisclosureKey, string> = {
@@ -519,7 +686,7 @@ export function landingPlanCheckoutDisclosure(input: LandingPlanCheckoutDisclosu
       `Ask about a refund at ${policy.billingContact}.`,
     renewal,
     suspension: "If we suspend your account for breaking the Terms, your plan stops renewing and no refund is due for the current billing cycle.",
-    taxes: `Prices are ${BILLING_TAX_SUFFIX}. Any tax is added to the charge and shown on its invoice.`,
+    taxes: TAXES,
     upgrade:
       "Upgrading takes effect at once. You pay a prorated charge for the rest of the current billing cycle, and you see the amount before you confirm."
   }

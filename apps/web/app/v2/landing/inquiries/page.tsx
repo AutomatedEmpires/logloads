@@ -30,6 +30,7 @@ import styles from "@/components/v2/InquiryConversation.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
 import { respondToInterestAction } from "@/lib/marketplace-v2/actions"
+import { loadInquiryPhone, type InquiryPhoneState } from "@/lib/marketplace-v2/disclosure/load"
 import { V2_FAULT_CODES, v2ErrorMessage, v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { reportV2Error } from "@/lib/marketplace-v2/error-log"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
@@ -45,8 +46,10 @@ import {
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { resolveV2Actor, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
+import { numberCanBeShared, phoneShareNotice, phoneShareState } from "./_lib/phone-share"
 import { readyReplyTexts } from "./_lib/ready-replies"
 import { LandingReplyBar } from "./LandingReplyBar"
+import { PhoneShareCard, PhoneShareNotice } from "./PhoneShareCard"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -213,6 +216,12 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
           .then((job) => job?.pay ?? null)
           .catch(() => null)
       : null
+  // Flow C, C4 and C5 (#403): whether this landing can show its number on the open inquiry. The pilot store keeps no
+  // reveal, so it answers `unavailable` without a read, and the page then offers no number.
+  const phone: InquiryPhoneState =
+    selected && workspace && marketplaceInterestIsOpen(selected.status)
+      ? await loadInquiryPhone(workspace.id, selected.id)
+      : { kind: "unavailable" }
 
   const list = (
     <>
@@ -276,7 +285,9 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
                 confirmDecline={one(query.confirm) === "decline"}
                 interest={selected}
                 jobEquipment={jobEquipment(selected)}
+                notNow={one(query.phone) === "later"}
                 pay={jobPay}
+                phone={phone}
                 today={new Date().toISOString().slice(0, 10)}
                 updated={one(query.inquiry) === selected.id ? one(query.updated) : ""}
                 viewerUserId={actor.profile.id}
@@ -385,7 +396,9 @@ function LandingConversation({
   confirmDecline,
   interest,
   jobEquipment,
+  notNow,
   pay,
+  phone,
   today,
   updated,
   viewerUserId
@@ -394,7 +407,11 @@ function LandingConversation({
   confirmDecline: boolean
   interest: MarketplaceInterestView
   jobEquipment: readonly string[] | null
+  /** "Not now" on the number offer (C4), from `?phone=later`. */
+  notNow: boolean
   pay: MarketplacePay | null
+  /** Whether this landing can show its number on the inquiry (#403); `unavailable` on the pilot store. */
+  phone: InquiryPhoneState
   /** The server's calendar day (YYYY-MM-DD), for the ready reply that names the hauler's first day. */
   today: string
   /** `updated` from the redirect, when it was for this inquiry. */
@@ -406,13 +423,25 @@ function LandingConversation({
   // The reason is a landing message: its own server-generated id makes a repeated decline post it once.
   const declineFields = { decision: "declined", interestId: interest.id, replyId: randomUUID() }
   // Each ready reply has its own server-generated id, so a retried send is recorded once.
-  const readyReplies = readyReplyTexts(interest, today).map((body) => ({ body, replyId: randomUUID() }))
+  const disclosure = phone.kind === "ready" ? phone.disclosure : null
+  const readyReplies = readyReplyTexts(interest, today, { numberCanBeShared: numberCanBeShared(disclosure) })
+    .map((body) => ({ body, replyId: randomUUID() }))
+  const phoneState = phoneShareState(disclosure, { notNow })
 
   return (
     <InquiryConversation
       closedNote="This conversation is closed. Nothing more can be sent on it."
       composer={
         open ? (
+          <>
+          <PhoneShareNotice text={phoneShareNotice(updated, interest.haulerOrganization.name)} />
+          <PhoneShareCard
+            backHref={tabHref(LANDING_INQUIRY_TABS[0]?.id ?? "", carried)}
+            haulerName={interest.haulerOrganization.name}
+            interestId={interest.id}
+            notNowHref={inquiryHref(PATH, interest.id, { phone: "later", ...carried })}
+            state={phoneState}
+          />
           <LandingReplyBar
             action={respondToInterestAction}
             decline={{
@@ -430,6 +459,7 @@ function LandingConversation({
             recipientName={interest.haulerOrganization.name}
             replyFields={{ decision: "replied", interestId: interest.id, replyId }}
           />
+          </>
         ) : null
       }
       confirmation={

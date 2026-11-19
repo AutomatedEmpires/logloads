@@ -104,6 +104,9 @@ const jobRowSchema = z.object({
   poster_name: z.string(),
   poster_organization_id: uuid,
   poster_verified: z.boolean().nullable(),
+  // Since 44 (#403, #337): when LogLoads reviewed the posting business; null unless it is verified. Optional, so a store a
+  // version behind still reads, and its marks say the date is not on record.
+  poster_verified_at: nullableTimestamp.optional(),
   product: nullableText,
   public_access_requirements: z.array(z.string()).nullable(),
   public_road_notes: nullableText,
@@ -161,7 +164,9 @@ export function jobViewFromRow(row: unknown): MarketplaceJobDetailView {
     },
     posterName: job.poster_name,
     posterOrganizationId: job.poster_organization_id,
-    posterVerification: job.poster_verified ? { reviewedOn: null, scope: "business_identity" } : null,
+    posterVerification: job.poster_verified
+      ? { reviewedOn: job.poster_verified_at ? job.poster_verified_at.slice(0, 10) : null, scope: "business_identity" }
+      : null,
     product: job.product,
     publicAccessRequirements: job.public_access_requirements ?? [],
     publicRoadNotes: job.public_road_notes,
