@@ -1,5 +1,8 @@
 import "server-only"
 
+import type { VerificationRecord } from "@logloads/contracts"
+
+import { reviewedByLogLoadsLabel } from "./plans"
 import { services } from "./services"
 
 export interface VerificationRecordView {
@@ -31,14 +34,29 @@ const SOURCE_LABELS: Record<string, string> = {
   official_record_reviewed: "Official record reviewed"
 }
 
-const STATUS_META: Record<
-  VerificationRecordView["status"],
-  { label: string; tone: VerificationRecordView["statusTone"] }
-> = {
-  pending: { label: "In review", tone: "warning" },
-  verified: { label: "Verified", tone: "success" },
-  rejected: { label: "Not approved", tone: "critical" },
-  suspended: { label: "Suspended", tone: "critical" }
+const STATUS_TONES: Record<VerificationRecordView["status"], VerificationRecordView["statusTone"]> = {
+  pending: "warning",
+  verified: "success",
+  rejected: "critical",
+  suspended: "critical"
+}
+
+/**
+ * A reviewed record reads as LogLoads' dated statement ("Reviewed by LogLoads on Oct 14, 2026"), never the bare word
+ * (legal review §7.3 item 1, #428). Only an active platform administrator can set `verified`, and that stamps
+ * `verifiedAt`.
+ */
+function statusLabel(record: Pick<VerificationRecord, "status" | "verifiedAt">): string {
+  switch (record.status) {
+    case "verified":
+      return reviewedByLogLoadsLabel(record.verifiedAt ?? null)
+    case "pending":
+      return "In review"
+    case "rejected":
+      return "Not approved"
+    case "suspended":
+      return "Suspended"
+  }
 }
 
 function humanizeType(type: string): string {
@@ -57,15 +75,14 @@ export function listSubjectVerifications(subjectType: string, subjectId: string)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .map((record) => {
       const status = record.status
-      const meta = STATUS_META[status]
 
       return {
         evidenceSummary: record.evidenceSummary,
         id: record.id,
         sourceLabel: SOURCE_LABELS[record.source] ?? record.source.replaceAll("_", " "),
         status,
-        statusLabel: meta.label,
-        statusTone: meta.tone,
+        statusLabel: statusLabel(record),
+        statusTone: STATUS_TONES[status],
         typeLabel: humanizeType(record.verificationType),
         updatedAt: record.updatedAt
       }

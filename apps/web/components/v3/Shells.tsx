@@ -445,9 +445,11 @@ function verificationTone(status: string): "success" | "warning" | "critical" | 
   return "warning"
 }
 
+// The account's own organization. `verified` is set only by a LogLoads platform administrator's identity review, so
+// the label names who reviewed what. Never the bare word (legal review §7.3 item 1, #428).
 function verificationLabel(status: string): string {
   if (status === "verified") {
-    return "Verified"
+    return "Identity reviewed by LogLoads"
   }
 
   if (status === "rejected") {

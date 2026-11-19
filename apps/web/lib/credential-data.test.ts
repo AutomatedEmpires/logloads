@@ -448,6 +448,68 @@ describe("a record that reads approved but does not count", () => {
   })
 })
 
+// #428 (legal review §7.3 item 1). A chip that says "Approved" beside a driver's licence reads as LogLoads vouching for
+// the driver. The chip names who checked the record, and the driver's own detail says when. The stored status stays
+// `approved`.
+describe("a record that counts names who checked it, never the bare word", () => {
+  const BARE = /^(?:verified|trusted|approved|vetted|safe|certified|background[ -]checked)\b/i
+
+  it("labels a current record as checked by LogLoads, with the review date in the detail", () => {
+    const vault = vaultFor(clearedVault())
+    const cdl = slot(vault, "cdl")
+    const truck = slot(vault, "truck")
+
+    expect(cdl.stateLabel).toBe("Checked by LogLoads")
+    expect(cdl.detail).toBe(`LogLoads checked this record on Jun 1, 2026. In date until ${cdl.expiresOnLabel}.`)
+    expect(truck.stateLabel).toBe("Checked by LogLoads")
+    expect(truck.detail).toBe("LogLoads checked this record on Jun 1, 2026. It states no expiry date, so it does not lapse.")
+  })
+
+  it("keeps the review date in the warning for a record that expires soon", () => {
+    const vault = vaultFor([
+      ...clearedVault().filter((entry) => entry.kind !== "insurance"),
+      credential({ expiresOn: daysFromNow(12), kind: "insurance", status: "approved" })
+    ])
+
+    expect(slot(vault, "insurance").detail).toMatch(/^LogLoads checked this record on Jun 1, 2026, and it expires in 12 days/)
+  })
+
+  it("never shows a bare word as a driver's or a host's state label", () => {
+    const vaults = [
+      clearedVault(),
+      [],
+      [credential({ kind: "insurance", status: "pending" })],
+      [credential({ kind: "insurance", reviewNotes: "Unreadable.", status: "denied" })],
+      [credential({ expiresOn: daysFromNow(-1), kind: "insurance", status: "approved" })]
+    ]
+
+    for (const rows of vaults) {
+      for (const entry of vaultFor(rows).slots) {
+        expect(entry.stateLabel).not.toMatch(BARE)
+        expect(entry.detail).not.toMatch(BARE)
+      }
+      for (const line of summaryFor(rows).lines) {
+        expect(line.stateLabel).not.toMatch(BARE)
+        expect(line.note ?? "").not.toMatch(BARE)
+      }
+    }
+  })
+
+  it("tells the host LogLoads checked a current record, and when one expires soon", () => {
+    const summary = summaryFor([
+      ...clearedVault().filter((entry) => entry.kind !== "insurance"),
+      credential({ expiresOn: daysFromNow(12), kind: "insurance", status: "approved" })
+    ])
+
+    expect(hostLine(summary, "cdl")).toMatchObject({ note: null, state: "approved", stateLabel: "Checked by LogLoads" })
+    expect(hostLine(summary, "insurance")).toMatchObject({
+      note: "Checked by LogLoads. Expires on Jul 27, 2026.",
+      state: "expires_soon",
+      stateLabel: "Expires soon"
+    })
+  })
+})
+
 describe("expiry warnings", () => {
   it("warns inside the window without blocking the driver", () => {
     const vault = vaultFor([
@@ -496,7 +558,7 @@ describe("expiry warnings", () => {
     const insurance = slot(vault, "insurance")
 
     expect(insurance.expiringSoon).toBe(false)
-    expect(insurance.stateLabel).toBe("Approved")
+    expect(insurance.stateLabel).toBe("Checked by LogLoads")
     expect(insurance.expiresOnLabel).toBe("Jul 30, 2027")
     expect(vault.expiryNotice).toBeNull()
   })

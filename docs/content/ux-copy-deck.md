@@ -949,10 +949,10 @@ Internal. Every page starts with "LogLoads staff". Actions that change a custome
 ### Business identity
 
 **Title:** Business identity
-**Tabs:** Pending, Verified, Denied, Suspended
+**Tabs:** Pending, Identity reviewed, Denied, Suspended
 **Decision buttons:** Verify business identity, Ask for more information, Deny, Suspend the mark.
 **Mark text the public will see:** "Business identity reviewed by LogLoads on {date}". After 12 months: "Business identity last reviewed by LogLoads on {date}". With no review: "Not yet reviewed".
-**Deny reason the customer sees:** "We couldn't verify the business identity from what was submitted."
+**Deny reason the customer sees:** "LogLoads could not confirm the business identity from what was submitted."
 **Ask:** "Send {organization} a request for {document}."
 **Empty:** "No businesses waiting for review."
 
@@ -993,7 +993,7 @@ Internal. Every page starts with "LogLoads staff". Actions that change a custome
 ### Founding offers
 
 **Title:** Founding offers
-**Body:** "First 10 qualifying landing organizations per opened state. 50% off for 6 billing cycles. One per verified organization. State-open rules are not settled (#114). Do not grant from this screen until they are."
+**Body:** "First 10 qualifying landing organizations per opened state. 50% off for 6 billing cycles. One per organization whose business identity LogLoads has reviewed. State-open rules are not settled (#114). Do not grant from this screen until they are."
 **Buttons, after the rule exists:** Grant founding rate, Revoke as a duplicate.
 **Revoke confirm:** "Revoke the founding rate for {organization}? The next invoice uses the full plan price. Enter the reason."
 **Empty:** "No founding offers."
@@ -1198,8 +1198,8 @@ Button: Update payment method
 **Reviewed subject:** Business identity reviewed for {organization}
 **Body:** LogLoads reviewed the business identity of {organization}. The public mark says "Business identity reviewed by LogLoads on {date}". It does not cover insurance, equipment, or safety.
 
-**Denied subject:** Business identity was not verified
-**Body:** We couldn't verify the business identity of {organization} from what was submitted. The public profile stays up without the mark. You can submit again.
+**Denied subject:** Business identity review not completed for {organization}
+**Body:** LogLoads could not confirm the business identity of {organization} from what was submitted. The public profile stays up without the mark. You can submit again.
 
 Button: Open the profile
 

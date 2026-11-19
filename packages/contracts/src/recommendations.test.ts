@@ -68,6 +68,17 @@ describe("load recommendations", () => {
     expect(result.reasons).toContain("Partner work you're trusted for")
   })
 
+  it("says who may see identity-reviewed work, never a bare Verified (#428)", () => {
+    // verified_network loads are open to organizations whose business identity LogLoads reviewed. The reason names
+    // that review; it does not call the work verified (legal review §7.3 item 1).
+    const result = recommendLoad(signals({ visibility: "verified_network" }))
+
+    expect(result.reasons).toContain("Open to identity-reviewed carriers")
+    for (const reason of [result.label, ...result.reasons]) {
+      expect(reason).not.toMatch(/\b(?:verified|trusted|approved|vetted|certified)\b/i)
+    }
+  })
+
   it("demotes filled capacity below open capacity", () => {
     const open = recommendLoad(signals())
     const filled = recommendLoad(signals({ isRequestable: false, remainingCapacity: 0 }))

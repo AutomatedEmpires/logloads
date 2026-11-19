@@ -169,18 +169,23 @@ const isCustomerCopy = (file) => isSource(file) && !isTestSource(file) && custom
 // record of what people accepted.
 const termsFiles = new Set(["apps/web/lib/legal/terms.ts", "apps/web/lib/legal-archive.ts"])
 
-// The marketplace screens that show an organization, a profile, a job or a truck (§7.3 item 1: "for those
-// components"). The retired pilot cockpits under components/v3 are not part of the launch product.
-const marketplaceRoots = [
-  "apps/web/app/v2/",
-  "apps/web/components/v2/",
-  "apps/web/lib/marketplace-v2/",
-  "packages/ui/src/marketplace/",
-  "packages/contracts/src/marketplace-",
-  "packages/contracts/src/v2/",
-  "packages/services/src/v2/"
-]
-const isMarketplaceSurface = (file) => isSource(file) && !isTestSource(file) && marketplaceRoots.some((root) => file.startsWith(root))
+// Where the bare-word rule reads (§7.3 item 1). #344 covered the Marketplace V2 screens. #428 widened it to every file
+// a customer can read words from: the pilot cockpits under components/v3, their data in apps/web/lib (credentials,
+// verification records, plans, visibility labels), the contracts (review tags, recommendation reasons) and the
+// services. The pilot cockpits are not retired: they are what production serves while Marketplace V2 is off, and 83
+// route files under apps/web/app import them.
+//
+// Each exemption names the file and the reason. Remove the entry when the reason is gone.
+const verificationLabelExemptions = new Map([
+  [
+    "packages/ui/src/icons/registry.ts",
+    "The status.verified icon's default accessible name. Every use is aria-hidden today. The neutral icon that replaces it is #336, and #423 holds this file."
+  ]
+])
+const isVerificationLabelSurface = (file) => isCustomerCopy(file) && !verificationLabelExemptions.has(file)
+
+// The copy deck drafts the words before they reach code. Other documents quote the old strings on purpose.
+const COPY_DECK = "docs/content/ux-copy-deck.md"
 
 // What another business or a signed-out visitor sees. A form the business fills in about itself is not in here.
 const isPublicMarketplaceComponent = (file) =>
@@ -198,7 +203,11 @@ const BARE_WORD = "(?:verified|trusted|approved|vetted|safe|certified|background
 const BARE_LABEL =
   "(?:Verified|VERIFIED|Trusted|TRUSTED|Approved|APPROVED|Vetted|VETTED|Safe|SAFE|Certified|CERTIFIED|Background[ -][Cc]hecked|BACKGROUND[ -]CHECKED)"
 const LABELLED_NOUN =
-  "(?:business(?:es)?|haulers?|carriers?|landings?|posters?|fleets?|compan(?:y|ies)|profiles?|jobs?|trucks?|operators?|organi[sz]ations?|drivers?|members?|partners?|identity)"
+  "(?:business(?:es)?|haulers?|carriers?|landings?|posters?|fleets?|compan(?:y|ies)|profiles?|jobs?|trucks?|operators?|organi[sz]ations?|drivers?|members?|partners?|identity" +
+  // #428: what the pilot cockpits label.
+  "|networks?|work|loads?|hauls?|equipment|rigs?|units?|records?|credentials?|documents?)"
+// The word alone, or with the thing it describes and at most one lower-case word between ("Trusted local carriers").
+const BARE_LABEL_PHRASE = `${BARE_LABEL}(?:[ \\t]+(?:[a-z]+[ \\t]+)?${LABELLED_NOUN})?`
 const OUTCOME_STATUS = "(?:accepted|awarded|assigned|booked|hired)"
 const BARE_LABEL_MESSAGE =
   "Verified, Trusted, Approved, Vetted, Safe, Certified and Background checked are never a label on an organization, profile, job or truck (legal review §7.3 item 1). Use the full sentence from describeMarketplaceVerification."
@@ -343,22 +352,67 @@ const legalChecks = [
     // without the thing it describes) is the bare label. Stored values such as "verified" are lower case and pass.
     id: "bare-verification-word",
     message: BARE_LABEL_MESSAGE,
-    pattern: new RegExp(`(?:["'\`]|>)\\s*${BARE_LABEL}(?:\\s+${LABELLED_NOUN})?\\s*[.!✓✔]?\\s*(?:["'\`]|<)`, "g"),
-    include: isMarketplaceSurface,
+    pattern: new RegExp(`(?:["'\`]|>)\\s*${BARE_LABEL_PHRASE}\\s*[.!✓✔]?\\s*(?:["'\`]|<)`, "g"),
+    include: isVerificationLabelSurface,
     skipComments: true
   },
   {
-    // The same word in any case where the code says it is a label, and the two endorsement phrasings.
+    // The same word in any case where the code says it is a label, and the two endorsement phrasings. "Keep LogLoads
+    // safe" (the Privacy Policy) describes what LogLoads does for itself and is not an endorsement.
     id: "bare-verification-word",
     message: BARE_LABEL_MESSAGE,
     pattern: new RegExp(
       `\\b(?:label|title|badge|alt|caption|tooltip|aria-label|ariaLabel)\\s*[:=]\\s*\\{?\\s*["'\`]\\s*${BARE_WORD}(?:\\s+${LABELLED_NOUN})?\\s*[.!]?\\s*["'\`]` +
-        `|\\bLogLoads[- ]${BARE_WORD}\\b` +
+        `|(?<!\\bkeep(?:s|ing)?\\s+)\\bLogLoads[- ]${BARE_WORD}\\b` +
         `|\\b${BARE_WORD}\\s+by\\s+LogLoads\\b`,
       "gi"
     ),
-    include: isMarketplaceSurface,
+    include: isVerificationLabelSurface,
     skipComments: true
+  },
+  {
+    // #428. The word after the thing it describes ("Organization verified", "Business identity verified") is the
+    // same label, and so is the word in front of a bare date (`Verified ${date}`, "Approved on {day}"): neither says
+    // who checked what.
+    id: "bare-verification-word",
+    message: BARE_LABEL_MESSAGE,
+    pattern: new RegExp(
+      `(?:["'\`]|>)\\s*(?:[A-Za-z]+[ \\t]+)?${LABELLED_NOUN}[ \\t]+${BARE_WORD}\\s*[.!]?\\s*(?:["'\`]|<)`,
+      "gi"
+    ),
+    include: isVerificationLabelSurface,
+    skipComments: true
+  },
+  {
+    id: "bare-verification-word",
+    message: BARE_LABEL_MESSAGE,
+    pattern: new RegExp(`(?:\`|>)\\s*${BARE_LABEL}[ \\t]+(?:on[ \\t]+|since[ \\t]+)?(?:\\$\\{|\\{)`, "g"),
+    include: isVerificationLabelSurface,
+    skipComments: true
+  },
+  {
+    // #428. The copy deck (Markdown) states the rule by quoting the banned word ('Never the bare word "Verified"'),
+    // so a quotation right after "bare word" passes. Everything else that reads as a label is caught: an item in a
+    // list of tabs, chips or columns, a quoted label, the word next to the thing it describes, and "Not verified".
+    id: "bare-verification-word",
+    message: BARE_LABEL_MESSAGE,
+    pattern: new RegExp(
+      `(?:\\*\\*|[,:])[ \\t]*${BARE_LABEL_PHRASE}[ \\t]*(?=,|\\.?[ \\t]*$)` +
+        `|(?<!\\b(?:bare|banned)\\s+(?:word|words|label|labels)\\s+)["“][ \\t]*${BARE_LABEL_PHRASE}[ \\t]*[.!]?[ \\t]*["”]`,
+      "gm"
+    ),
+    include: (file) => file === COPY_DECK
+  },
+  {
+    id: "bare-verification-word",
+    message: BARE_LABEL_MESSAGE,
+    pattern: new RegExp(
+      `\\b(?:verified|vetted|certified|trusted)\\s+${LABELLED_NOUN}\\b` +
+        `|\\b${LABELLED_NOUN}\\s+(?:was\\s+|is\\s+|has\\s+been\\s+)?(?:not\\s+)?(?:verified|approved|vetted|certified)\\b` +
+        `|["“]Not\\s+(?:verified|approved|vetted|certified)["”]`,
+      "gi"
+    ),
+    include: (file) => file === COPY_DECK
   },
   {
     // A yes-or-no flag is how a generic "Verified" reaches a screen. A public component takes the verification
