@@ -12,8 +12,9 @@ function units(count: number): string {
  * A hauling business as a landing operator sees it (UX 02 §5.1). It takes only the public view
  * (`publicHaulerProfile`), so a private field cannot reach this markup: the profile page's preview and any public
  * page render exactly this. `headingLevel` places it under the page's own heading (2) or as the page heading (1).
- * Everything here is what the business itself stated; LogLoads reviewed only what the review line names. `now` is the
- * request's instant, for that line's 12-month currency (#337).
+ * Everything here is what the business itself stated; LogLoads reviewed only what the review line names, and the line
+ * says what LogLoads did not check as text a phone or a keyboard can reach (#412). `now` is the request's instant, for
+ * that line's 12-month currency (#337).
  */
 export function PublicHaulerProfile({ profile, now, headingLevel = 2 }: { profile: HaulerPublicProfileView; now: string; headingLevel?: 1 | 2 }) {
   const Name = headingLevel === 1 ? "h1" : "h2"
@@ -36,7 +37,7 @@ export function PublicHaulerProfile({ profile, now, headingLevel = 2 }: { profil
         </p>
         {profile.verification ? (
           <p className={styles.meta}>
-            <VerificationIndicator now={now} verification={profile.verification} />
+            <VerificationIndicator limits now={now} verification={profile.verification} />
           </p>
         ) : null}
       </div>

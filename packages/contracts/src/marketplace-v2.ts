@@ -292,6 +292,26 @@ export interface MarketplaceVerificationDescription {
 
 const REVIEWED_ON_FORMAT = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", timeZone: "UTC", year: "numeric" })
 
+/**
+ * What a review looked at, per scope, in words that are true on every verification path (#412). The pilot store
+ * records a decision and an optional note (`services/admin`), the normalized `admin_set_org_verification` a status and
+ * a reason, and only the V2 admin form names document types, in an audit reason that no read carries. So no state says
+ * that documents were sent or reviewed. Naming them needs a read that carries the types, which is a schema change.
+ */
+const REVIEWED_WHAT: Readonly<Record<MarketplaceVerificationScope, string>> = { business_identity: "this business's identity" }
+
+/** Said in the mark's `meaning` and on the sheet alike, so the two never disagree. */
+const REVIEW_NOT_CURRENT = `This review is more than ${VERIFICATION_VALID_MONTHS} months old, so LogLoads no longer shows it as current.`
+const REVIEW_UNDATED = "The date of this review is not on record, so LogLoads does not show it as current."
+/**
+ * No current review (#412). It is true whether LogLoads never reviewed the business, rejected its review, or let it
+ * lapse: every read sends `null` for every status but `verified`, and none can tell those apart, because
+ * `admin_set_org_verification` and the lapse job clear the review date. It gives no reason, so a rejection is never
+ * public, and nothing in it suggests a problem (legal review 2026-11 §7.3 item 7).
+ */
+const NO_CURRENT_REVIEW =
+  "LogLoads has no current review of this business's identity. Not every business asks for one, and LogLoads does not say why a business has none."
+
 /** A real UTC calendar day (YYYY-MM-DD) from a stored date or timestamp; `null` for anything else, so a bad value is never shown as a date. */
 function reviewDay(value: string | null): string | null {
   const day = value !== null && /^\d{4}-\d\d-\d\d($|T)/.test(value) ? value.slice(0, 10) : ""
@@ -316,8 +336,11 @@ function lastCurrentDay(day: string, months: number): string {
 /**
  * The verification mark as LogLoads' own statement: attributed, dated and expiring (legal review 2026-11 §7,
  * risks R4 and R10; UX-DEC-06). `label` is the whole sentence, so no screen can show a bare "Verified", and
- * `meaning` says what was looked at, when, and what was not. `null` is "Not yet reviewed". A review is current
- * through the same UTC day 12 months later; after that, or with no readable date, it is `review_lapsed`. The mark is wording only: it takes no part in filtering or ordering jobs.
+ * `meaning` says what was looked at, when, and what was not. `null` is no current review, shown as "Not yet
+ * reviewed": a read cannot tell a business LogLoads never reviewed from one whose review was rejected or lapsed, so the
+ * meaning is true for all three and gives no reason (#412). A review is current through the same UTC day 12 months
+ * later; after that, or with no readable date, it is `review_lapsed`. The mark is wording only: it takes no part in
+ * filtering or ordering jobs. The sheet's lines are `describeMarketplaceVerificationSheet`.
  */
 export function describeMarketplaceVerification(verification: MarketplaceVerification | null, now: string): MarketplaceVerificationDescription {
   const instant = Date.parse(now)
@@ -329,20 +352,20 @@ export function describeMarketplaceVerification(verification: MarketplaceVerific
   if (!verification) {
     return {
       label: "Not yet reviewed",
-      meaning: `LogLoads has not reviewed this business. That is not a mark against it. ${MARKETPLACE_VERIFICATION_LIMITS}`,
+      meaning: `${NO_CURRENT_REVIEW} ${MARKETPLACE_VERIFICATION_LIMITS}`,
       reviewedOn: null,
       state: "not_reviewed"
     }
   }
 
   const scope = MARKETPLACE_VERIFICATION_SCOPE_LABELS[verification.scope]
-  const looked = `LogLoads reviewed documents this business sent to show its ${scope.toLowerCase()}.`
+  const looked = `LogLoads reviewed ${REVIEWED_WHAT[verification.scope]}.`
   const review = reviewDay(verification.reviewedOn)
 
   if (!review) {
     return {
       label: `${scope} reviewed by LogLoads, date not on record`,
-      meaning: `${looked} The date of that review is not on record, so LogLoads does not show it as current. ${MARKETPLACE_VERIFICATION_LIMITS}`,
+      meaning: `${looked} ${REVIEW_UNDATED} ${MARKETPLACE_VERIFICATION_LIMITS}`,
       reviewedOn: null,
       state: "review_lapsed"
     }
@@ -353,13 +376,52 @@ export function describeMarketplaceVerification(verification: MarketplaceVerific
 
   return {
     label: `${scope} ${lapsed ? "last " : ""}reviewed by LogLoads on ${reviewed}`,
-    meaning:
-      `On ${reviewed}, ${looked} ` +
-      (lapsed ? `That review is more than ${VERIFICATION_VALID_MONTHS} months old, so LogLoads no longer shows it as current. ` : "") +
-      MARKETPLACE_VERIFICATION_LIMITS,
+    meaning: `On ${reviewed}, ${looked} ${lapsed ? `${REVIEW_NOT_CURRENT} ` : ""}${MARKETPLACE_VERIFICATION_LIMITS}`,
     reviewedOn: review,
     state: lapsed ? "review_lapsed" : "reviewed"
   }
+}
+
+/**
+ * The "what this means" sheet (#336, VerificationSheet 357:19095), line by line. #419 builds the sheet from it, so the
+ * sheet keeps no second copy of the wording (the condition on the #336 frames).
+ */
+export interface MarketplaceVerificationSheet {
+  state: MarketplaceVerificationState
+  /** The mark's whole sentence: `describeMarketplaceVerification`'s label. */
+  label: string
+  /** The sheet's opening sentences: what this state of the mark means. */
+  summary: string
+  /** "What LogLoads looked at": what every verification path records, never documents. `null` with no current review. */
+  lookedAt: string | null
+  /** "When": the review's date, with its age once it is no longer current. `null` with no current review. */
+  when: string | null
+  /** "What LogLoads did not check": `MARKETPLACE_VERIFICATION_LIMITS`, in every state. */
+  limits: string
+  /** A review never moves a business up in search (legal review 2026-11 §7.3 item 5), in every state. */
+  ranking: string
+}
+
+/**
+ * Every line of the "what this means" sheet, from the same record and clock as the mark (#412). It is separate from
+ * `describeMarketplaceVerification`, so a page that shows only the mark carries none of the sheet's words in its script.
+ */
+export function describeMarketplaceVerificationSheet(verification: MarketplaceVerification | null, now: string): MarketplaceVerificationSheet {
+  const { label, reviewedOn, state } = describeMarketplaceVerification(verification, now)
+  const shared = { label, limits: MARKETPLACE_VERIFICATION_LIMITS, ranking: "A review does not move a business up in search.", state }
+
+  if (!verification) return { ...shared, lookedAt: null, summary: NO_CURRENT_REVIEW, when: null }
+
+  const what = REVIEWED_WHAT[verification.scope]
+  const lookedAt = `${what.charAt(0).toUpperCase()}${what.slice(1)}.`
+
+  if (!reviewedOn) return { ...shared, lookedAt, summary: REVIEW_UNDATED, when: "Not on record" }
+
+  const reviewed = REVIEWED_ON_FORMAT.format(new Date(`${reviewedOn}T00:00:00Z`))
+
+  return state === "reviewed"
+    ? { ...shared, lookedAt, summary: "This mark is LogLoads' statement about one check. It is not a safety rating or a recommendation.", when: reviewed }
+    : { ...shared, lookedAt, summary: REVIEW_NOT_CURRENT, when: `${reviewed}, more than ${VERIFICATION_VALID_MONTHS} months ago` }
 }
 
 export interface MarketplaceJobCardView {
@@ -368,7 +430,10 @@ export interface MarketplaceJobCardView {
   title: string
   posterOrganizationId: string
   posterName: string
-  /** Scope-specific verification of the posting business; `null` when nothing was verified or it cannot be confirmed. */
+  /**
+   * Scope-specific verification of the posting business; `null` when there is no current review: never reviewed,
+   * rejected or lapsed, which no read tells apart (#412).
+   */
   posterVerification: MarketplaceVerification | null
   product: string | null
   pay: MarketplacePay
