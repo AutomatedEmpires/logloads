@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Runs one normalized-v2 validation stage against the guarded disposable database
-# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..45>
+# and performs independent post-stage checks. Usage: run-stage.sh <stage number, 1..47>
 # Logs: $RUNNER_TEMP/normalized-v2-ci/logs/stage<N>.log (uploaded on failure).
 # =============================================================================
 set -euo pipefail
@@ -870,6 +870,26 @@ SUITES
     echo "== 45_v2_reveal_ledger_race.sh" | tee -a "$LOG"
     bash "$DIR/45_v2_reveal_ledger_race.sh" 2>&1 | tee -a "$LOG"
     grep -q "ALL REVEAL LEDGER RACES PASSED" "$LOG" || { echo "STAGE 45: the two-session races did not pass" >&2; exit 1; }
+    ;;
+  46)
+    OUTBOX_BEFORE="$(q "select count(*) from marketplace.notification_outbox;")"
+    run_migration "$DIR/46_v2_email_suppression.sql"
+    aligned_privilege_checks "'job_publication_attestations','legacy_job_imports','job_moderation_holds','billing_provider_events','schema_migrations','notification_unsubscribe_keys','notification_unsubscribe_uses','basins','hauler_reveal_pauses','phone_reveal_events','email_suppressions'"
+    check "D-1/D-2: the migration ledger records 06, 11, 12, 16, 18, 23, 26, 29, 31, 33, 35, 38, 40, 42, 44, 46 in order" "select string_agg(version, ',' order by applied_at, version) = '06,11,12,16,18,23,26,29,31,33,35,38,40,42,44,46' from marketplace.schema_migrations;"
+    check "46-S: the suppression list has row-level security, no policy and no address column, and starts empty" "select c.relrowsecurity and not exists (select 1 from pg_policies p where p.schemaname = 'marketplace' and p.tablename = 'email_suppressions') and not exists (select 1 from information_schema.columns x where x.table_schema = 'marketplace' and x.table_name = 'email_suppressions' and x.column_name ~ '(email|address)\$') and (select count(*) = 0 from marketplace.email_suppressions) from pg_class c where c.oid = 'marketplace.email_suppressions'::regclass;"
+    check "46: service_role alone can call the suppression list's two functions and the notice context" "select bool_and(has_function_privilege('service_role', f, 'EXECUTE') and not has_function_privilege('anon', f, 'EXECUTE') and not has_function_privilege('authenticated', f, 'EXECUTE')) from unnest(array['marketplace.suppress_email_address(text,text)', 'marketplace.email_suppressed_hashes(text[])', 'marketplace.notification_email_context(uuid,uuid)']) f;"
+    check "46-N: the new-inquiry trigger is installed, and no client role can call its function" "select exists (select 1 from pg_trigger t where t.tgrelid = 'marketplace.expressions_of_interest'::regclass and t.tgname = 'interest_submitted_notify' and not t.tgisinternal) and not has_function_privilege('anon', 'marketplace.tg_interest_submitted_notify()', 'EXECUTE') and not has_function_privilege('authenticated', 'marketplace.tg_interest_submitted_notify()', 'EXECUTE') and not has_function_privilege('service_role', 'marketplace.tg_interest_submitted_notify()', 'EXECUTE');"
+    check "46 changes no stored row: the outbox still has $OUTBOX_BEFORE rows" "select count(*) = $OUTBOX_BEFORE from marketplace.notification_outbox;"
+    check "46 adds one table and four functions: 154 functions and 49 tables" "select (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marketplace') = 154 and (select count(*) from pg_tables where schemaname = 'marketplace') = 49;"
+    check "31-U still holds: unsubscribe_with_token is the only volatile marketplace function anon can execute" "select count(*) = 1 and bool_and(p.proname = 'unsubscribe_with_token') from pg_proc p where p.pronamespace = 'marketplace'::regnamespace and p.provolatile = 'v' and has_function_privilege('anon', p.oid, 'EXECUTE');"
+    ;;
+  47)
+    run_sql "$DIR/47_v2_email_suppression_tests.sql"
+    grep -q "ALL EMAIL SUPPRESSION (46) TESTS PASSED" "$LOG" || { echo "STAGE 47: suite did not reach its final PASS notice" >&2; exit 1; }
+    check "suite rolled back (no s46 organizations and no suppressions left)" "select (select count(*) from marketplace.organizations where slug like 's46-%') + (select count(*) from marketplace.email_suppressions) = 0;"
+    PASSES="$(grep -cE "NOTICE:  00000: PASS: " "$LOG" || true)"
+    echo "  executed assertions reporting PASS: $PASSES" | tee -a "$LOG" | tee -a "$SUMMARY"
+    [[ "$PASSES" -ge 30 ]] || { echo "STAGE 47: only $PASSES PASS notices; expected at least 30" >&2; exit 1; }
     ;;
   *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac

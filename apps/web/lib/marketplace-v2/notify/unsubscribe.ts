@@ -6,6 +6,10 @@
 import { readSuppressionToken } from "@logloads/services"
 
 export const UNSUBSCRIBE_CONFIRMATION = "If this link was valid, those emails are stopped."
+export const UNSUBSCRIBE_TOO_MANY = "Too many requests from this connection. Wait a minute, then use the link again."
+
+/** One-click POSTs per client key per minute. A mailbox provider posts from shared addresses, so this is generous. */
+export const UNSUBSCRIBE_RATE_LIMIT = { bucket: "notify-unsubscribe", limit: 30, windowMs: 60_000 } as const
 
 const TOKEN = /^[A-Za-z0-9._~-]{1,512}$/
 
@@ -37,15 +41,22 @@ export function unsubscribeToken(url: string, body: string): string {
 }
 
 /**
- * Records a valid no-account suppression, then asks the database to apply its own token.
- * A token that is neither is still given to the database, which changes nothing and raises nothing for a bad token.
+ * A no-account link (signed by the application with the suppression key) puts the address's keyed hash on the
+ * durable list. Any other token is handed to the database, which applies its own signed link (31-U) and changes
+ * nothing, and raises nothing, for a token that is not one.
  */
-export async function applyEmailUnsubscribe(token: string, secret: string, now: Date, effects: {
-  remember: (hash: string) => void
+export async function applyEmailUnsubscribe(token: string, suppressionKey: string, now: Date, effects: {
+  suppress: (hash: string) => Promise<void>
   forgetInDatabase: (token: string) => Promise<void>
 }): Promise<void> {
-  const hash = token ? readSuppressionToken(token, secret, now) : null
+  if (!token) return
 
-  if (hash) effects.remember(hash)
-  if (token) await effects.forgetInDatabase(token)
+  const hash = readSuppressionToken(token, suppressionKey, now)
+
+  if (hash) {
+    await effects.suppress(hash)
+    return
+  }
+
+  await effects.forgetInDatabase(token)
 }

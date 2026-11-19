@@ -89,7 +89,7 @@ describe.skipIf(!DISPOSABLE)("liquidity board adapter contract (disposable Postg
 
     try {
       const ledger = await admin.unsafe("select string_agg(version, ',' order by applied_at, version) as versions from marketplace.schema_migrations")
-      expect(ledger[0]?.versions).toBe("06,11,12,16,18,23,26,29,31,33,35,38,40,42,44")
+      expect(ledger[0]?.versions).toBe("06,11,12,16,18,23,26,29,31,33,35,38,40,42,44,46")
 
       // A signed-in person who is not staff gets the refusal, with or without a basin on record.
       await expect(liquidity.board(person)).rejects.toMatchObject({ code: "42501", name: "MarketplaceRefusalError" })
