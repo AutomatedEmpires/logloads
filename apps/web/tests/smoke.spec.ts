@@ -638,7 +638,9 @@ test("fleet mobile frame keeps command, dispatch, work, and trips one thumb away
   await expect(workspace).toBeVisible()
   await expect(workspace.locator("span")).toHaveCount(2)
   await expect(workspace.locator("span").first()).toHaveText(/\S+/)
-  await expect(workspace).toContainText(/Verified|Review pending|Not approved|Suspended/)
+  // #428: a reviewed organization names who reviewed what, never the bare word.
+  await expect(workspace).toContainText(/Identity reviewed by LogLoads|Review pending|Not approved|Suspended/)
+  await expect(workspace).not.toContainText(/\bVerified\b/)
 
   const moreTrigger = nav.getByRole("button", { name: "Open more tools" })
   const moreTriggerBox = await moreTrigger.boundingBox()

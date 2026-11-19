@@ -30,7 +30,7 @@ import {
 } from "../analytics/server"
 import { checkRateLimit } from "../rate-limit"
 import { draftInput, draftQueryString, draftValuesFromForm, type DraftFormValues } from "./draft-params"
-import { v2ErrorQuery, type V2ErrorCode } from "./error-codes"
+import { v2ErrorQuery, type V2ErrorCode, type V2Failure } from "./error-codes"
 import { reportV2Error } from "./error-log"
 import { marketplaceV2Enabled } from "./flag"
 import { pilotMarketplaceV2 } from "./pilot-adapter"
@@ -232,14 +232,39 @@ export async function haulerReplyAction(formData: FormData): Promise<void> {
   inquiryRedirect("/v2/inquiries", formData, { updated: "reply" })
 }
 
-export async function respondToInterestAction(formData: FormData): Promise<void> {
-  const viewer = await requireViewer("/v2/landing/inquiries")
+const LANDING_INBOX = "/v2/landing/inquiries"
+
+/**
+ * An answer held on the phone (flow C, #411) names the person and the business that held it. It goes only as them:
+ * on a shared computer, a colleague's session never sends it under their own name. A form without these fields (a
+ * typed reply, a page without JavaScript) is the session's own answer.
+ */
+function heldBySomeoneElse(viewer: MarketplaceV2Viewer, formData: FormData): boolean {
+  const heldBy = formData.get("heldBy")
+  const heldFor = formData.get("heldFor")
+
+  return (
+    (heldBy !== null && String(heldBy).toLowerCase() !== viewer.userId.toLowerCase()) ||
+    (heldFor !== null && String(heldFor).toLowerCase() !== viewer.organizationId.toLowerCase())
+  )
+}
+
+/**
+ * The landing's answer on an inquiry (a reply, a decline, or "viewed"), shared by the inbox's two actions: the rate
+ * limit, the write through the port, then its product event. A failure comes back as its code, logged when it is a
+ * fault, and nothing is recorded.
+ */
+async function recordLandingAnswer(viewer: MarketplaceV2Viewer, formData: FormData): Promise<V2Failure | null> {
   const decision = field(formData, "decision")
   const interestId = field(formData, "interestId")
   const replyId = field(formData, "replyId") || undefined
   // A reply or a decline is an answer (flow C); "viewed" is not, and records nothing.
   const answers = decision === "replied" || decision === "declined"
   let isNew = false
+
+  if (heldBySomeoneElse(viewer, formData)) {
+    return { code: "not_allowed", requestId: null }
+  }
 
   try {
     const [, fresh] = await Promise.all([
@@ -251,7 +276,7 @@ export async function respondToInterestAction(formData: FormData): Promise<void>
     isNew = fresh
     await pilotMarketplaceV2.respondToInterest(viewer, { body: field(formData, "body"), decision, interestId, replyId })
   } catch (error) {
-    inquiryRedirect("/v2/landing/inquiries", formData, failed(error, "inquiry.respond"))
+    return reportV2Error(error, "inquiry.respond")
   }
 
   if (isNew) {
@@ -262,8 +287,41 @@ export async function respondToInterestAction(formData: FormData): Promise<void>
     )
   }
 
+  return null
+}
+
+export async function respondToInterestAction(formData: FormData): Promise<void> {
+  const viewer = await requireViewer(LANDING_INBOX)
+  const failure = await recordLandingAnswer(viewer, formData)
+
+  if (failure) {
+    inquiryRedirect(LANDING_INBOX, formData, v2ErrorQuery(failure))
+  }
+
   revalidatePath("/v2", "layout")
-  inquiryRedirect("/v2/landing/inquiries", formData, { updated: decision })
+  inquiryRedirect(LANDING_INBOX, formData, { updated: field(formData, "decision") })
+}
+
+/** What sending a held answer came to: it arrived, or the code of why not (the page shows that code's fixed copy). */
+export type HeldAnswerResult = { ok: true } | { code: V2ErrorCode; ok: false; requestId: string | null }
+
+/**
+ * A held answer sent from the inbox (flow C, #411): the same write as `respondToInterestAction`, answered in place
+ * instead of with a redirect, so the inbox can send every answer waiting on the phone without moving the landing off
+ * the page it is reading or typing on. Only a reply or a decline, and only one that names who held it. The page is not
+ * revalidated here: that would remount a reply the landing is typing elsewhere on the page.
+ */
+export async function sendHeldAnswerAction(formData: FormData): Promise<HeldAnswerResult> {
+  const viewer = await requireViewer(LANDING_INBOX)
+  const decision = field(formData, "decision")
+
+  if ((decision !== "replied" && decision !== "declined") || !formData.has("heldBy") || !formData.has("heldFor")) {
+    return { code: "invalid", ok: false, requestId: null }
+  }
+
+  const failure = await recordLandingAnswer(viewer, formData)
+
+  return failure ? { code: failure.code, ok: false, requestId: failure.requestId } : { ok: true }
 }
 
 const NEW_JOB_PATH = "/v2/landing/jobs/new"
