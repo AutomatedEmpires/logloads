@@ -1,12 +1,24 @@
 # FG01 First run: first-run and sign-in screens in Figma
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235), on 2026-11-11 for design audit 3 (#334), on 2026-11-12 for LL-D12 (#352), and on 2026-11-18 for the legal review consent boxes (#336, see [Legal review consent (#336)](#legal-review-consent-336)). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
+**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235), on 2026-11-11 for design audit 3 (#334), on 2026-11-12 for LL-D12 (#352), on 2026-11-18 for the legal review consent boxes (#336, see [Legal review consent (#336)](#legal-review-consent-336)), and the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
 **Figma page:** [01 First run](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-37) in the LogLoads file (jackson.cole's team).
 **Built from:** the [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) page (FG00, #256, field layer #281).
 - Every instance on the page comes from 00 System. Since #352 the plan cards are 00 System PlanCard instances in the not-for-sale state, and page 05's local `Plan tag / Not for sale yet` (`305:2117`) is deleted.
 - Every solid fill and stroke outside an instance is bound to a variable.
 - There are no image fills, and all text is IBM Plex.
 - No new styles or variables were made, and no UI code changed.
+
+## Design audit 4 (#379)
+
+Design audit 4 ([logloads#235 comment 6831966093](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6831966093)) found one major on this page and no blockers or minors.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| FR-09 and FR-10 are landing screens, but their tab bars used ResponsiveNavigation Workspace=hauler with "Landing inbox" written over the labels. The label wrapped, so the bar was 91 px tall. | Major | Every FR-09 and FR-10 tab bar is now Workspace=landing: FR-09 390 `92:3863`, 768 `92:4180` and Dark `307:3411`; FR-10 390 `93:2654`, 768 `93:3137` and its error state `173:3167`. The overrides were reset, so the labels and icons come from 00 System. The tab reads "Inquiries", and the bar is 67 px. As before, no tab is current on FR-09 (setup) and Landings is current on FR-10. No setup screen shows a count badge. At 1440, the GlobalNavigation links on FR-09 `I92:4219;17:313` and FR-10 `I93:3181;17:313` say Inquiries. |
+
+**FR-08 keeps its one-tab bar.** The audit asked for FR-08 to FR-10. FR-08 (`92:2880`, `92:3253`, `173:3012` and the 1440 links) shows only Find work, because the landing business does not exist until the person presses Set up business. A landing bar there would offer Overview, Inquiries and Landings for a business that has not been created yet. FR-08 had no "Landing inbox" text and no 91 px bar. The lead can ask for the landing bar there instead.
+
+**Check** (read-only script over the 8 changed frames and the page, 2026-11-18): no text under 14 px, no control under 44 px, no disabled control, no unbound fill or stroke, no text outside its frame and no overlapping frames. FR-10 390 was checked by screenshot.
 
 ## Legal review consent (#336)
 
@@ -211,7 +223,7 @@ The example data is illustrative: Ridgeline Hauling, Sweet Home, OR, Cedar Fork 
   - The A5 radius and the notify opt-ins. The code keeps these on the profile.
   - The B1 type, region, about, legal name and billing contact. The store does not hold them.
   - The B3 map of the approximate area. There is no map component in 00 System.
-- **Not applied from the audit: C18.** The audit asks to name inquiries "Inquiries" everywhere. These frames keep the code's navigation labels, because the labels are shared navigation data across every page.
+- **Audit C18, applied in #379.** The landing navigation tab is "Inquiries" in 00 System (lead decision 5 on design audit 4), so these frames say Inquiries. The code label in `navigation.ts` is still "Landing inbox" (an FG00 code follow-up).
 
 ## Open questions for the founder
 
