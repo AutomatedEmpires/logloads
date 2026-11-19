@@ -8,8 +8,9 @@ export const MAX_PROFILE_FIGURES = 4
 
 /**
  * A business's public profile header: a white surface with no colour band. A real logo when the business supplied
- * one, otherwise its initials in the timber monogram ring; the verification mark only when a record exists; 2–4
- * capability figures; and the page's actions (the page decides which actions the viewer may take).
+ * one, otherwise its initials in the timber monogram ring; the verification mark only when a record exists, with what
+ * LogLoads did not check as text under it (#412); 2–4 capability figures; and the page's actions (the page decides
+ * which actions the viewer may take).
  */
 export function CompanyProfileHeader({
   business,
@@ -61,7 +62,7 @@ export function CompanyProfileHeader({
               </p>
               {verification ? (
                 <p className={styles.verify}>
-                  <VerificationIndicator now={now} verification={verification} />
+                  <VerificationIndicator limits now={now} verification={verification} />
                 </p>
               ) : null}
             </div>

@@ -50,7 +50,10 @@ export function PerformancePage({
                   ))}
                 </div>
                 {row.tags.length > 0 ? (
+                  // The tags are what reviewers picked, not LogLoads' finding, so the row says whose words they are
+                  // (legal review §7.1 and §7.3 item 1, #428).
                   <div className="perf-row__tags">
+                    <span className="muted">Reviewers mentioned</span>
                     {row.tags.map((tag) => (
                       <span className="perf-tag" key={tag}>{tag}</span>
                     ))}

@@ -35,12 +35,12 @@ type CockpitRole = "fleet" | "host"
 
 const ORG_VERIFICATION_OPTIONS: Record<CockpitRole, VerificationTypeOption[]> = {
   fleet: [
-    { value: "organization", label: "Business identity", hint: "Confirms this carrier is a real, active business — approval turns on your Verified badge." },
+    { value: "organization", label: "Business identity", hint: "LogLoads reviews the business identity details you send and records the date. It does not check insurance, authority or safety." },
     { value: "carrier_identifier", label: "Carrier authority", hint: "Name the public authority record a reviewer should check. Do not enter a full private credential here." },
     { value: "insurance_document", label: "Insurance", hint: "Name the insurer and evidence available. Do not enter a full policy number here." }
   ],
   host: [
-    { value: "organization", label: "Business identity", hint: "Confirms this operation is a real, active business — approval turns on your Verified badge." },
+    { value: "organization", label: "Business identity", hint: "LogLoads reviews the business identity details you send and records the date. It does not check insurance, authority or safety." },
     { value: "facility_control", label: "Facility control", hint: "Evidence you control the landing or mill you post from." },
     { value: "landing_authorization", label: "Landing authorization", hint: "Authorization to move wood from this landing." }
   ]
