@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   ADVERTISING_ONLY_NOTICE,
+  advertisingOnlyNotice,
   advertisingOnlyNoticeText,
   commodityMonth,
   commodityMonthOf,
@@ -122,6 +123,63 @@ describe("the advertising-only notice", () => {
   it("is a draft for counsel, with a version id", () => {
     expect(ADVERTISING_ONLY_NOTICE.status).toBe("draft_for_counsel")
     expect(ADVERTISING_ONLY_NOTICE.id).toMatch(/^advertising-only-notice-draft-\d{4}-\d{2}-\d{2}$/)
+  })
+})
+
+describe("the advertising-only notice as the approved frame draws it (#422, Figma CE-03b 359:4602)", () => {
+  // Words copied from the approved frames: poles at 390 (359:4634) and Other at 390 (359:5109).
+  const TITLE = "LogLoads only advertises this job"
+  const POLES_BODY =
+    "You and the hauler are responsible for any operating authority this haul of poles and pilings needs. LogLoads does not arrange the haul or check authority."
+  const OTHER_BODY = "You and the hauler are responsible for any operating authority this haul needs. LogLoads does not arrange the haul or check authority."
+
+  it("uses the frame's words, with a new version id, still a draft for counsel", () => {
+    expect(ADVERTISING_ONLY_NOTICE.title).toBe(TITLE)
+    expect(ADVERTISING_ONLY_NOTICE.body).toBe(OTHER_BODY)
+    expect(ADVERTISING_ONLY_NOTICE.status).toBe("draft_for_counsel")
+    // The #339 draft had other words, so the frame wording is a new version.
+    expect(ADVERTISING_ONLY_NOTICE.id).not.toBe("advertising-only-notice-draft-2026-11-18")
+    expect(ADVERTISING_ONLY_NOTICE.id).toBe("advertising-only-notice-draft-2026-11-19")
+  })
+
+  it("names the product for poles and pilings, and leaves it out for Other", () => {
+    expect(advertisingOnlyNotice("Poles and pilings")).toEqual({ ...ADVERTISING_ONLY_NOTICE, body: POLES_BODY })
+    expect(advertisingOnlyNotice("Other")).toEqual(ADVERTISING_ONLY_NOTICE)
+    expect(advertisingOnlyNotice("Other")?.body).toBe(OTHER_BODY)
+  })
+
+  it("is for notice-class products only, as marketplaceProductNeedsNotice decides", () => {
+    for (const product of MARKETPLACE_PRODUCTS) {
+      expect(advertisingOnlyNotice(product) !== null, product).toBe(marketplaceProductNeedsNotice(product))
+    }
+
+    expect(MARKETPLACE_PRODUCTS.filter((product) => advertisingOnlyNotice(product))).toEqual(["Poles and pilings", "Other"])
+  })
+
+  it("reads a stored product as Find Work does: a listed label without case, a poster's own words as Other", () => {
+    expect(advertisingOnlyNotice("  poles AND pilings ")?.body).toBe(POLES_BODY)
+    expect(advertisingOnlyNotice("Treated fence posts")?.body).toBe(OTHER_BODY)
+    expect(advertisingOnlyNotice(null)?.body).toBe(OTHER_BODY)
+    expect(advertisingOnlyNotice("saw logs")).toBeNull()
+  })
+
+  it("keeps every wording free of the claims the legal review forbids", () => {
+    const variants = [...MARKETPLACE_PRODUCTS, "Treated fence posts", null].flatMap((product) => advertisingOnlyNotice(product) ?? [])
+
+    expect(variants.length).toBeGreaterThan(0)
+    for (const notice of variants) {
+      expect(noticeClaimProblems(notice.title)).toEqual([])
+      expect(noticeClaimProblems(notice.body)).toEqual([])
+      expect(noticeClaimProblems(advertisingOnlyNoticeText(notice))).toEqual([])
+      for (const word of ["exempt", "broker", "licensed", "guarantee", "not regulated"]) {
+        expect(advertisingOnlyNoticeText(notice).toLowerCase()).not.toContain(word)
+      }
+    }
+  })
+
+  it("gives the text shown as one passage, for the attestation to store", () => {
+    expect(advertisingOnlyNoticeText(advertisingOnlyNotice("Poles and pilings") ?? ADVERTISING_ONLY_NOTICE)).toBe(`${TITLE}. ${POLES_BODY}`)
+    expect(advertisingOnlyNoticeText()).toBe(`${TITLE}. ${OTHER_BODY}`)
   })
 })
 
