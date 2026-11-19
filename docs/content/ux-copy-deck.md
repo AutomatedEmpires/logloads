@@ -100,7 +100,7 @@ Use these whenever the situation matches. Screen sections add the title and the 
 | S6 | Stale weather | Weather is unavailable. The last reading was {time} from {source}. It is not current. |
 | S7 | Map down | The map didn't load. The list still has the jobs. |
 | S8 | Sponsored mark | Sponsored |
-| S9 | Freshness, job | Last confirmed {relative time} by {organization} |
+| S9 | Freshness, job | Confirmed by {organization} {N days ago}. From day 7: "Last confirmed by {organization} {N days ago} — check with the poster" |
 | S10 | Freshness, truck | Availability updated {relative time} by hauler |
 | S11 | Stale truck | Not recently confirmed |
 | S12 | Pay missing | Pay not stated |
@@ -196,7 +196,7 @@ No plan button. No founding sentence. No boost price. Sponsored placement is not
 
 **Title:** What LogLoads checks, and what it does not.
 
-**Body:** A verified business mark names the check that was done, such as business identity. It does not mean LogLoads inspected the truck, the insurance, the license, or the road.
+**Body:** A review mark names the check that was done and its date, such as "Business identity reviewed by LogLoads on {date}". It does not mean LogLoads inspected the truck, the insurance, the license, or the road.
 
 **Points:**
 
@@ -228,7 +228,7 @@ No plan button. No founding sentence. No boost price. Sponsored placement is not
 
 **Meta:** {Hauling business or Landing} · {service area} · Joined {month year}
 
-**Verification:** "Business identity verified" only after that specific review. Otherwise "Not verified". Absence of the mark is not an accusation.
+**Verification:** "Business identity reviewed by LogLoads on {date}" only after that specific review. Once the review is more than 12 months old: "Business identity last reviewed by LogLoads on {date}". Otherwise "Not yet reviewed". Never the bare word "Verified". Absence of the mark is not an accusation.
 
 **Primary button, on a hauler profile viewed by a landing:** Prepare a targeted invitation
 **Primary button, on a landing profile viewed by a hauler:** See jobs
@@ -595,7 +595,7 @@ Presented as a sheet over the job. The job summary stays visible.
 **Filters:** Equipment, Public area, Availability updated within
 **Pro and Regional:** button "Save this search". **Basic, and while no plan is active:** "Saved searches are on Pro and Regional." Do not show a broken control. Show the sentence and no disabled mystery button.
 
-**Card:** "{business} · {service area} · {equipment} · {n} trucks, self-reported · S10 or S11 · {Business identity verified or Not verified}"
+**Card:** "{business} · {service area} · {equipment} · {n} trucks, self-reported · S10 or S11 · {Business identity reviewed by LogLoads on {date}, or Not yet reviewed}"
 
 **Primary button:** View profile
 **Secondary:** Invite to this job
@@ -951,7 +951,7 @@ Internal. Every page starts with "LogLoads staff". Actions that change a custome
 **Title:** Business identity
 **Tabs:** Pending, Verified, Denied, Suspended
 **Decision buttons:** Verify business identity, Ask for more information, Deny, Suspend the mark.
-**Mark text the public will see:** "Business identity verified".
+**Mark text the public will see:** "Business identity reviewed by LogLoads on {date}". After 12 months: "Business identity last reviewed by LogLoads on {date}". With no review: "Not yet reviewed".
 **Deny reason the customer sees:** "We couldn't verify the business identity from what was submitted."
 **Ask:** "Send {organization} a request for {document}."
 **Empty:** "No businesses waiting for review."
@@ -1195,8 +1195,8 @@ Button: Update payment method
 
 ### Business identity result
 
-**Verified subject:** Business identity verified for {organization}
-**Body:** LogLoads verified the business identity of {organization}. The public mark says "Business identity verified". It does not cover insurance, equipment, or safety.
+**Reviewed subject:** Business identity reviewed for {organization}
+**Body:** LogLoads reviewed the business identity of {organization}. The public mark says "Business identity reviewed by LogLoads on {date}". It does not cover insurance, equipment, or safety.
 
 **Denied subject:** Business identity was not verified
 **Body:** We couldn't verify the business identity of {organization} from what was submitted. The public profile stays up without the mark. You can submit again.

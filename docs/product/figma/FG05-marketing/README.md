@@ -1,10 +1,20 @@
 # FG05 Marketing: public pages in Figma
 
-**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#298), then for design audit 3 on 2026-11-11 (#334). On 2026-11-12, #352 replaced the plan cards with 00 System PlanCard. Not approved. Key screens still need the founder's one-line approval (AE-Control `policy/designops.md`). The lead audits first.
+**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#298), then for design audit 3 on 2026-11-11 (#334). On 2026-11-12, #352 replaced the plan cards with 00 System PlanCard. On 2026-11-18, #379 fixed the design audit 4 major on For landing operators (see [Design audit 4 (#379)](#design-audit-4-379)). Not approved. Key screens still need the founder's one-line approval (AE-Control `policy/designops.md`). The lead audits first.
 **Figma page:** [05 Marketing](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=59-2025) in the LogLoads file (jackson.cole's team).
 **Source:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md` §3.1 and §3.2, the lead ruling on [#108](https://github.com/AutomatedEmpires/logloads/issues/108) (2026-11-11, option B, restricted), and the lead's #334 decision that a share card shows a date. No UI code changed. No new text styles or variables. Components and variables come from page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2). The local `Plan tag / Not for sale yet` (`305:2117`) was deleted in #352.
 
 The empty board stays honest. Example rows are labeled "Example. Not a live job." There are no fake live counts, testimonials, or review stars.
+
+## Design audit 4 (#379)
+
+Design audit 4 ([logloads#235 comment 6831966093](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6831966093)) found one major on this page, and no blockers or minors.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| For landing operators sold boosts as live. Its "Sponsored" story card said "A boost marks one real job as Sponsored." and carried the Sponsored tag, while Pricing on the same site says sponsored placement is not offered. | Major | The card body now reads "Sponsored placement is not offered yet." (lead decision 2), the wording Pricing already uses. The SponsoredIndicator tag is removed from the card, so nothing on the page looks like a live sponsored job. This is fixed at 1440 (`158:1709` in `71:508`), 768 (`158:3971` in `158:3879`) and 390 (`158:1841` in `71:671`). The page has no SponsoredIndicator instance now. |
+
+**Check** (read-only script over the three For landing operators frames, 2026-11-18): no text under 14 px, no control under 44 px, no disabled control, no unbound fill or stroke and no text outside its frame. The only "Sponsored" text left is the card title and the not-offered sentence. The 390 story list was checked by screenshot.
 
 ## LL-D12 (#352)
 
