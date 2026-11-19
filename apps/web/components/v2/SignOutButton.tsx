@@ -4,9 +4,25 @@ import { useClerk } from "@clerk/nextjs"
 import { Button } from "@logloads/ui/primitives"
 import { useState, useTransition } from "react"
 
+// Flow C's held answers (#411) live on this phone under the person who held them; sign-out settles and clears them.
+import { settleHeldOnSignOut } from "@/app/v2/landing/inquiries/_lib/held-phone"
+import { sendHeldAnswerAction } from "@/lib/marketplace-v2/actions"
 import { clearLocalSessionAction } from "@/lib/session-actions"
 
 const clerkConfigured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
+
+/**
+ * Before the session ends: a held reply or decline still in its minute goes now, as its own person (the server
+ * refuses anyone else's), and then every held answer is cleared from the phone, so the next person to sign in on
+ * this computer never sends or reads one (#411). It never stops the sign-out.
+ */
+async function settleHeldAnswers(): Promise<void> {
+  try {
+    await settleHeldOnSignOut(sendHeldAnswerAction)
+  } catch {
+    // Nothing held, or no storage: sign out regardless.
+  }
+}
 
 /** Where signing out from V2 lands: the public home, as on the legacy pages. */
 const SIGNED_OUT_PATH = "/"
@@ -40,6 +56,7 @@ function ClerkSignOutButton() {
   return (
     <SignOutControl
       performSignOut={async () => {
+        await settleHeldAnswers()
         await clearLocalSessionAction()
         await clerk.signOut({ redirectUrl: SIGNED_OUT_PATH })
       }}
@@ -51,6 +68,7 @@ function LocalSignOutButton() {
   return (
     <SignOutControl
       performSignOut={async () => {
+        await settleHeldAnswers()
         await clearLocalSessionAction()
         window.location.assign(SIGNED_OUT_PATH)
       }}

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 
 import { MARKETPLACE_PUBLISH_ATTESTATION_FIELDS, marketplacePublishAttestations } from "@logloads/contracts"
+import { advertisingOnlyNotice } from "@logloads/contracts/src/marketplace-commodity"
 import { JobDetail } from "@logloads/ui/marketplace"
 import { Button, FormActions, VisibilityPanel } from "@logloads/ui/primitives"
 
@@ -16,6 +17,7 @@ import {
   RestoredNotice
 } from "@/components/v2/JobEditor"
 import styles from "@/components/v2/JobEditor.module.css"
+import { AdvertisingOnlyNotice } from "@/components/v2/JobEditorFields"
 import { JobDraftSession } from "@/components/v2/JobDraftSession"
 import { PublishButton } from "@/components/v2/PublishButton"
 import { FlowTapCounter } from "@/lib/analytics/beacons"
@@ -41,6 +43,8 @@ function one(value: string | string[] | undefined): string {
  * components discovery uses (JobResultRow `context="preview"` and JobDetail), lists what haulers never see, and
  * asks for the three V2-DEC-03 statements. Publish stays aria-disabled until all three are ticked; the server
  * (`publishJobAction`) re-checks everything. A draft that isn't ready goes back to the step that needs fixing.
+ * A notice-class product shows the advertising-only notice before the statements, and the Posting Rules line sits
+ * under them (#422; Figma CE-03b `359:4602`, CE-06 `238:3596`, page 07 B5 `118:414`).
  * Taps here count toward flow B's clock, which the editor started (#330); nothing is sent from this page.
  */
 export default async function JobPreviewPage({ searchParams }: { searchParams: SearchParams }) {
@@ -89,6 +93,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
   const canPublish = pilotMarketplaceV2.supportsPublishing
   const attestations = marketplacePublishAttestations(landing.name)
   const focusStatements = failure?.code === "publish_attestation"
+  const notice = advertisingOnlyNotice(values.text.product)
 
   return (
     <JobEditorLayout aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} values={values} />} organizationName={access.organizationName}>
@@ -118,6 +123,8 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
           <p className={styles.hint}>Share them in a LogLoads message with a hauler you choose.</p>
         </VisibilityPanel>
 
+        {notice ? <AdvertisingOnlyNotice notice={notice} /> : null}
+
         <form action={publishJobAction} className={styles.form} data-job-draft-clear-on-submit="" id={PUBLISH_FORM_ID}>
           <DraftHiddenFields values={values} />
           {/* The explicit attestation (V2-DEC-03): three statements, never pre-ticked, never carried in the draft or an edit link. */}
@@ -134,6 +141,9 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
                 value={attestation.value}
               />
             ))}
+            <p className={styles.rules}>
+              Publishing is subject to the <a href="/posting-rules">LogLoads Posting Rules</a>.
+            </p>
           </fieldset>
           <p className={styles.hint}>
             Publishing records that your business confirmed the job is available today. Haulers contact you through LogLoads

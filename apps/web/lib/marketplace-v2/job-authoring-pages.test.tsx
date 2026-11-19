@@ -40,12 +40,14 @@ vi.mock("@/lib/marketplace-v2/pilot-adapter", () => ({
 import {
   MARKETPLACE_AVAILABILITY_ATTESTATION,
   MARKETPLACE_EQUIPMENT_TYPES,
+  MARKETPLACE_PRODUCTS,
   MARKETPLACE_PUBLISH_ATTESTATION_FIELDS,
   marketplacePublishAttestations,
   PUBLISH_ATTESTATION_REQUIRED,
   type MarketplaceJobCardView,
   type MarketplaceJobStatus
 } from "@logloads/contracts"
+import { advertisingOnlyNotice, marketplaceProductNeedsNotice, noticeClaimProblems } from "@logloads/contracts/src/marketplace-commodity"
 
 import LandingJobsPage from "@/app/v2/landing/jobs/page"
 import NewJobPage from "@/app/v2/landing/jobs/new/page"
@@ -459,6 +461,167 @@ describe("job editor: review and publish", () => {
     expect(hasHiddenInput(form, "title", COMPLETE.title)).toBe(true)
     expect(hasHiddenInput(form, "equipment", "log_truck")).toBe(true)
     expect(form).not.toMatch(/name="(step|from|error)"/)
+  })
+})
+
+/**
+ * The advertising-only notice (Figma CE-03b 359:4602) and the Posting Rules line (CE-06 238:3596, page 07 B5 118:414),
+ * legal review P0 items 5 and 15 (#422). Which products get the notice comes only from marketplaceProductNeedsNotice,
+ * and its words only from the contracts module.
+ */
+describe("job editor: the advertising-only notice and the Posting Rules line (#422)", () => {
+  const POLES = { ...COMPLETE, product: "Poles and pilings", title: "Douglas-fir poles, Hills Creek" }
+  const OTHER = { ...COMPLETE, product: "Other", productOther: "Treated fence posts", title: "Treated fence posts, Hills Creek" }
+
+  interface RenderedNotice {
+    /** Server-marked as the one for the saved product: what shows without :has() support. */
+    current: boolean
+    /** The variant's key on the product step, which the step's CSS ties to a product option. */
+    key: string | null
+    text: string
+    at: number
+  }
+
+  /** Every advertising-only notice in the page, in document order. */
+  function noticesIn(html: string): RenderedNotice[] {
+    return [...html.matchAll(/<div(?=[^>]*\bdata-advertising-notice=)([^>]*)>(.*?)<\/div><\/div>/g)].map((match) => ({
+      at: match.index ?? -1,
+      current: /\bdata-current=""/.test(match[1] ?? ""),
+      key: match[1]?.match(/\bdata-notice-for="([^"]+)"/)?.[1] ?? null,
+      text: (match[2] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+    }))
+  }
+
+  /** What a reader can see: the markup without its tags and without the step's style rules. */
+  const visibleText = (html: string) =>
+    html
+      .replace(/<style[^>]*>.*?<\/style>/g, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&#x27;/g, "'")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/\s+/g, " ")
+
+  const draftFor = (product: string) => (product === "Other" ? { ...OTHER } : { ...COMPLETE, product })
+
+  it("shows the notice under the product on step 1 for poles and pilings and Other, and for no other product", async () => {
+    for (const product of MARKETPLACE_PRODUCTS) {
+      const html = await render(NewJobPage, { ...draftFor(product), step: "basics" })
+      const current = noticesIn(html).filter((notice) => notice.current)
+      const expected = advertisingOnlyNotice(product)
+
+      if (marketplaceProductNeedsNotice(product)) {
+        expect(current, product).toHaveLength(1)
+        expect(current[0]?.text).toBe(`${expected?.title} ${expected?.body}`)
+      } else {
+        expect(current, product).toHaveLength(0)
+      }
+    }
+
+    expect(MARKETPLACE_PRODUCTS.filter((product) => marketplaceProductNeedsNotice(product))).toEqual(["Poles and pilings", "Other"])
+    // No product chosen yet: nothing to show.
+    expect(noticesIn(await render(NewJobPage, {})).filter((notice) => notice.current)).toHaveLength(0)
+  })
+
+  it("names the product for poles and pilings and leaves it out for Other, in the approved frame's words", async () => {
+    const poles = noticesIn(await render(NewJobPage, { ...POLES, step: "basics" })).find((notice) => notice.current)
+    const other = noticesIn(await render(NewJobPage, { ...OTHER, step: "basics" })).find((notice) => notice.current)
+
+    expect(poles?.text).toBe(
+      "LogLoads only advertises this job You and the hauler are responsible for any operating authority this haul of poles and pilings needs. LogLoads does not arrange the haul or check authority."
+    )
+    expect(other?.text).toBe(
+      "LogLoads only advertises this job You and the hauler are responsible for any operating authority this haul needs. LogLoads does not arrange the haul or check authority."
+    )
+  })
+
+  it("follows the product select without JavaScript: one hidden variant per notice product, tied to its option by CSS", async () => {
+    const html = await render(NewJobPage, { ...COMPLETE, step: "basics" })
+    const variants = noticesIn(html)
+    const rules = html.match(/<style>(.*?)<\/style>/)?.[1] ?? ""
+    const noticeProducts = MARKETPLACE_PRODUCTS.filter((product) => marketplaceProductNeedsNotice(product))
+
+    expect(variants).toHaveLength(noticeProducts.length)
+    expect(rules).toMatch(/^@supports selector\(:has\(\*\)\)\{/)
+    noticeProducts.forEach((product, index) => {
+      const variant = variants[index]
+      const notice = advertisingOnlyNotice(product)
+
+      expect(variant?.key).toBe(String(index))
+      expect(variant?.current).toBe(false)
+      expect(variant?.text).toBe(`${notice?.title} ${notice?.body}`)
+      expect(rules).toContain(`form:has(#product option[value="${product}"]:checked) [data-notice-for="${index}"]{display:flex}`)
+    })
+  })
+
+  it("puts the notice between the product fields and the destination, as reachable text with a hidden icon", async () => {
+    const html = await render(NewJobPage, { ...POLES, step: "basics" })
+    const notice = noticesIn(html).find((item) => item.current)
+    const tag = html.slice(notice?.at ?? 0).match(/^<div[^>]*>/)?.[0] ?? ""
+
+    expect(notice).toBeDefined()
+    expect(html.indexOf('name="productOther"')).toBeLessThan(notice?.at ?? -1)
+    expect(notice?.at ?? Infinity).toBeLessThan(html.indexOf('name="destinationLabel"'))
+    expect(tag).toContain('role="note"')
+    expect(tag).not.toContain("aria-hidden")
+    expect(html.slice(notice?.at ?? 0)).toMatch(/^<div[^>]*><span aria-hidden="true"[^>]*><\/span>/)
+  })
+
+  it("shows the notice again in the preview for poles and pilings and Other, and not for saw logs", async () => {
+    for (const draft of [POLES, OTHER]) {
+      const html = await render(JobPreviewPage, draft)
+      const shown = noticesIn(html)
+      const notice = advertisingOnlyNotice(draft.product)
+
+      expect(shown, draft.product).toHaveLength(1)
+      expect(shown[0]?.key).toBeNull()
+      expect(shown[0]?.text).toBe(`${notice?.title} ${notice?.body}`)
+      // Read before the publish statements.
+      expect(shown[0]?.at ?? Infinity).toBeLessThan(html.indexOf('name="attestRealJob"'))
+    }
+
+    expect(noticesIn(await render(JobPreviewPage, COMPLETE))).toHaveLength(0)
+  })
+
+  it("puts the Posting Rules line, linked to /posting-rules, under the three publish statements", async () => {
+    const html = await render(JobPreviewPage, COMPLETE)
+    const form = html.match(/<form[^>]*id="job-publish-form"[^>]*>.*?<\/form>/)?.[0] ?? ""
+    const line = form.match(/<p[^>]*>Publishing is subject to the <a([^>]*)>LogLoads Posting Rules<\/a>\.<\/p>/)
+    const lastStatement = Math.max(...MARKETPLACE_PUBLISH_ATTESTATION_FIELDS.map((name) => form.indexOf(`name="${name}"`)))
+
+    expect(line).not.toBeNull()
+    expect(line?.[1]).toContain('href="/posting-rules"')
+    expect(lastStatement).toBeGreaterThan(0)
+    expect(line?.index ?? -1).toBeGreaterThan(lastStatement)
+    // The line belongs to the "Before you publish" group, as the frame groups it.
+    const fieldset = form.match(/<fieldset[^>]*><legend[^>]*>Before you publish<\/legend>.*?<\/fieldset>/)?.[0] ?? ""
+    expect(fieldset).toContain("Publishing is subject to the ")
+  })
+
+  it("never says LogLoads is or is not a broker, or promises an exemption, on either page", async () => {
+    const pages = [
+      await render(NewJobPage, { ...POLES, step: "basics" }),
+      await render(NewJobPage, { ...OTHER, step: "basics" }),
+      await render(JobPreviewPage, POLES),
+      await render(JobPreviewPage, OTHER),
+      await render(JobPreviewPage, COMPLETE)
+    ]
+
+    for (const html of pages) {
+      const text = visibleText(html)
+      // The job page preview keeps its pay disclaimer, "Not a LogLoads guarantee." (JobSummary), which denies a
+      // guarantee rather than giving one; every other claim the notice check knows is refused on the whole page.
+      const claims = noticeClaimProblems(text).filter((claim) => claim !== "guarantee")
+
+      expect(claims).toEqual([])
+      expect(text).not.toMatch(/\bbroker|\bexempt|\blicen[cs]ed\b/i)
+      expect(text.match(/\bguarantee/gi)?.length ?? 0).toBe(text.match(/Not a LogLoads guarantee\./g)?.length ?? 0)
+
+      // The words this task adds pass the full check.
+      for (const notice of noticesIn(html)) expect(noticeClaimProblems(notice.text)).toEqual([])
+      const rules = text.match(/Publishing is subject to the LogLoads Posting Rules\./)?.[0]
+      if (rules) expect(noticeClaimProblems(rules)).toEqual([])
+    }
   })
 })
 

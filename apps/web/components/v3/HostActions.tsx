@@ -45,7 +45,13 @@ const WEEKDAYS: Array<[number, string]> = [
 const VISIBILITY_MODES: Array<[OpportunityVisibilityMode, string, string]> = [
   ["open_network", "Open network", "Any hauling organization can see and request this work."],
   ["private_network", "Private — partners only", "Only your trusted partner organizations see it."],
-  ["verified_network", "Verified carriers", "Limited to carriers building a verified track record."]
+  // The gate is the organization's business identity review (isLoadVisibleToOrganization in services/operating-network),
+  // not a track record. The label says that, never the bare word (legal review §7.3 item 1, #428).
+  [
+    "verified_network",
+    "Identity-reviewed carriers",
+    "Only hauling organizations whose business identity LogLoads has reviewed see it. The review does not cover insurance, authority or safety."
+  ]
 ]
 
 /**

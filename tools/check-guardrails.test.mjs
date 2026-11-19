@@ -142,9 +142,122 @@ test("(b) the full reviewed sentences, the freshness labels and stored values pa
     ` * caller can pass a generic "Verified" (Gate 5).`,
     `<p>Your padding respects the safe areas.</p>`
   ])
-  // The retired pilot cockpits and the tests are outside this rule.
-  assertPasses("bare-verification-word", "apps/web/components/v3/FleetPages.tsx", [`<Badge tone="success">Verified</Badge>`])
+  // Tests quote the word to assert it is absent, so they stay outside the rule. Since #428 the pilot cockpits are inside
+  // it: see the #428 tests below.
   assertPasses("bare-verification-word", "packages/ui/src/marketplace/indicators.test.tsx", [`expect(html).not.toContain(">Verified<")`])
+})
+
+// #428 widened the rule from Marketplace V2 to every file a customer can read words from. The pilot cockpits under
+// components/v3 are what production serves while Marketplace V2 is off, so they are live surfaces, not retired ones.
+const COCKPIT = "apps/web/components/v3/FleetPages.tsx"
+const COPY_DECK = "docs/content/ux-copy-deck.md"
+
+test("(b) #428: the pilot cockpits, their data and the contracts never show a bare verification word", () => {
+  // The strings that were on screen before #428, each in the file that held it.
+  const before = {
+    "apps/web/components/v3/AdminPages.tsx": [`    return "Verified"`, `          <Metric label="Verified" value={verifiedCount} />`],
+    "apps/web/components/v3/Shells.tsx": [`    return "Verified"`],
+    "apps/web/components/v3/DriverPages.tsx": [`    return { label: "Verified", tone: "success" }`],
+    [COCKPIT]: [`    return <Badge tone="success">Verified</Badge>`],
+    "apps/web/components/v3/HostActions.tsx": [
+      `  ["verified_network", "Verified carriers", "Limited to carriers building a verified track record."]`
+    ],
+    "apps/web/components/v3/LoadMap.tsx": ["          : `Verified ${formatDateTime(pack.lastVerifiedAt)}`}"],
+    "apps/web/lib/credential-data.ts": [
+      `  satisfied: { blocksWork: false, label: "Approved", tone: "success" }`,
+      `  approved: { label: "Approved", tone: "success" },`
+    ],
+    "apps/web/lib/verification-data.ts": [`  verified: { label: "Verified", tone: "success" },`],
+    "apps/web/lib/plans.ts": [`      label: "Verified",`],
+    "apps/web/lib/v3-shared.ts": [`    return "Verified network"`],
+    "apps/web/lib/admin-data.ts": [`  verified_network: "Verified network"`],
+    "packages/contracts/src/reputation.ts": [`  safe: "Safe",`],
+    "packages/contracts/src/recommendations.ts": [`    return "Verified regional work"`]
+  }
+
+  for (const [file, samples] of Object.entries(before)) {
+    assertFires("bare-verification-word", file, samples)
+  }
+
+  // The whole web app, the shared components, the contracts and the services are covered, not only the files above.
+  assertFires("bare-verification-word", "apps/web/lib/pilot-showroom.ts", [`const badge = "Verified"`, `const badge = "Trusted local carriers"`])
+  assertFires("bare-verification-word", "apps/web/app/driver/profile/page.tsx", [`<Badge>Approved</Badge>`])
+  assertFires("bare-verification-word", "packages/services/src/notifications.ts", [`const subject = "Business identity verified"`])
+  assertFires("bare-verification-word", "packages/ui/src/primitives/Badge.tsx", [`const label = "Certified"`])
+  // The word after its noun, and the word before a date, are the same label.
+  assertFires("bare-verification-word", COCKPIT, [
+    `label: "Organization verified"`,
+    `<span>Identity verified</span>`,
+    "const note = `Approved on ${day}`",
+    `<span>Verified {formatDate(reviewedAt)}</span>`
+  ])
+})
+
+test("(b) #428: the attributed statements, stored values and plain sentences pass in the cockpits", () => {
+  assertPasses("bare-verification-word", COCKPIT, [
+    // What replaced the bare words.
+    `const label = "Business identity reviewed by LogLoads on Oct 14, 2026"`,
+    `const label = "Business identity reviewed by LogLoads, date not on record"`,
+    `const label = "Business identity last reviewed by LogLoads on Oct 14, 2025"`,
+    `const label = "Not yet reviewed"`,
+    `<Metric label="Identity reviewed" value={reviewedCount} />`,
+    `  satisfied: { blocksWork: false, label: "Checked by LogLoads", tone: "success" }`,
+    "const detail = `LogLoads checked this record on ${dayText(reviewedAt)}. In date until ${dayText(expiresOn)}.`",
+    `  ["verified_network", "Identity-reviewed carriers", "Only hauling organizations whose business identity LogLoads has reviewed see it."]`,
+    "          : `Issued ${formatDateTime(pack.lastVerifiedAt)}.`}",
+    `  safe: "Worked safely",`,
+    `    return "Open to identity-reviewed carriers"`,
+    // A refusal is not an endorsement, and stays.
+    `    return { label: "Not approved", tone: "critical" }`,
+    // Stored values and keys are lower case.
+    `  if (status === "verified") {`,
+    `const verifiedCount = organizations.filter((organization) => organization.verificationStatus === "verified").length`,
+    `decide("verify", "verified")`,
+    // Sentences that use the word for what the person did.
+    `<p>Invite trusted carriers or hosts to share work and selected availability.</p>`,
+    `const detail = "Riley Woods's approved, current records cover Unit 1."`,
+    `<button type="submit">Save and verify briefing</button>`
+  ])
+
+  // The Privacy Policy says it keeps LogLoads safe. That is not a label on anyone.
+  assertPasses("bare-verification-word", "apps/web/lib/legal/privacy.ts", [
+    `    "keep LogLoads safe: reviewing businesses, preventing fraud, spam and contact harvesting, handling reports, and securing accounts",`
+  ])
+  assertFires("bare-verification-word", "apps/web/lib/legal/privacy.ts", [`const line = "LogLoads Verified businesses"`])
+
+  // One named exemption: the status.verified icon's default accessible name. Every use is aria-hidden today; the
+  // neutral icon is #336 and #423 holds the file. The same line anywhere else still fires.
+  const iconLine = `  "status.verified": { key: "status.verified", icon: SealCheck, label: "Verified", weight: "duotone" },`
+  assertPasses("bare-verification-word", "packages/ui/src/icons/registry.ts", [iconLine])
+  assertFires("bare-verification-word", "packages/ui/src/icons/other-registry.ts", [iconLine])
+})
+
+test("(b) #428: the copy deck never writes a bare verification word as product copy", () => {
+  // What the deck said before #428 and #344.
+  assertFires("bare-verification-word", COPY_DECK, [
+    `**Tabs:** Pending, Verified, Denied, Suspended`,
+    `**Denied subject:** Business identity was not verified`,
+    `**Body:** "First 10 qualifying landing organizations per opened state. One per verified organization."`,
+    `**Mark text the public will see:** "Business identity verified"`,
+    `**Absent:** "Not verified"`,
+    `**Badge:** Verified`,
+    `**Card label:** "Trusted hauler"`
+  ])
+
+  assertPasses("bare-verification-word", COPY_DECK, [
+    `**Tabs:** Pending, Identity reviewed, Denied, Suspended`,
+    `**Mark text the public will see:** "Business identity reviewed by LogLoads on {date}". After 12 months: "Business identity last reviewed by LogLoads on {date}". With no review: "Not yet reviewed".`,
+    `**Denied subject:** Business identity review not completed for {organization}`,
+    `**Body:** LogLoads could not confirm the business identity of {organization} from what was submitted.`,
+    // The deck states the rule by quoting the word it bans.
+    `**Verification:** "Business identity reviewed by LogLoads on {date}" only after that specific review. Never the bare word "Verified". Absence of the mark is not an accusation.`,
+    `| Road note haulers may see | Optional. Safe summary only. | Move gate codes and private road names to the landing's Access tab. |`,
+    `**Status:** Draft for founder review. Not approved. Not in the product.`,
+    `**Low area:** "Do not sell extra invitations here. Add-on packs are not approved."`
+  ])
+
+  // The rule reads the copy deck, not every document: design notes and decisions quote the old strings.
+  assertPasses("bare-verification-word", "docs/DECISIONS.md", [`**Tabs:** Pending, Verified, Denied, Suspended`])
 })
 
 test("(b) a public marketplace component takes the verification object, never a bare verified flag", () => {
@@ -364,6 +477,26 @@ test("the command passes a clean tree and fails a tree with a violation", () => 
   assert.match(failed.stderr, /apps\/web\/lib\/copy\.ts:1 .*\[free-forever\]/)
   assert.match(failed.stderr, /apps\/web\/package\.json:1 .*\[recording-vendor-package\]/)
   assert.doesNotMatch(failed.stderr, /node_modules/)
+})
+
+test("#428: the command fails a tree with a bare word in a pilot cockpit or in the copy deck", () => {
+  const dirty = fixtureRepository({
+    "apps/web/lib/analytics-pageview.ts": GOOD_POLICY,
+    [COCKPIT]: `export function Mark() {\n  return <Badge tone="success">Verified</Badge>\n}\n`,
+    [COPY_DECK]: `# Copy deck\n\n**Tabs:** Pending, Verified, Denied, Suspended\n`
+  })
+  const failed = spawnSync(process.execPath, [script, "--root", dirty], { encoding: "utf8" })
+
+  assert.equal(failed.status, 1)
+  assert.match(failed.stderr, /apps\/web\/components\/v3\/FleetPages\.tsx:2 .*\[bare-verification-word\]/)
+  assert.match(failed.stderr, /docs\/content\/ux-copy-deck\.md:3 .*\[bare-verification-word\]/)
+
+  const clean = fixtureRepository({
+    "apps/web/lib/analytics-pageview.ts": GOOD_POLICY,
+    [COCKPIT]: `export function Mark() {\n  return <Badge tone="info">Business identity reviewed by LogLoads on Oct 14, 2026</Badge>\n}\n`,
+    [COPY_DECK]: `# Copy deck\n\n**Tabs:** Pending, Identity reviewed, Denied, Suspended\n`
+  })
+  assert.deepEqual(checkGuardrails({ root: clean }), [])
 })
 
 test("the command fails when the analytics policy file is gone", () => {
