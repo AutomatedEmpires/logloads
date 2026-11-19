@@ -260,7 +260,7 @@ test("(d) disable_session_recording stays true in ANALYTICS_CAPTURE_POLICY", () 
   assertFires("session-recording-policy", file, [
     policy(`  autocapture: false,\n  disable_surveys: true`),
     policy(`  autocapture: false,\n  disable_session_recording: false,\n  disable_surveys: true`),
-    policy(`  autocapture: false,\n  disable_session_recording: process.env.NEXT_PUBLIC_REPLAY !== "on",`),
+    policy(`  autocapture: false,\n  disable_session_recording: replayAllowed === false,`),
     // True somewhere else in the file does not count.
     `${policy("  autocapture: false")}\nexport const OTHER = { disable_session_recording: true }\n`,
     `export const SOMETHING_ELSE = 1\n`
