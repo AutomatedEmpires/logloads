@@ -46,6 +46,8 @@ vi.mock("@/lib/marketplace-v2/actions", () => ({
   expressInterestAction: async () => undefined,
   haulerReplyAction: async () => undefined,
   respondToInterestAction: async () => undefined,
+  // The landing inbox sends held answers in place (flow C, #411).
+  sendHeldAnswerAction: async () => ({ ok: true }),
   withdrawInterestAction: async () => undefined
 }))
 vi.mock("@/lib/marketplace-v2/switch-actions", () => ({ switchV2BusinessAction: async () => undefined }))

@@ -68,8 +68,11 @@ export interface MarketplaceEmailProviderEvent {
  * The class of each email, from the legal review §5.2. Job alerts and targeted invitations are commercial.
  * A reconfirm reminder stays transactional only while it carries no promotion. The outbox check constraint
  * stores `team_invitation`, `inquiry_reply` and `job_alert`; the other two are rendered when a later stage queues them.
+ * `inquiry_received` is the landing's "a hauler is interested" email (§5.2, transactional): an `inquiry_reply` outbox
+ * row whose payload `event` is `inquiry_submitted` (stage 46). It carries the one-tap replies of flow C (#405).
  */
 export const MARKETPLACE_EMAIL_TEMPLATE_CLASSES = {
+  inquiry_received: "transactional",
   inquiry_reply: "transactional",
   job_alert: "commercial",
   reconfirm_reminder: "transactional",
@@ -103,10 +106,30 @@ export interface MarketplaceEmailFacts {
   template: MarketplaceEmailTemplate
   /** 1 for the first message to this person about this subject. */
   attempt: number
+  /** The business the email is from or about: the inviting business, or for `inquiry_received` the hauling business. */
   organizationName: string | null
   landingName: string | null
   /** Team invitations: how many sends this one is, including itself. Null for every other template. */
   invitationSendCount: number | null
   promotion: string | null
   footer: MarketplaceEmailFooter | null
+  /** `inquiry_received`: the job's title, shown only when it carries no contact detail. */
+  jobTitle?: string | null
+  /** The https link that opens the inquiry's thread. Required for `inquiry_received`; optional for `inquiry_reply`. */
+  inquiryUrl?: string | null
+  /** `inquiry_received`: ready replies, each a signed one-tap link (flow C). Empty when no link could be signed. */
+  readyReplies?: readonly MarketplaceEmailAction[]
 }
+
+/** One labelled link in an email body. The label is fixed product text; the url is https. */
+export interface MarketplaceEmailAction {
+  label: string
+  url: string
+}
+
+/**
+ * Why an address is on the durable suppression list (`email_suppressions`, stage 46; legal review §5.3 item 4). The
+ * list keeps an HMAC of the address, never the address, and the worker checks it before every send.
+ */
+export const MARKETPLACE_EMAIL_SUPPRESSION_REASONS = ["unsubscribed", "bounced", "complained"] as const
+export type MarketplaceEmailSuppressionReason = (typeof MARKETPLACE_EMAIL_SUPPRESSION_REASONS)[number]
