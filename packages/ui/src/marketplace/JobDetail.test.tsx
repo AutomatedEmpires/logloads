@@ -49,11 +49,14 @@ describe("JobDetail", () => {
     expect(road?.[1]).toContain("Road Gravel for the last 6 miles Access Chains Nov to Mar")
     expect(road?.[1]).toContain("The landing shares the exact site and access if they choose, after you've been in touch.")
     expect(weather?.[1]).toBe("Weather isn't shown in this preview yet. Check a forecast for Riverton, OR before you send a truck.")
+    // True whether the poster was never reviewed, was rejected or lapsed: the job read cannot tell them apart (#412).
     expect(poster?.[1]).toContain(
-      "Not yet reviewed. LogLoads has not reviewed this business. That is not a mark against it. " +
+      "Not yet reviewed. LogLoads has no current review of this business's identity. " +
+        "Not every business asks for one, and LogLoads does not say why a business has none. " +
         "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
         "Check these yourself before you agree to a haul."
     )
+    expect(poster?.[1]).not.toMatch(/has not reviewed|not a mark against/)
     expect(poster?.[1]).toContain("Listings never show the poster's phone number or email address.")
   })
 
@@ -66,17 +69,19 @@ describe("JobDetail", () => {
     expect(road?.[1]).toMatch(/^No road notes from the poster\./)
   })
 
-  it("names the scoped verification in the poster's section", () => {
+  it("names the scoped verification in the poster's section, and only what every verification path records (#412)", () => {
     const [, , , poster] = sections(
       render({ canExpressInterest: false, job: jobDetail({ posterVerification: { reviewedOn: "2026-10-14", scope: "business_identity" } }), now: NOW })
     )
 
     expect(poster?.[1]).toContain(
       "Business identity reviewed by LogLoads on Oct 14, 2026. " +
-        "On Oct 14, 2026, LogLoads reviewed documents this business sent to show its business identity. " +
+        "On Oct 14, 2026, LogLoads reviewed this business's identity. " +
         "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
         "Check these yourself before you agree to a haul."
     )
+    // A registry lookup or a decision with a note is a review too; no path records documents the business sent.
+    expect(poster?.[1]).not.toMatch(/document|sent/i)
   })
 
   it("shows a review older than 12 months as last reviewed, and says it is no longer current (#337)", () => {
@@ -85,7 +90,7 @@ describe("JobDetail", () => {
     )
 
     expect(poster?.[1]).toContain("Business identity last reviewed by LogLoads on Oct 14, 2025.")
-    expect(poster?.[1]).toContain("That review is more than 12 months old, so LogLoads no longer shows it as current.")
+    expect(poster?.[1]).toContain("This review is more than 12 months old, so LogLoads no longer shows it as current.")
     expect(poster?.[1]).not.toMatch(/\bverified\b/i)
   })
 

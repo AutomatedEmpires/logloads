@@ -1,3 +1,4 @@
+import { MARKETPLACE_VERIFICATION_LIMITS } from "@logloads/contracts"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
@@ -84,6 +85,9 @@ describe("CompanyProfileHeader", () => {
 
     expect(openingTag(html, /^<h1/)).toBeTruthy()
     expect(text).toContain("EH Example Hauling LLC Hauling company Riverton, OR Hauling since 2011 Business identity reviewed by LogLoads on Oct 5, 2026")
+    // The limits are text under the mark, where a phone or a keyboard reaches them, not a title only (#412).
+    expect(text).toContain(`Business identity reviewed by LogLoads on Oct 5, 2026 ${MARKETPLACE_VERIFICATION_LIMITS}`)
+    expect(html).not.toContain("title=")
     expect(text).toContain("Save Invitations are not available yet")
     expect(html.match(/<dt/g)).toHaveLength(4)
     expect(text).not.toContain("ignored fifth figure")
@@ -97,6 +101,7 @@ describe("CompanyProfileHeader", () => {
 
     expect(openingTag(html, /^<img/)).toContain('alt=""')
     expect(textOf(html)).not.toMatch(/verified|reviewed/i)
+    expect(textOf(html)).not.toContain(MARKETPLACE_VERIFICATION_LIMITS)
     expect(html).not.toContain("<dl")
   })
 })

@@ -11,6 +11,7 @@ import {
   compareMarketplaceJobs,
   describeMarketplaceInterestStatus,
   describeMarketplaceVerification,
+  describeMarketplaceVerificationSheet,
   expressInterestInputSchema,
   filterMarketplaceJobs,
   formatMarketplacePay,
@@ -671,7 +672,7 @@ describe("verification marks are attributed, dated, expiring statements (#150, #
     expect(describeMarketplaceVerification(mark("2026-10-14"), NOW)).toEqual({
       label: "Business identity reviewed by LogLoads on Oct 14, 2026",
       meaning:
-        "On Oct 14, 2026, LogLoads reviewed documents this business sent to show its business identity. " +
+        "On Oct 14, 2026, LogLoads reviewed this business's identity. " +
         "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
         "Check these yourself before you agree to a haul.",
       reviewedOn: "2026-10-14",
@@ -683,8 +684,8 @@ describe("verification marks are attributed, dated, expiring statements (#150, #
     expect(describeMarketplaceVerification(mark("2025-10-14"), NOW)).toEqual({
       label: "Business identity last reviewed by LogLoads on Oct 14, 2025",
       meaning:
-        "On Oct 14, 2025, LogLoads reviewed documents this business sent to show its business identity. " +
-        "That review is more than 12 months old, so LogLoads no longer shows it as current. " +
+        "On Oct 14, 2025, LogLoads reviewed this business's identity. " +
+        "This review is more than 12 months old, so LogLoads no longer shows it as current. " +
         "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
         "Check these yourself before you agree to a haul.",
       reviewedOn: "2025-10-14",
@@ -692,19 +693,106 @@ describe("verification marks are attributed, dated, expiring statements (#150, #
     })
   })
 
-  it("no review: a neutral Not yet reviewed, with nothing that suggests a problem", () => {
+  it("no current review: a neutral Not yet reviewed, with nothing that suggests a problem", () => {
     const none = describeMarketplaceVerification(null, NOW)
 
     expect(none).toEqual({
       label: "Not yet reviewed",
       meaning:
-        "LogLoads has not reviewed this business. That is not a mark against it. " +
+        "LogLoads has no current review of this business's identity. " +
+        "Not every business asks for one, and LogLoads does not say why a business has none. " +
         "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
         "Check these yourself before you agree to a haul.",
       reviewedOn: null,
       state: "not_reviewed"
     })
     expect(`${none.label} ${none.meaning}`).not.toMatch(/unverified|not verified|fail|reject|declin|warning|caution|risk|suspicious|flag/i)
+  })
+
+  it("says only what every verification path records: a review of the business's identity, never documents (#412)", () => {
+    // The pilot store records a decision and a note, the normalized function a status and a reason. Neither records
+    // a document, and no read carries the V2 admin form's document types, so no state may claim one.
+    const DOCUMENTS = /document|paper|upload|sent us|sent to|registr|filing|business licen[cs]e|business name/i
+
+    for (const verification of [mark("2026-10-14"), mark("2025-10-14"), mark(null), null]) {
+      const { label, meaning } = describeMarketplaceVerification(verification, NOW)
+      const sheet = describeMarketplaceVerificationSheet(verification, NOW)
+
+      for (const text of [label, meaning, sheet.summary, sheet.lookedAt ?? "", sheet.when ?? "", sheet.ranking]) {
+        expect(text, String(verification?.reviewedOn)).not.toMatch(DOCUMENTS)
+      }
+    }
+    expect(describeMarketplaceVerification(mark("2026-10-14"), NOW).meaning).toMatch(/^On Oct 14, 2026, LogLoads reviewed this business's identity\. /)
+  })
+
+  it("no current review is true whether LogLoads never reviewed the business, rejected its review or let it lapse (#412)", () => {
+    // Every read sends null for every status but verified, and none can tell those three apart (the lapse job and
+    // admin_set_org_verification clear the review date), so the one wording must be true for all of them.
+    const { meaning } = describeMarketplaceVerification(null, NOW)
+    const sheet = describeMarketplaceVerificationSheet(null, NOW)
+
+    expect(meaning.startsWith(sheet.summary)).toBe(true)
+    expect(sheet.summary).toMatch(/^LogLoads has no current review of this business's identity\./)
+    // Not "has not reviewed": a rejected or lapsed business was reviewed.
+    expect(`${meaning} ${sheet.summary}`).not.toMatch(/has not (been )?reviewed|never reviewed|not a mark against|nothing bad|have not asked/i)
+    // It never gives a reason, so a rejection is never shown.
+    expect(`${meaning} ${sheet.summary}`).not.toMatch(/reject|lapse|expire|suspend|pending|declin|mismatch|wrong/i)
+  })
+
+  it("gives the what-this-means sheet every line from the contract, for #419 to read with no second copy", () => {
+    const limits = MARKETPLACE_VERIFICATION_LIMITS
+    const ranking = "A review does not move a business up in search."
+    const lookedAt = "This business's identity."
+
+    expect(describeMarketplaceVerificationSheet(mark("2026-10-14"), NOW)).toEqual({
+      label: "Business identity reviewed by LogLoads on Oct 14, 2026",
+      limits,
+      lookedAt,
+      ranking,
+      state: "reviewed",
+      summary: "This mark is LogLoads' statement about one check. It is not a safety rating or a recommendation.",
+      when: "Oct 14, 2026"
+    })
+    expect(describeMarketplaceVerificationSheet(mark("2025-10-14"), NOW)).toEqual({
+      label: "Business identity last reviewed by LogLoads on Oct 14, 2025",
+      limits,
+      lookedAt,
+      ranking,
+      state: "review_lapsed",
+      summary: "This review is more than 12 months old, so LogLoads no longer shows it as current.",
+      when: "Oct 14, 2025, more than 12 months ago"
+    })
+    expect(describeMarketplaceVerificationSheet(mark(null), NOW)).toEqual({
+      label: "Business identity reviewed by LogLoads, date not on record",
+      limits,
+      lookedAt,
+      ranking,
+      state: "review_lapsed",
+      summary: "The date of this review is not on record, so LogLoads does not show it as current.",
+      when: "Not on record"
+    })
+    expect(describeMarketplaceVerificationSheet(null, NOW)).toEqual({
+      label: "Not yet reviewed",
+      limits,
+      lookedAt: null,
+      ranking,
+      state: "not_reviewed",
+      summary:
+        "LogLoads has no current review of this business's identity. " +
+        "Not every business asks for one, and LogLoads does not say why a business has none.",
+      when: null
+    })
+
+    // The sheet and the mark never disagree: same label and state, and a lapsed or missing review says the same thing
+    // in the mark's meaning as on the sheet.
+    for (const verification of [mark("2026-10-14"), mark("2025-10-14"), mark(null), null]) {
+      const mark_ = describeMarketplaceVerification(verification, NOW)
+      const sheet = describeMarketplaceVerificationSheet(verification, NOW)
+
+      expect([sheet.label, sheet.state]).toEqual([mark_.label, mark_.state])
+      if (mark_.state !== "reviewed") expect(mark_.meaning).toContain(sheet.summary)
+    }
+    expect(() => describeMarketplaceVerificationSheet(null, "today")).toThrow(RangeError)
   })
 
   it("holds the 12-month boundary to the calendar day (UTC)", () => {
@@ -744,8 +832,8 @@ describe("verification marks are attributed, dated, expiring statements (#150, #
     expect(undated).toEqual({
       label: "Business identity reviewed by LogLoads, date not on record",
       meaning:
-        "LogLoads reviewed documents this business sent to show its business identity. " +
-        "The date of that review is not on record, so LogLoads does not show it as current. " +
+        "LogLoads reviewed this business's identity. " +
+        "The date of this review is not on record, so LogLoads does not show it as current. " +
         "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
         "Check these yourself before you agree to a haul.",
       reviewedOn: null,
@@ -780,6 +868,16 @@ describe("verification marks are attributed, dated, expiring statements (#150, #
       expect(meaning.endsWith(MARKETPLACE_VERIFICATION_LIMITS), state).toBe(true)
     }
     for (const { label } of states.slice(0, 3)) expect(label).toMatch(/^Business identity (last )?reviewed by LogLoads\b/)
+    // The sheet's own lines (#412, for #419): no endorsement except the one sentence that denies it, no third-party data.
+    for (const verification of [mark("2026-10-14"), mark("2025-10-14"), mark(null), null]) {
+      const { limits, lookedAt, ranking, state, summary, when } = describeMarketplaceVerificationSheet(verification, NOW)
+      const lines = `${summary.replace("It is not a safety rating or a recommendation.", "")} ${lookedAt ?? ""} ${when ?? ""} ${ranking}`
+
+      expect(lines, state).not.toMatch(ENDORSEMENT)
+      expect(lines, state).not.toMatch(/safe|insur|authority|licen|equipment|employ/i)
+      expect(`${lines} ${limits}`, state).not.toMatch(THIRD_PARTY)
+      expect(limits, state).toBe(MARKETPLACE_VERIFICATION_LIMITS)
+    }
     expect(MARKETPLACE_VERIFICATION_LIMITS).toBe(
       "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
         "Check these yourself before you agree to a haul."

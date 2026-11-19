@@ -104,6 +104,25 @@ describe("marketplace contract (DS-04, #147)", () => {
     }
   })
 
+  it('keeps the "./marketplace/format" subpath free of components, client code and CSS (#432)', () => {
+    // Server-only callers (the share card, apps/web/app/v2/share/[jobId]/opengraph-image.tsx) import the formatters
+    // from here. A client component reached from the card joins Next's main-app bundle on some builds, and its CSS is
+    // then loaded as a script on every page.
+    const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { exports: Record<string, string> }
+    const format = read("format.ts")
+
+    expect(manifest.exports["./marketplace/format"]).toBe("./src/marketplace/format.ts")
+    expect(format).not.toMatch(/^\s*["']use client["']/m)
+    expect(format).not.toMatch(/\.css["']/)
+
+    const imports = [...format.matchAll(/^(?:import|export)\s+(type\s+)?[^"';]*?from\s+"([^"]+)"/gm)]
+
+    expect(imports.length).toBeGreaterThan(0)
+    for (const [statement, typeOnly, source] of imports) {
+      if (!typeOnly) expect(source, statement).toBe("@logloads/contracts")
+    }
+  })
+
   it("ships none of the design reference's fictional businesses or verification strings (Gate 5)", () => {
     for (const name of [...shipped, "test-fixtures.ts"]) {
       expect(read(name), name).not.toMatch(/Ridgeline Hauling|Cedar Fork Logging|Business identity verified/)

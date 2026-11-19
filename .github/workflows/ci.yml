@@ -55,6 +55,13 @@ jobs:
         timeout-minutes: 15
         run: pnpm --filter @logloads/web build
 
+      # #432: Next.js renders every file of its main-app entrypoint as a <script>, so a stylesheet chunk that joins it
+      # is requested as a script on every page and the browser refuses it. This reads the build output (the build
+      # manifest, the client reference manifests, the prerendered HTML and RSC payloads) and fails here, by name,
+      # instead of as console errors in the journeys below.
+      - name: No stylesheet loads as a script
+        run: node tools/check-css-script-tags.mjs apps/web/.next
+
       # The browser comes from the cache when this Playwright version has run before. The system packages still come
       # from apt, whose mirrors sometimes fail to resolve; the install is retried up to 3 times (#323).
       - name: Read the Playwright version

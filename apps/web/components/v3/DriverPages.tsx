@@ -160,9 +160,17 @@ export function RecommendedLoads({ recommendations }: { recommendations: Network
   )
 }
 
-function verificationBadge(status: string): { label: string; tone: "success" | "warning" | "critical" } {
+/**
+ * `verified` is set only by a LogLoads platform administrator's review, so the label names what was reviewed and by
+ * whom: the organization's business identity, or the equipment record. Never the bare word (legal review §7.3 item 1,
+ * #428).
+ */
+function verificationBadge(
+  status: string,
+  subject: "Business identity" | "Equipment record"
+): { label: string; tone: "success" | "warning" | "critical" } {
   if (status === "verified") {
-    return { label: "Verified", tone: "success" }
+    return { label: `${subject} reviewed by LogLoads`, tone: "success" }
   }
 
   if (status === "rejected") {
@@ -863,7 +871,7 @@ export function DriverEquipment({ account, network }: DriverPageProps & { mediaR
         ) : (
           <div className="truck-grid">
             {ownedTrucks.map((truck) => {
-              const verification = verificationBadge(truck.verification)
+              const verification = verificationBadge(truck.verification, "Equipment record")
 
               return (
                 <article className="truck-card-v3" key={truck.id}>
@@ -899,7 +907,7 @@ export function DriverEquipment({ account, network }: DriverPageProps & { mediaR
 
 export function DriverNetwork({ account, network }: DriverPageProps) {
   return (
-    <AppShell account={account} kicker="Trusted work" role="driver" title="Network">
+    <AppShell account={account} kicker="Partner work" role="driver" title="Network">
       <RelationshipGrid network={network} />
     </AppShell>
   )
@@ -1187,7 +1195,7 @@ export function DriverProfile({
   verifications: VerificationRecordView[]
   welcome?: boolean
 }) {
-  const verification = verificationBadge(network.activeOrganization.verificationStatus)
+  const verification = verificationBadge(network.activeOrganization.verificationStatus, "Business identity")
   const profileReadiness = getDriverProfileReadiness({
     accountName: account.userName,
     availability: availability.current,
