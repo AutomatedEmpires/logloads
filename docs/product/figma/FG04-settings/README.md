@@ -1,12 +1,22 @@
 # FG04 Settings: billing, team and account
 
-**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#297), for design audit 3 on 2026-11-11 (#334), for the legal review privacy notices on 2026-11-18 (#336, see [Legal review privacy screens (#336)](#legal-review-privacy-screens-336)), and the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)). It is not approved. These key screens still need the founder's approval (AE-Control `policy/designops.md`).
+**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#297), for design audit 3 on 2026-11-11 (#334), for the legal review privacy notices on 2026-11-18 (#336, see [Legal review privacy screens (#336)](#legal-review-privacy-screens-336)), the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)), and on 2026-11-19 for the tablet PageHeader (#434, see [Tablet PageHeader at 768 px (#434)](#tablet-pageheader-at-768-px-434)). It is not approved. These key screens still need the founder's approval (AE-Control `policy/designops.md`).
 **Figma page:** [04 Settings](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=44-115) in the LogLoads file (jackson.cole's team).
 **Source of truth:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`, the plan numbers in `packages/contracts/src/membership.ts`, and the lead rulings on #108 and #334 (billing is not open; current-state frames show no payment control). Figma mirrors that copy. No UI code changed in this task.
 
 The current billing screen is **Billing not on yet**: the plan facts and one status notice, with no payment control. The billing-on screens are kept, but only in the section **Future: billing closed**, outside the approval set. Hauling stays free. Nothing on this page stores a full card number.
 
 The example person is the one already on page 00 System: Sam Carter, sam@example.com, owner of North Ridge Logging.
+
+## Tablet PageHeader at 768 px (#434)
+
+#426 added `Breakpoint=tablet` to the 00 System PageHeader: 768 px wide with the 24 px gutter. On 2026-11-19, #434 moved the 33 PageHeader instances in this page's 768 px frames from `Breakpoint=mobile` to it: the 26 current-state frames and the 7 frames in **Future: billing closed**. Only the variant changed. Every title, description and breadcrumb is kept, no header changed height, and the header text lines up with the 24 px gutter the body already had.
+
+Not changed: the 390 px frames, and the 1440 px frames, which still use `Breakpoint=mobile` (33 instances). Moving 1440 px to the desktop variant changes the layout, so it needs its own task.
+
+**Check (2026-11-19).** A script compared each header's visible layers and text before and after and found no difference. All 33 frames were looked at in a screenshot. A read-only script over the 33 frames (1,686 visible nodes) found no text under 14 px, no control under 44 px, no disabled control, no fill or stroke without a variable, no text outside its frame, no overlap, no "verified" text and no instance without its main component. These frames have no prototype links. Nothing was checked in a browser.
+
+**Seen while checking, not changed.** The offline banners on "Directory listing · offline" and "Privacy request · offline" at 768 px say "These are the jobs saved at 5:12 AM", which is the Find Work wording. They need their own line when the page is next touched.
 
 ## Design audit 4 (#379)
 

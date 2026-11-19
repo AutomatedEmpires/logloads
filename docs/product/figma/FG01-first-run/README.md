@@ -1,12 +1,18 @@
 # FG01 First run: first-run and sign-in screens in Figma
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235), on 2026-11-11 for design audit 3 (#334), on 2026-11-12 for LL-D12 (#352), on 2026-11-18 for the legal review consent boxes (#336, see [Legal review consent (#336)](#legal-review-consent-336)), and the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
+**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#257), then revised the same day for design audit 1 (#235), on 2026-11-11 for design audit 3 (#334), on 2026-11-12 for LL-D12 (#352), on 2026-11-18 for the legal review consent boxes (#336, see [Legal review consent (#336)](#legal-review-consent-336)), the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)), and on 2026-11-19 for the tablet PageHeader (#434, see [Tablet PageHeader at 768 px (#434)](#tablet-pageheader-at-768-px-434)). None of these screens is approved yet. Under AE-Control `policy/designops.md`, they are key screens, so nobody builds their changes before the founder approves them on #257.
 **Figma page:** [01 First run](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-37) in the LogLoads file (jackson.cole's team).
 **Built from:** the [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) page (FG00, #256, field layer #281).
 - Every instance on the page comes from 00 System. Since #352 the plan cards are 00 System PlanCard instances in the not-for-sale state, and page 05's local `Plan tag / Not for sale yet` (`305:2117`) is deleted.
 - Every solid fill and stroke outside an instance is bound to a variable.
 - There are no image fills, and all text is IBM Plex.
 - No new styles or variables were made, and no UI code changed.
+
+## Tablet PageHeader at 768 px (#434)
+
+#426 added `Breakpoint=tablet` to the 00 System PageHeader: 768 px wide with the 24 px gutter. On 2026-11-19, #434 moved the 9 PageHeader instances in this page's 768 px frames from `Breakpoint=mobile` to it: FR-04 `77:863`, FR-05 `77:1617`, FR-06 `77:2463`, FR-07 `80:1694`, FR-08 `92:2913`, FR-09 `92:3903`, FR-10 `93:2699`, FR-11 `358:16888` and FR-12 `358:17502`. Only the variant changed. Every title, description, breadcrumb and slot override is kept, no header changed height, and the header text now lines up with the 24 px gutter of the page body. FR-01 to FR-03 have no PageHeader at 768 px. The 390 and 1440 px frames were not touched.
+
+**Check (2026-11-19).** A script compared each header's visible layers and text before and after and found no difference. All 9 frames were looked at in a screenshot. A read-only script over the 9 frames (998 visible nodes) found no text under 14 px, no control under 44 px, no disabled control, no fill or stroke without a variable, no text outside its frame, no overlap, no "verified" text and no instance without its main component. These frames have no prototype links. Nothing was checked in a browser.
 
 ## Design audit 4 (#379)
 
