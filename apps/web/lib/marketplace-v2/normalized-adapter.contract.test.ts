@@ -26,7 +26,13 @@ import {
 } from "./normalized-db"
 import { viewerAccessRow } from "./normalized-mapping"
 import { createNormalizedSessionStore, type NormalizedSessionStore } from "./normalized-session"
-import { MarketplaceAdapterConfigurationError, MarketplaceRefusalError, type MarketplaceV2Port, type MarketplaceV2Viewer } from "./port"
+import {
+  MarketplaceAdapterConfigurationError,
+  MarketplaceRefusalError,
+  type MarketplacePage,
+  type MarketplaceV2Port,
+  type MarketplaceV2Viewer
+} from "./port"
 import { selectV2Membership, v2MembershipFromNormalized } from "./v2-session"
 
 /**
@@ -1147,6 +1153,196 @@ $$;`)
       expect(await port.landingAllowance(own)).toEqual({ activeLandings: 0, cycleEndsAt: null, invitationsRemaining: null, planCode: null, teamMembers: 1 })
       await expect(port.saveLanding(own, { areaLabel: "Detroit", name: "Fresh Landing", recruiting: "1", stateCode: "OR" })).rejects.toThrow("Billing isn't active yet")
       expect((await port.saveLanding(own, { areaLabel: "Detroit", name: "Fresh Landing", stateCode: "OR" })).landingId).toMatch(/^[0-9a-f-]{36}$/)
+    })
+  })
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Pages read by the store (#362; #410, the review of PR 392). The adapter's unit tests page a fake store, so they
+  // prove the arguments sent. These read real pages: page 1, then each page's nextCursor until there is none, for every
+  // Find Work sort and both inquiry sides. Each job page reads the store's total_count from its first row and its
+  // page_cursor from its last row (jobPageFacts); each inquiry page reads the inquiry cursor and
+  // count_marketplace_interests. So a shape the adapter does not accept fails here instead of on every Find Work page.
+  // Runs after the landing workspace cases: it posts at whichever landing the business has active by then.
+  describe("pages read by the store (#362, #410)", () => {
+    /** Rows per page: the seven jobs take four pages, and each sort's ties cross a page boundary. */
+    const LIMIT = 2
+    /** In every seeded title and nowhere else on this database, so the search finds exactly the seeded jobs. */
+    const TOKEN = "Pagewalk"
+    const NEAR_RIVAL = { lat: 44.41, lng: -122.72 }
+    /** In publication order. Two pay bases have a tie, and negotiable pay sorts last. */
+    const SEEDS: Array<{ at: "land" | "rival"; pay: Record<string, string> }> = [
+      { at: "land", pay: { payAmount: "500", payUnit: "per_load" } },
+      { at: "rival", pay: { payAmount: "91", payUnit: "per_ton" } },
+      { at: "land", pay: { payAmount: "", payNote: "Call the office for rates", payUnit: "negotiable" } },
+      { at: "rival", pay: { payAmount: "650", payUnit: "per_load" } },
+      { at: "land", pay: { payAmount: "91", payUnit: "per_ton" } },
+      { at: "rival", pay: { payAmount: "120", payUnit: "per_hour" } },
+      { at: "land", pay: { payAmount: "500", payUnit: "per_load" } }
+    ]
+    /** Each sort's order of the seeded jobs, as indexes into SEEDS (list_marketplace_jobs_page, `keyed`). */
+    const ORDERS = {
+      // Latest confirmation first: the reverse of publication.
+      newest: [6, 5, 4, 3, 2, 1, 0],
+      // From Sweet Home: the rival's landing first, then the business's own; at each, newest first.
+      nearest: [5, 3, 1, 6, 4, 2, 0],
+      // Per load, highest first (the two at 500 newest first); per ton, newest first; per hour; negotiable last.
+      pay: [3, 6, 0, 4, 1, 5, 2]
+    } as const
+    let jobIds: string[] = []
+    /** Three of the landing business's inquiries that arrived at one instant, with microseconds. */
+    let landingTie: string[] = []
+    /** Three of the hauling business's inquiries last changed at one instant. */
+    let haulerTie: string[] = []
+
+    const jobFilters = (sort: keyof typeof ORDERS): Parameters<MarketplaceV2Port["listJobPage"]>[0] =>
+      sort === "nearest" ? { near: NEAR_RIVAL, query: TOKEN, sort } : { query: TOKEN, sort }
+    const seeded = (indexes: readonly number[]) => indexes.map((index) => jobIds[index] ?? "")
+    const idsOf = async (query: string, values: string[]) =>
+      ((await admin.unsafe(query, values)) as unknown as Array<{ id: string }>).map((row) => row.id)
+
+    /** Every page of a list: page 1, then each page's nextCursor until the store says there is no next page. */
+    async function everyPage<T>(read: (after: string | null) => Promise<MarketplacePage<T>>): Promise<Array<MarketplacePage<T>>> {
+      const pages: Array<MarketplacePage<T>> = []
+      let after: string | null = null
+
+      do {
+        const page: MarketplacePage<T> = await read(after)
+        pages.push(page)
+        after = page.nextCursor
+      } while (after !== null && pages.length < 20)
+
+      return pages
+    }
+
+    /**
+     * The pages show `expected` exactly: LIMIT rows a page with only the last one short, every row once and in order,
+     * the whole list's exact count and the rows before each page, and a cursor on every page but the last.
+     */
+    function expectPages(pages: Array<MarketplacePage<{ id: string }>>, expected: string[]) {
+      const ids = pages.flatMap((page) => page.items.map((item) => item.id))
+      const chunks = Array.from({ length: Math.ceil(expected.length / LIMIT) }, (_, index) => expected.slice(index * LIMIT, (index + 1) * LIMIT))
+
+      expect(chunks.length).toBeGreaterThanOrEqual(2)
+      expect(new Set(ids).size).toBe(ids.length)
+      expect(pages.map((page) => ({
+        ids: page.items.map((item) => item.id),
+        next: page.nextCursor !== null,
+        restarted: page.restarted,
+        start: page.start,
+        total: page.total
+      }))).toEqual(chunks.map((chunk, index) => ({
+        ids: chunk,
+        next: index < chunks.length - 1,
+        restarted: false,
+        start: index * LIMIT,
+        total: { count: expected.length, exact: true }
+      })))
+    }
+
+    beforeAll(async () => {
+      // The business's one active landing by now: the cases above archived Upper Spur and opened Lower Spur.
+      const [landLanding] = await port.authoringLandings(viewer("land", "land"))
+      expect(landLanding).toBeDefined()
+      const landingOf = { land: landLanding?.id ?? "", rival: fixture.landings.rival }
+
+      jobIds = []
+      for (const [index, seed] of SEEDS.entries()) {
+        const draft = publishDraft(landingOf[seed.at], `${TOKEN} ${index + 1}`, seed.pay)
+        jobIds.push((await port.publishJob(viewer(seed.at, seed.at), draft, attestation("publish"))).jobId)
+      }
+
+      // Inquiries on the business's four jobs: from Adapter Hauling on each, and from Adapter Timber Hauling on two.
+      const fromHaul = async (index: number) => (await port.expressInterest(viewer("haul", "haul"), {
+        equipment: [{ configurationKey: "log_truck", count: "1" }],
+        loadPostingId: jobIds[index] ?? "",
+        message: `Paging inquiry ${index + 1}`
+      })).id
+      const fromDual = async (index: number) =>
+        (await port.expressInterest(viewer("land", "dual"), { loadPostingId: jobIds[index] ?? "", trucksOffered: "1" })).id
+      const haul = [await fromHaul(0), await fromHaul(2), await fromHaul(4), await fromHaul(6)]
+      const dual = [await fromDual(0), await fromDual(4)]
+
+      // A tie in each side's order time, at the head of the list, so the first page ends between rows of one instant
+      // and the next page has to resume on that instant by id. The landing orders by arrival: three inquiries get one
+      // arrival time after every other, with microseconds a millisecond would lose. The hauler orders by last change:
+      // one statement changes three inquiries, and set_updated_at gives each that statement's now(), after every other.
+      landingTie = [haul[3] ?? "", dual[0] ?? "", dual[1] ?? ""]
+      haulerTie = [haul[0] ?? "", haul[1] ?? "", haul[2] ?? ""]
+      await admin.unsafe(
+        `update marketplace.expressions_of_interest
+         set created_at = date_trunc('second', (select max(created_at) from marketplace.expressions_of_interest)) + interval '1.123456 seconds'
+         where id in ($1::uuid, $2::uuid, $3::uuid)`,
+        landingTie
+      )
+      await admin.unsafe("update marketplace.expressions_of_interest set updated_at = now() where id in ($1::uuid, $2::uuid, $3::uuid)", haulerTie)
+    }, 120_000)
+
+    afterAll(async () => {
+      // Other suites share this database: take the seeded jobs off the board again.
+      await admin?.unsafe("update marketplace.job_postings set status = 'closed' where title like $1 and status = 'active'", [`${TOKEN} %`])
+    })
+
+    it.each(["newest", "nearest", "pay"] as const)(
+      "follows Find Work sorted by %s from page 1 to the last: every job once, in order, with the whole search's count",
+      async (sort) => {
+        const expected = seeded(ORDERS[sort])
+
+        // The same search read in one call (no cursor) is in the order the sort promises.
+        expect((await port.listJobs(jobFilters(sort))).map((job) => job.id)).toEqual(expected)
+        expectPages(await everyPage((after) => port.listJobPage(jobFilters(sort), { after, limit: LIMIT })), expected)
+      }
+    )
+
+    it("follows the landing's inquiries from page 1 to the last, across a tie in arrival time", async () => {
+      const who = viewer("land", "land")
+      // list_marketplace_interests' landing order, read from the table: newest arrival first, then id.
+      const expected = await idsOf(
+        "select id::text as id from marketplace.expressions_of_interest where job_org_id = $1::uuid order by created_at desc, id",
+        [fixture.orgs.land]
+      )
+      const tie = await one<{ instants: number; micros: number }>(
+        `select count(distinct created_at)::int as instants, (extract(microseconds from min(created_at))::bigint % 1000000)::int as micros
+         from marketplace.expressions_of_interest where id in ($1::uuid, $2::uuid, $3::uuid)`,
+        landingTie
+      )
+
+      expect(tie).toEqual({ instants: 1, micros: 123456 })
+      expect(expected.slice(0, 3).sort()).toEqual([...landingTie].sort())
+      expect((await port.listLandingInterests(who)).map((row) => row.id)).toEqual(expected)
+      expectPages(await everyPage((after) => port.listInterestPage(who, "landing", { after, limit: LIMIT })), expected)
+    })
+
+    it("follows the hauler's inquiries from page 1 to the last, across a tie in last-change time", async () => {
+      const who = viewer("haul", "haul")
+      // list_marketplace_interests' hauler order, read from the table: latest change first, then id.
+      const expected = await idsOf(
+        "select id::text as id from marketplace.expressions_of_interest where hauler_org_id = $1::uuid order by updated_at desc, id",
+        [fixture.orgs.haul]
+      )
+      const tie = await one<{ instants: number }>(
+        "select count(distinct updated_at)::int as instants from marketplace.expressions_of_interest where id in ($1::uuid, $2::uuid, $3::uuid)",
+        haulerTie
+      )
+
+      expect(tie.instants).toBe(1)
+      expect(expected.slice(0, 3).sort()).toEqual([...haulerTie].sort())
+      expect((await port.listHaulerInterests(who)).map((row) => row.id)).toEqual(expected)
+      expectPages(await everyPage((after) => port.listInterestPage(who, "hauler", { after, limit: LIMIT })), expected)
+    })
+
+    it("ends on an empty page with the count of what is left when the rows after a cursor are gone", async () => {
+      const limit = jobIds.length - 1
+      const first = await port.listJobPage(jobFilters("newest"), { limit })
+
+      expect(first.items.map((job) => job.id)).toEqual(seeded(ORDERS.newest.slice(0, limit)))
+      expect(first.nextCursor).not.toBeNull()
+
+      // The one job after that page, the oldest, comes off the board before the next page is read. The store has
+      // nothing after the cursor, so the adapter reads the search once more for its total_count alone.
+      await admin.unsafe("update marketplace.job_postings set status = 'closed' where id = $1::uuid", [jobIds[0] ?? ""])
+
+      expect(await port.listJobPage(jobFilters("newest"), { after: first.nextCursor, limit }))
+        .toEqual({ items: [], nextCursor: null, restarted: false, start: limit, total: { count: limit, exact: true } })
     })
   })
 
