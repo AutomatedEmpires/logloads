@@ -48,7 +48,15 @@ vi.mock("./pilot-adapter", () => ({
 import { MARKETPLACE_AVAILABILITY_ATTESTATION, MARKETPLACE_PUBLISH_ATTESTATION_FIELDS } from "@logloads/contracts"
 
 import { RateLimitError } from "../rate-limit-core"
-import { expressInterestAction, haulerReplyAction, publishJobAction, reconfirmJobAction, respondToInterestAction, withdrawInterestAction } from "./actions"
+import {
+  expressInterestAction,
+  haulerReplyAction,
+  publishJobAction,
+  reconfirmJobAction,
+  respondToInterestAction,
+  sendHeldAnswerAction,
+  withdrawInterestAction
+} from "./actions"
 import { MarketplaceOperationUnavailableError, MarketplaceRefusalError, MarketplaceStoreError } from "./port"
 
 const USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -414,6 +422,64 @@ describe("inquiry actions keep the inquiry selected (DS-04 list and conversation
     const target = await redirectOf(withdrawInterestAction, form({ interestId: "../../workspace?x=1" }, []))
 
     expect(target.query).toEqual({ updated: "withdrawn" })
+  })
+})
+
+describe("a held answer goes only as the person and business that held it (flow C, #411)", () => {
+  const INTEREST_ID = "44444444-4444-4444-8444-444444444444"
+  const REPLY_ID = "55555555-5555-4555-8555-555555555555"
+  const COLLEAGUE_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+  const held = (overrides: Record<string, string> = {}) =>
+    form({ body: "Yes, we can use you.", decision: "replied", heldBy: USER_ID, heldFor: ORGANIZATION_ID, interestId: INTEREST_ID, replyId: REPLY_ID, ...overrides }, [])
+
+  it("sends the inbox's held reply in place through the same write, with no redirect and no revalidation", async () => {
+    await expect(sendHeldAnswerAction(held())).resolves.toEqual({ ok: true })
+
+    expect(mocks.respondToInterest).toHaveBeenCalledExactlyOnceWith(VIEWER, { body: "Yes, we can use you.", decision: "replied", interestId: INTEREST_ID, replyId: REPLY_ID })
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith("marketplace-reply", USER_ID, 120, 60 * 60_000)
+    expect(mocks.redirect).not.toHaveBeenCalled()
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("sends a held decline with the reason picked", async () => {
+    await expect(sendHeldAnswerAction(held({ body: "We have enough trucks", decision: "declined" }))).resolves.toEqual({ ok: true })
+
+    expect(mocks.respondToInterest).toHaveBeenCalledExactlyOnceWith(VIEWER, { body: "We have enough trucks", decision: "declined", interestId: INTEREST_ID, replyId: REPLY_ID })
+  })
+
+  it("refuses an answer a colleague held, or one held for another business, on either path, and writes nothing", async () => {
+    const others: Record<string, string>[] = [{ heldBy: COLLEAGUE_ID }, { heldFor: OTHER_ORGANIZATION_ID }]
+
+    for (const other of others) {
+      await expect(sendHeldAnswerAction(held(other))).resolves.toEqual({ code: "not_allowed", ok: false, requestId: null })
+
+      const target = await redirectOf(respondToInterestAction, held(other))
+      expect(target).toMatchObject({ path: "/v2/landing/inquiries", query: { error: "not_allowed", inquiry: INTEREST_ID } })
+    }
+
+    expect(mocks.respondToInterest).not.toHaveBeenCalled()
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled()
+  })
+
+  it("matches the holder whatever the case of the ids", async () => {
+    await expect(sendHeldAnswerAction(held({ heldBy: USER_ID.toUpperCase(), heldFor: ORGANIZATION_ID.toUpperCase() }))).resolves.toEqual({ ok: true })
+  })
+
+  it("answers a refusal with its code, never with the store's words", async () => {
+    mocks.respondToInterest.mockRejectedValueOnce(new Error("This inquiry is already closed"))
+
+    await expect(sendHeldAnswerAction(held())).resolves.toMatchObject({ code: "inquiry_closed", ok: false })
+  })
+
+  it("takes only a held reply or decline", async () => {
+    await expect(sendHeldAnswerAction(held({ decision: "viewed" }))).resolves.toEqual({ code: "invalid", ok: false, requestId: null })
+    await expect(sendHeldAnswerAction(form({ body: "Hi", decision: "replied", interestId: INTEREST_ID, replyId: REPLY_ID }, []))).resolves.toEqual({
+      code: "invalid",
+      ok: false,
+      requestId: null
+    })
+
+    expect(mocks.respondToInterest).not.toHaveBeenCalled()
   })
 })
 

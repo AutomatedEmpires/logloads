@@ -29,7 +29,7 @@ import {
 import styles from "@/components/v2/InquiryConversation.module.css"
 import { PageNotice } from "@/components/v2/PageNotice"
 import { PendingSubmitButton } from "@/components/v2/PendingSubmitButton"
-import { respondToInterestAction } from "@/lib/marketplace-v2/actions"
+import { respondToInterestAction, sendHeldAnswerAction } from "@/lib/marketplace-v2/actions"
 import { loadInquiryPhone, type InquiryPhoneState } from "@/lib/marketplace-v2/disclosure/load"
 import { V2_FAULT_CODES, v2ErrorMessage, v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { reportV2Error } from "@/lib/marketplace-v2/error-log"
@@ -48,6 +48,7 @@ import { resolveV2Actor, withBusinessSwitchNote } from "@/lib/marketplace-v2/vie
 
 import { numberCanBeShared, phoneShareNotice, phoneShareState } from "./_lib/phone-share"
 import { readyReplyTexts } from "./_lib/ready-replies"
+import { HeldAnswersInbox } from "./HeldAnswersInbox"
 import { LandingReplyBar } from "./LandingReplyBar"
 import { PhoneShareCard, PhoneShareNotice } from "./PhoneShareCard"
 
@@ -155,7 +156,9 @@ function tabHref(tab: string, filters: Record<string, string>): string {
  *
  * Flow C (#328): the inquiry link a notice carries (`?inquiry=<id>#conversation`) opens the thread with the reply
  * bar, so a ready reply is the second tap. Ready replies and confirmed declines are held a minute for Undo
- * (LandingReplyBar). A link to an inquiry this business cannot open shows the permission-denied panel (C-denied).
+ * (LandingReplyBar), under the session's person and business; the inbox sends the held answers of every other inquiry
+ * and says what is waiting (HeldAnswersInbox, #411). A link to an inquiry this business cannot open shows the
+ * permission-denied panel (C-denied).
  */
 export default async function LandingInboxPage({ searchParams }: { searchParams: SearchParams }) {
   if (!marketplaceV2Enabled()) notFound()
@@ -197,11 +200,12 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
   const filters = landingInquiryFilters(interests, jobs, { job: one(query.job), landing: one(query.landing) })
   const carried = filterQuery(filters)
   const counts = inquiryTabCounts(filters.interests, LANDING_INQUIRY_TABS, landingQueueOf)
-  const requestedId = one(query.inquiry).trim()
+  // The link's inquiry id, whatever its case: ids are compared lower-case everywhere on this page (#411).
+  const requestedId = one(query.inquiry).trim().toLowerCase()
   // C-denied (#328, Figma `315:1506`): an inquiry link this business cannot open. An inquiry that does not exist gets
   // the same panel, so the page never tells which business holds an inquiry, or that it exists.
-  const denied = !refusal && actor !== null && requestedId !== "" && !interests.some((interest) => interest.id.toLowerCase() === requestedId.toLowerCase())
-  const requested = filters.interests.find((interest) => interest.id === one(query.inquiry)) ?? null
+  const denied = !refusal && actor !== null && requestedId !== "" && !interests.some((interest) => interest.id.toLowerCase() === requestedId)
+  const requested = requestedId ? (filters.interests.find((interest) => interest.id.toLowerCase() === requestedId) ?? null) : null
   const tab = chooseInquiryTab(one(query.tab), requested ? landingQueueOf(requested) : null, counts, LANDING_INQUIRY_TABS)
   const current = LANDING_INQUIRY_TABS.find((item) => item.id === tab) ?? LANDING_INQUIRY_TABS[0]
   const rows = filters.interests.filter((interest) => landingQueueOf(interest) === tab)
@@ -223,8 +227,14 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
       ? await loadInquiryPhone(workspace.id, selected.id)
       : { kind: "unavailable" }
 
+  // The session's person and business: held answers on the phone are theirs alone (#411).
+  const viewer = actor && workspace ? { organizationId: workspace.id, userId: actor.profile.id } : null
+  // The open inquiry's reply bar holds and sends its own answer; the inbox sends every other one.
+  const replyBarFor = !denied && selected && marketplaceInterestIsOpen(selected.status) ? selected.id : null
+
   const list = (
     <>
+      {viewer && !refusal ? <HeldAnswersInbox action={sendHeldAnswerAction} openInterestId={replyBarFor} viewer={viewer} /> : null}
       {failure ? <PageNotice role="alert" tone="critical">{failure.message}</PageNotice> : null}
       {refusal ? (
         <PageNotice>{refusal}</PageNotice>
@@ -271,7 +281,7 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
         title="Hauler inquiries"
       />
       <PageContainer>
-        {refusal || !actor ? (
+        {refusal || !actor || !viewer ? (
           <ContentGrid layout="single" main={list} />
         ) : denied ? (
           <ContentGrid aside={<DeniedInquiry canSwitch={actor.memberships.length > 1} />} layout="split" main={list} />
@@ -289,8 +299,8 @@ export default async function LandingInboxPage({ searchParams }: { searchParams:
                 pay={jobPay}
                 phone={phone}
                 today={new Date().toISOString().slice(0, 10)}
-                updated={one(query.inquiry) === selected.id ? one(query.updated) : ""}
-                viewerUserId={actor.profile.id}
+                updated={requestedId === selected.id.toLowerCase() ? one(query.updated) : ""}
+                viewer={viewer}
               />
             }
             layout="split"
@@ -401,7 +411,7 @@ function LandingConversation({
   phone,
   today,
   updated,
-  viewerUserId
+  viewer
 }: {
   carried: Record<string, string>
   confirmDecline: boolean
@@ -416,7 +426,8 @@ function LandingConversation({
   today: string
   /** `updated` from the redirect, when it was for this inquiry. */
   updated: string
-  viewerUserId: string
+  /** The session's person and business. A held answer is kept under both and sent only as them (#411). */
+  viewer: { organizationId: string; userId: string }
 }) {
   const open = marketplaceInterestIsOpen(interest.status)
   const replyId = randomUUID()
@@ -458,6 +469,7 @@ function LandingConversation({
             readyReplies={readyReplies}
             recipientName={interest.haulerOrganization.name}
             replyFields={{ decision: "replied", interestId: interest.id, replyId }}
+            viewer={viewer}
           />
           </>
         ) : null
@@ -489,7 +501,7 @@ function LandingConversation({
       job={<JobCard interest={interest} pay={pay} />}
       notice={answerNotice(updated, interest)}
       viewerSide="landing"
-      viewerUserId={viewerUserId}
+      viewerUserId={viewer.userId}
     />
   )
 }
