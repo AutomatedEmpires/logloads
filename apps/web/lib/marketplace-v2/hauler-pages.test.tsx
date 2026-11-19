@@ -508,7 +508,7 @@ describe("/v2/hauler/profile/listing: the directory listing notice (#423)", () =
     const html = await render(HaulerListingPage)
     const text = textOf(html)
 
-    expect(text).toContain("Ridgeline Hauling is listed Landing businesses signed in to LogLoads can find you in Find trucks.")
+    expect(text).toContain("Ridgeline Hauling is listed Landing businesses signed in to LogLoads can see you in Find trucks.")
     expect(html).toMatch(/<h2[^>]*>What landings see<\/h2>/)
     expect(html).toContain('<input type="hidden" name="intent" value="remove"/><input type="hidden" name="listed" value="false"/>')
     expect(text).toContain("Remove my listing")

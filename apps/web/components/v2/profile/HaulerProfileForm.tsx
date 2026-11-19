@@ -195,7 +195,7 @@ export function HaulerProfileForm({
                 <p className={styles.readOnlyValue}>{values.listed ? "Listed in Find trucks" : "Not listed"}</p>
                 <p className={styles.readOnlyHint}>
                   {values.listed
-                    ? "Landing businesses signed in to LogLoads can find you. You can remove it in one tap."
+                    ? "Landing businesses signed in to LogLoads can see you in Find trucks. You can remove it in one tap."
                     : "Landings see your business when you send interest or reply. Listing is your choice."}
                 </p>
               </div>

@@ -212,7 +212,7 @@
   line-height: var(--ll-leading-normal);
 }
 
-.noteIcon { margin-top: 2px; }
+.noteIcon { margin-top: 2px; color: var(--ll-color-text-secondary); }
 
 .offline {
   display: flex;

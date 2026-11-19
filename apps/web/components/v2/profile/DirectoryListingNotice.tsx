@@ -49,7 +49,10 @@ const OFFLINE = "You're offline. Your listing stays as last saved."
 
 type Tone = "neutral" | "positive" | "critical"
 
-/** The tone is the icon and the 4 px edge as well as the colour, never the colour alone (FG00 Notice 207:1206). */
+/**
+ * The tone is the icon and the 4 px edge as well as the colour, never the colour alone (FG00 Notice 207:1206). The
+ * icons are drawn inline from the registry, so the offline banner needs nothing from the network.
+ */
 const TONE_ICON: Record<Tone, IconKey> = { critical: "status.warning", neutral: "status.info", positive: "status.confirmed" }
 
 function isOffline(): boolean {
@@ -295,7 +298,7 @@ export function DirectoryListingNotice({ action, backHref, businessName, canEdit
   } else if (view === "listed") {
     notice = (
       <Notice
-        body="Landing businesses signed in to LogLoads can find you in Find trucks."
+        body="Landing businesses signed in to LogLoads can see you in Find trucks."
         bodyId={bodyId}
         noticeRef={noticeRef}
         role={answered ? "status" : undefined}

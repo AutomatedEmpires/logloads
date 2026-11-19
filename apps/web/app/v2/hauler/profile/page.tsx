@@ -103,7 +103,7 @@ export default async function HaulerProfilePage({ searchParams }: { searchParams
                     <PageNotice role="note">
                       This is your saved profile exactly as a landing operator sees it; changes you have not saved are not in it.
                       {profile.listed
-                        ? " It is listed: landing businesses signed in to LogLoads can find it in Find trucks."
+                        ? " It is listed: landing businesses signed in to LogLoads can see it in Find trucks."
                         : " Right now only landings you send interest to can see it."}
                     </PageNotice>
                     <PublicHaulerProfile now={new Date().toISOString()} profile={publicHaulerProfile(profile, equipment)} />
