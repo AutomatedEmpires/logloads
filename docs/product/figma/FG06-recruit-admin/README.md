@@ -1,17 +1,39 @@
 # FG06 Recruit and admin
 
-**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#299), on 2026-11-11 for design audit 3 (#334), on 2026-11-18 for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)), and on 2026-11-19 for the tablet PageHeader (#434, see [Tablet PageHeader at 768 px (#434)](#tablet-pageheader-at-768-px-434)). These screens are not approved yet. Approval is a founder comment on the design issue (#235) that begins with `approved` (AE-Control `policy/designops.md`).
+**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#299), on 2026-11-11 for design audit 3 (#334), on 2026-11-18 for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)), and on 2026-11-19 for the tablet PageHeader (#434, see [Tablet PageHeader at 768 px (#434)](#tablet-pageheader-at-768-px-434)). Later on 2026-11-19, #439 moved the four admin headers to it too (see [Admin headers on the tablet PageHeader (#439)](#admin-headers-on-the-tablet-pageheader-439)). These screens are not approved yet. Approval is a founder comment on the design issue (#235) that begins with `approved` (AE-Control `policy/designops.md`).
 **Figma page:** [06 Recruit and admin](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6/LogLoads?node-id=52-2884) in the LogLoads file.
 **Source:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md` sections 4.8, 4.9, 4.10, and 7.1, and the lead ruling on payment controls (#334, under the founder's delegation, following #108). Components, variables, and text styles come from page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6/LogLoads?node-id=9-2). No new styles were created. No UI code changed.
 
 The landing is Ridgeline Landing Co. on an active Basic plan: 2 of 3 targeted invitations left, resetting Dec 1. The hauler is Granite Creek Hauling (named Ridgeline Hauling before #379), shown here in Sweet Home, OR, 6 miles from the job, with 2 log trucks and a pole trailer, last confirmed 12 days ago. The job is Oak saw logs to Cascade Mill at $525 per load.
+
+## Admin headers on the tablet PageHeader (#439)
+
+#434 left four 768 px headers on `Breakpoint=mobile`, because each sat inside the padded Content frame. On 2026-11-19, #439 took them out of that frame and moved them to `Breakpoint=tablet`. All 16 PageHeader instances in this page's 768 px frames are now the tablet variant.
+
+| Screen | Frame | Order in the frame now |
+|---|---|---|
+| RA-04 Admin queue | [130:8837](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=130-8837) | Admin bar, Queue nav, PageHeader, Content |
+| RA-04 Stale listings | [130:9251](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=130-9251) | Admin bar, PageHeader, Content |
+| RA-04 Queues could not load | [128:8612](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=128-8612) | Admin bar, Queue nav, PageHeader, Content |
+| RA-04 Admin offline | [130:9720](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=130-9720) | Admin bar, Queue nav, PageHeader, Content |
+
+What changed in each frame:
+
+- **PageHeader.** It is a child of the screen frame, 768 px wide, with the variant's own 24 px gutter. The instance was moved and its variant set with `setProperties`, so it stays linked and keeps every override. Each header is still 174 px tall.
+- **Queue nav.** On the three frames that have it, the three queue buttons sat above the header inside Content. The Queue nav frame moved out with the header, so the order on the screen is the same. It carries its own padding now: `space/4` on top and `space/5` at the sides.
+- **Content.** Its padding is bound to variables: `space/5` (24 px) at the sides and `space/4` (16 px) top and bottom. It was 16 px all round with no variable.
+- The title, the queue buttons and the cards all start 24 px from the edge. Before, the title was 32 px in and the cards 16 px. Each frame is 16 px shorter.
+
+The Admin bar is a local frame and keeps its 16 px gutter, the same as the GlobalNavigation on this page's other 768 px frames. The 390 and 1440 px frames were not touched.
+
+**Check (2026-11-19).** A script compared each header's visible text before and after and found no difference. The four frames were captured with `get_screenshot` and looked at, with RA-01 Find trucks at 768 px beside them for the gutter. A read-only script over the whole page (3,717 visible nodes, 834 instances, 1,330 texts) found no text under 14 px, no control under 44 px, no fill or stroke without a variable, no text outside its frame, no overlap, no "verified" text, no landing name and no instance without its main component. Nothing was checked in a browser.
 
 ## Tablet PageHeader at 768 px (#434)
 
 #426 added `Breakpoint=tablet` to the 00 System PageHeader: 768 px wide with the 24 px gutter. This page has 16 PageHeader instances in its 768 px frames. On 2026-11-19, #434 moved 12 of them from `Breakpoint=mobile` to it, and left 4 on mobile.
 
 - **Moved (12).** The frames where the header spans the frame: RA-01 Find trucks `123:3212`, its error `123:3657` and offline `123:4024`; RA-02 Invite composer `123:4493`, Last invitation `130:7437`, Invitation sent `128:5584`, not sent `128:5912` and offline `128:6245`; and, in **Future: billing closed**, RA-03 Boost purchase `130:7941`, Boost is on `130:8438`, Payment not confirmed `128:7326` and Boost offline `128:7650`. Only the variant changed. Every title, description and meta line is kept, and no header changed height.
-- **Left on mobile (4).** RA-04 Admin queue `130:8837`, Stale listings `130:9251`, Queues could not load `128:8612` and Admin offline `130:9720`. Their header is not a full-width page header: it sits inside the padded Content frame and is 736 px wide. The tablet variant there would add its 24 px gutter to the frame's 16 px padding and set the title 40 px in, against 16 px for the cards under it. They were tried on tablet, checked in a screenshot and set back. Fixing them means taking the header out of Content, which is a layout change for the admin screens' own task.
+- **Left on mobile in #434 (4), moved in #439.** RA-04 Admin queue `130:8837`, Stale listings `130:9251`, Queues could not load `128:8612` and Admin offline `130:9720`. Their header is not a full-width page header: it sits inside the padded Content frame and is 736 px wide. The tablet variant there would add its 24 px gutter to the frame's 16 px padding and set the title 40 px in, against 16 px for the cards under it. They were tried on tablet, checked in a screenshot and set back. Fixing them means taking the header out of Content, which is a layout change for the admin screens' own task.
 
 Two things changed with the 12, so the page lines up:
 

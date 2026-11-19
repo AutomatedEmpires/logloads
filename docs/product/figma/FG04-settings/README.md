@@ -1,6 +1,6 @@
 # FG04 Settings: billing, team and account
 
-**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#297), for design audit 3 on 2026-11-11 (#334), for the legal review privacy notices on 2026-11-18 (#336, see [Legal review privacy screens (#336)](#legal-review-privacy-screens-336)), the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)), and on 2026-11-19 for the tablet PageHeader (#434, see [Tablet PageHeader at 768 px (#434)](#tablet-pageheader-at-768-px-434)). It is not approved. These key screens still need the founder's approval (AE-Control `policy/designops.md`).
+**Status:** TARGET. Revised for design audit 2 on 2026-11-10 (#297), for design audit 3 on 2026-11-11 (#334), for the legal review privacy notices on 2026-11-18 (#336, see [Legal review privacy screens (#336)](#legal-review-privacy-screens-336)), the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)), and on 2026-11-19 for the tablet PageHeader (#434, see [Tablet PageHeader at 768 px (#434)](#tablet-pageheader-at-768-px-434)). Later on 2026-11-19, #439 moved the 1440 px frames to the desktop PageHeader and gave two offline banners their own wording (see [Desktop PageHeader and offline banners (#439)](#desktop-pageheader-and-offline-banners-439)). It is not approved. These key screens still need the founder's approval (AE-Control `policy/designops.md`).
 **Figma page:** [04 Settings](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=44-115) in the LogLoads file (jackson.cole's team).
 **Source of truth:** `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`, the plan numbers in `packages/contracts/src/membership.ts`, and the lead rulings on #108 and #334 (billing is not open; current-state frames show no payment control). Figma mirrors that copy. No UI code changed in this task.
 
@@ -8,15 +8,34 @@ The current billing screen is **Billing not on yet**: the plan facts and one sta
 
 The example person is the one already on page 00 System: Sam Carter, sam@example.com, owner of North Ridge Logging.
 
+## Desktop PageHeader and offline banners (#439)
+
+Two follow-ups from #434, done on 2026-11-19. Both are named in the lead's approval of #434 ([comment 6999508665](https://github.com/AutomatedEmpires/logloads/issues/434#issuecomment-6999508665)).
+
+**Desktop PageHeader at 1440 px.** The 33 PageHeader instances in the 1440 px frames moved from `Breakpoint=mobile` to `Breakpoint=desktop`: the 26 current-state frames and the 7 frames in **Future: billing closed**. Only the variant changed, with `setProperties`, so every instance stays linked. Every title, description and breadcrumb is kept. Each header is 185 px tall (it was 173), and each frame grew by the same 12 px. The title now sits 64 px from the edge, inside the 1376 px page container. No page 04 frame uses the mobile variant above 390 px now.
+
+**Offline banners.** The banner on Directory listing · offline and Privacy request · offline said "You’re offline. These are the jobs saved at 5:12 AM." That is the Find Work wording, and these screens show no jobs. The banner's text is not a property of the 00 Offline banner variant, so the six instances kept the component's default. They now read:
+
+| Screen | Banner | 390 px | 768 px | 1440 px |
+|---|---|---|---|---|
+| Directory listing · offline | "You’re offline. Your listing can’t change until you’re back online. This is your last saved setting." | [361:6219](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-6219) | [361:6457](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-6457) | [361:6682](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=361-6682) |
+| Privacy request · offline | "You’re offline. Your request won’t send until you’re back online. What you chose and typed stays here." | [362:7013](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-7013) | [362:7196](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-7196) | [362:7371](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=362-7371) |
+
+The six banners hug their text. They were fixed at 56 px, and the new line takes two lines at 768 and 1440 px (64 px) and four lines at 390 px (112 px). Retry is unchanged.
+
+**Check (2026-11-19).** A script compared each header's visible text before and after and found no difference. All 33 frames at 1440 px and the four banner frames at 390 and 768 px were captured with `get_screenshot` and looked at. The first capture of Privacy request · offline at 390 px showed the new line running past the 56 px banner. The banners were set to hug and captured again. A read-only script over the whole page (107 frames, 5,411 visible nodes, 1,326 instances, 1,917 texts) found no text under 14 px, no control under 44 px, no fill or stroke without a variable, no text outside its frame, no overlap, no "verified" text and no instance without its main component. Nothing was checked in a browser.
+
+**Known limit.** At 1440 px the body is a centred 720 px column, and the header's title starts at 64 px. The two do not share a left edge, as they did not before. The top bar on this page is a local frame with a 16 px gutter. Lining them up is a layout change for the page's own task.
+
 ## Tablet PageHeader at 768 px (#434)
 
 #426 added `Breakpoint=tablet` to the 00 System PageHeader: 768 px wide with the 24 px gutter. On 2026-11-19, #434 moved the 33 PageHeader instances in this page's 768 px frames from `Breakpoint=mobile` to it: the 26 current-state frames and the 7 frames in **Future: billing closed**. Only the variant changed. Every title, description and breadcrumb is kept, no header changed height, and the header text lines up with the 24 px gutter the body already had.
 
-Not changed: the 390 px frames, and the 1440 px frames, which still use `Breakpoint=mobile` (33 instances). Moving 1440 px to the desktop variant changes the layout, so it needs its own task.
+Not changed in #434: the 390 px frames, and the 1440 px frames, which used `Breakpoint=mobile` (33 instances). #439 moved the 1440 px frames to the desktop variant.
 
 **Check (2026-11-19).** A script compared each header's visible layers and text before and after and found no difference. All 33 frames were looked at in a screenshot. A read-only script over the 33 frames (1,686 visible nodes) found no text under 14 px, no control under 44 px, no disabled control, no fill or stroke without a variable, no text outside its frame, no overlap, no "verified" text and no instance without its main component. These frames have no prototype links. Nothing was checked in a browser.
 
-**Seen while checking, not changed.** The offline banners on "Directory listing · offline" and "Privacy request · offline" at 768 px say "These are the jobs saved at 5:12 AM", which is the Find Work wording. They need their own line when the page is next touched.
+**Seen while checking, fixed in #439.** The offline banners on "Directory listing · offline" and "Privacy request · offline" at 768 px say "These are the jobs saved at 5:12 AM", which is the Find Work wording. Each has its own line since #439.
 
 ## Design audit 4 (#379)
 

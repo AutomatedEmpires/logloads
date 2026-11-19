@@ -1,8 +1,76 @@
 # FG00 System: the LogLoads design system in Figma
 
-**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#256). It is not approved yet. Key screens built on it still need the founder's approval (AE-Control `policy/designops.md`). On 2026-11-10, #278 closed the 00 System gaps found while designing screens. On 2026-11-11, #281 added the field layer: the field design bar, a Dark theme and the field components. On 2026-11-12, #352 closed the remaining page 00 gaps and promoted page 02's local parts (see [Remaining gaps and promotions (#352)](#remaining-gaps-and-promotions-352)). On 2026-11-18, #336 (LL-D11) redrew the verification mark and added the "what this means" sheet for legal review Gate A (see [Legal review marks (#336)](#legal-review-marks-336)). Later that day, #379 (LL-D14) fixed the page 00 findings of design audit 4 (see [Design audit 4 (#379)](#design-audit-4-379)). On 2026-11-19, #426 (LL-D15) closed the three 00 gaps that #367 found (see [Three gaps from #367 (#426)](#three-gaps-from-367-426)). No UI code changed.
+**Status:** TARGET. Built for founder review in Figma on 2026-11-10 (#256). It is not approved yet. Key screens built on it still need the founder's approval (AE-Control `policy/designops.md`). On 2026-11-10, #278 closed the 00 System gaps found while designing screens. On 2026-11-11, #281 added the field layer: the field design bar, a Dark theme and the field components. On 2026-11-12, #352 closed the remaining page 00 gaps and promoted page 02's local parts (see [Remaining gaps and promotions (#352)](#remaining-gaps-and-promotions-352)). On 2026-11-18, #336 (LL-D11) redrew the verification mark and added the "what this means" sheet for legal review Gate A (see [Legal review marks (#336)](#legal-review-marks-336)). Later that day, #379 (LL-D14) fixed the page 00 findings of design audit 4 (see [Design audit 4 (#379)](#design-audit-4-379)). On 2026-11-19, #426 (LL-D15) closed the three 00 gaps that #367 found (see [Three gaps from #367 (#426)](#three-gaps-from-367-426)). Later that day, #439 (LL-D17) closed the 00 follow-ups from #434 and set the verification sheet to the #412 wording (see [Follow-ups from #434 and the #412 wording (#439)](#follow-ups-from-434-and-the-412-wording-439)). No UI code changed.
 **Figma page:** [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) in the LogLoads file (jackson.cole's team). The field layer is the [Field layer](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=193-1082) group.
 **Source of truth:** `packages/ui` on `work/logloads-repair`. Figma mirrors the code, and when the two differ the code wins and this page gets updated. The one exception is the field layer (#281): it is a design target ahead of the code. Every token and component it changes has a `packages/ui` follow-up in [Follow-ups for packages/ui](#follow-ups-for-packagesui). No UI code changed in this task.
+
+## Follow-ups from #434 and the #412 wording (#439)
+
+The lead approved #434 with a privacy condition and a list of follow-ups ([#434 comment 6999508665](https://github.com/AutomatedEmpires/logloads/issues/434#issuecomment-6999508665)). #439 did them on 2026-11-19. The page 02, 04 and 06 work is in those pages' READMEs. This section records the page 00 changes, and the privacy search across the whole file.
+
+### Page 00 changes
+
+| Follow-up | What changed | Node |
+|---|---|---|
+| The verification mark in the wide JobResultRow had a 420 px minimum width, wider than the 404 px column at 768 px (FG02 gap 8) | The minimum is 380 px in the six wide variants that show the mark (hauler and public). The mark still takes its own line when it does not fit beside the business name, and it now wraps inside a 404 px column. No 00 variant changed size. | [20:1113](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=20-1113): `20:377`, `20:428`, `20:480`, `20:640`, `20:680`, `20:721` |
+| BottomActionBar had no tablet gutter | New variant property Breakpoint (mobile, tablet). The three existing variants are Breakpoint=mobile: 390 px with the 16 px gutter (`space/4`), unchanged, so every existing instance keeps its look. The three new Breakpoint=tablet variants are 768 px with the 24 px gutter (`space/5`), so the buttons line up with the tablet PageHeader and a 24 px page body. Summary, Show summary, Show choices and Show second action work in both, and the buttons are exposed instances in both. In the tablet stacked variant the two secondary actions share the row equally. | [213:1239](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=213-1239): tablet single `618:3399`, split `618:3407`, stacked `618:3423` |
+| The verification sheet named documents, and said a review "turns grey" | See [the wording](#the-verification-sheet-wording-412) below. | [357:19095](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-19095) |
+
+**The cloning caveat.** A cloned variant in this file loses its component property references. The three tablet variants were cloned from the mobile ones, and a script then set each reference again from its mobile twin: the summary's text and visibility, the choices' visibility and the second action's visibility. A temporary instance of the split and the stacked tablet variants was made with every property on, read back and deleted. Each showed the summary text, both choices and both secondary actions, and listed its exposed buttons.
+
+**Adopted on page 03.** The 16 BottomActionBar instances in page 03's 768 px frames were `Breakpoint=mobile` with a 24 px padding override from #434. They are `Breakpoint=tablet` now (14 single, 1 split, 1 stacked). No bar changed height or text. The bars on page 02 (inside a 560 px dialog and a 430 px panel) and on page 07 (a centred column) are not full-width tablet bars, so they stay on mobile.
+
+### Approximate pickup before a release: the search across the file
+
+Lead decision, 2026-11-19: on every public view, and on every hauler view before the poster releases the details, Pickup shows only the approximate area ("Near Sweet Home, OR · approximate area", the JobSummary and JobDetail default on this page). It never shows the landing name. A script read every visible text on pages 00 to 07 for a landing name.
+
+| Page | What the search found | Done |
+|---|---|---|
+| 00 System | The JobSummary and JobDetail Pickup default is already the approximate area. "North Pine Landing is saved." is a notice to the landing's own team. | Nothing to change |
+| 01 First run | FR-10 Add your first landing told the poster "Haulers see the landing name and its approximate area on each job." That is no longer true. | It reads "Haulers see the approximate area on each job. They see the landing name only after you share the details." on `93:2091`, `93:2699`, `93:3180`, `173:3093` |
+| 02 Home | The 12 job sheets, dialogs and panels named "Quartzville landing" under Pickup | Fixed (FG02 README) |
+| 03 Create and edit | CE-07 Interest sheet is a hauler view before a release, and its header read "$525.00 per load · Oak Landing", where Oak Landing is North Pine Logging's landing. The Landing field's hint on CE-03 told the poster "Haulers see Oak Landing, not the gate." | The CE-07 header reads "$525.00 per load · North Pine Logging" on `58:3949`, `58:4140`, `156:2101`, `319:4357`. The hint reads "Haulers see the approximate area, not the landing name or the gate, until you share the details." on the 7 CE-03 and CE-03b frames (`58:2375`, `58:2521`, `156:1653`, `359:4603`, `359:4632`, `359:4662`, `359:5138`) |
+| 04 Settings | "Manager at Oak Landing" on Team is the business's own team list | Nothing to change |
+| 05 Marketing | The public job rows show "Near Sweet Home, OR · Approximate area". "Oak Landing" there is the name of the posting business. | Nothing changed. See the question below |
+| 06 Recruit and admin | No landing name. "Ridgeline Landing Co." is a business name | Nothing to change |
+| 07 Flows | Flow A's job page shows "Sweet Home, OR to Cascade Mill". "Oak Landing" is the posting business, and "Oak Landing yard" appears only on the poster's own steps (B2, B5) | Nothing to change |
+
+The poster's own screens on page 03 still name Oak Landing (the header "North Pine Logging · Oak Landing", the job list, the Landing field's value). Those are the landing business reading its own landing.
+
+Two questions for the lead, not decided here:
+
+1. **"Oak Landing" is a business on pages 05 and 07 and a landing on page 03.** If the public rows on page 05 and the job page in flow A mean the landing, they need a business name instead.
+2. **"Town or landing name"** is the label, hint or placeholder of the Near field in 00 FormField, Input, Dialog and VisibilityPanel examples and in page 02's filter form. It names no landing, but it says a hauler can search by landing name.
+
+### The verification sheet wording (#412)
+
+#412 (PR 438) settled the wording: no verification path records documents, so no state may say "documents". The source of truth is `describeMarketplaceVerificationSheet` in `packages/contracts/src/marketplace-v2.ts`. The six VerificationSheet variants now carry its strings, so the design and the code agree. The apostrophes are straight, as in the code.
+
+| Line | Reviewed | Last reviewed | Not yet reviewed |
+|---|---|---|---|
+| Opening sentences | "This mark is LogLoads' statement about one check. It is not a safety rating or a recommendation." | "This review is more than 12 months old, so LogLoads no longer shows it as current." | "LogLoads has no current review of this business's identity. Not every business asks for one, and LogLoads does not say why a business has none." |
+| What LogLoads looked at | "This business's identity." | "This business's identity." | Absent |
+| When | "Oct 14, 2026" | "Sep 3, 2025, more than 12 months ago" | Absent |
+| What LogLoads did not check | The limits sentence | The limits sentence | The limits sentence |
+| Search | "A review does not move a business up in search." | The same | The same |
+
+What was replaced: "The business name the owner gave us, checked against a business document they sent us." (reviewed and last reviewed); "A review older than 12 months turns grey." (reviewed); "so the mark is grey. LogLoads has not reviewed this business again since then." (last reviewed); and, for Not yet reviewed, the opening "That says nothing bad about the business…", the heading "What LogLoads never checks" and "A business with a review does not show higher in search." The seven VerificationSheet instances on this page (VM-03 to VM-05) follow the component; none overrides these lines. The annotation `357:23881` and the set's description say the same.
+
+Not drawn: the no-date state. The code shows "The date of this review is not on record, so LogLoads does not show it as current." with When "Not on record". It uses the last reviewed layout.
+
+### Checks (2026-11-19)
+
+- **Screenshots.** The BottomActionBar set (6 variants) and the VerificationSheet set (6 variants) were captured after the change and looked at. So were the frames on other pages that the changes reach: the eight 768 px rows with the mark on page 02, the 16 bars on page 03, the 4 CE-07 and 7 CE-03 frames on page 03, and the FR-10 "Who sees what" card on page 01.
+- **Every VerificationIndicator instance.** A script compared the mark's position and size in every wide row that shows it, before and after: 16 on page 02 and the six 00 variants. Pages 05 and 06 show no mark in a wide row. Only the eight 768 px marks on page 02 changed, from 420 px to 404 px. All 58 VerificationIndicator instances on page 00 sit inside their parent.
+- **Read-only audit** of the changed sets (JobResultRow, JobResultList, JobSummary, JobDetail, BottomActionBar, VerificationIndicator, VerificationSheet) and the seven VerificationSheet instances: 1,476 visible nodes, 342 instances, 603 texts. No text under 14 px, no button under 44 px, no fill or stroke without a variable, no text outside its component, no overlap, no "verified" or "document" text and no instance without its main component.
+- **The same audit on pages 01 to 07** found no control under 44 px, no fill or stroke without a variable, no text outside its frame, no overlap, no "verified" text and no instance without its main component. Text under 14 px: none on pages 01 to 04 and 06. Page 05 has one 11 px index number in its "Composed parts (gaps)" note, and page 07 has nine 12 px texts inside the scaled-down share card previews (A1, B6, B6-copied). Neither is in a frame this task changed.
+- Nothing was checked in a browser.
+
+### Code follow-ups (not done here)
+
+- **`BottomActionBar`:** take the page gutter from PageContainer, 16 px below bp-md and 24 px from it, as PageHeader does.
+- **`JobResultRow.module.css`:** in the wide layout, give the mark `min-width: min(100%, 380px)` or let it wrap, so it never runs past its column.
+- **Job views before a release:** `JobSummary` and `JobDetail` keep the pickup as the public approximate area, and no hauler or public view names the landing (#433).
 
 ## Three gaps from #367 (#426)
 
@@ -76,7 +144,7 @@ Link base: `https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=` plus t
 | Component | Node | What it is |
 |---|---|---|
 | VerificationIndicator (now a set) | [355:1838](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1838) | 3 states. State=reviewed [19:416](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=19-416): "Business identity reviewed by LogLoads on Oct 14, 2026" in `color/text-secondary`. State=last reviewed [355:1822](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1822): a review older than 12 months, grey (`color/text-muted`), "Business identity last reviewed by LogLoads on Sep 3, 2025". State=not yet reviewed [355:1828](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1828): "Not yet reviewed", neutral. Every state uses the same neutral ID card icon and a dotted underline that says the mark opens the sheet. Properties: Label (reviewed), Last reviewed label, Focus ring, Pressed. The label wraps, so the mark fills its column in narrow rows. |
-| VerificationSheet | [357:19095](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-19095) | The "what this means" sheet (§7.3 item 3), 6 variants: Layout (sheet below 600 px, centred above) × State (the mark's three states). Built from Dialog, VerificationIndicator, Fact, Notice and Note. It says what LogLoads looked at, on what date, and "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. Check these yourself before you agree to a haul." It also says a mark does not move a business up in search (§7.3 item 5). Close is the one action. Sheet variants: [357:18621](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18621), [357:18717](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18717), [357:18800](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18800). Centred: [357:18861](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18861), [357:18947](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18947), [357:19030](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-19030). |
+| VerificationSheet | [357:19095](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-19095) | The "what this means" sheet (§7.3 item 3), 6 variants: Layout (sheet below 600 px, centred above) × State (the mark's three states). Built from Dialog, VerificationIndicator, Fact, Notice and Note. It says what LogLoads looked at, on what date, and "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. Check these yourself before you agree to a haul." It also says a review does not move a business up in search (§7.3 item 5). Since #439 every line is the #412 string from `describeMarketplaceVerificationSheet`, and "What LogLoads looked at" is "This business's identity." Close is the one action. Sheet variants: [357:18621](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18621), [357:18717](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18717), [357:18800](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18800). Centred: [357:18861](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18861), [357:18947](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-18947), [357:19030](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-19030). |
 | Checkbox, new State=error | [357:35165](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=357-35165) | For a box that must be ticked, such as the Terms box on pages 01 and 07. The box border is `color/status-critical` at 2 px, and the message sits under the label with the warning icon, as on Input. New Error text property. It is a new variant value, so no existing instance changed. |
 | Icon/status.reviewed | [355:1770](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1770) | Phosphor IdentificationCard, bold. The mark's icon. |
 | Icon/action.report | [355:1776](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=355-1776) | Phosphor Flag, bold. Report on page 07 threads. |
@@ -101,7 +169,7 @@ The icons were drawn from the `@phosphor-icons/react` 2.1.1 paths in the reposit
 
 **Contrast.** Only role tokens are used, so the measured table above holds in both themes: `color/text-secondary` 9.40:1 or more, `color/text-muted` 7.18:1 or more, the focus ring 3:1 or more, and link text 6.59:1 or more.
 
-**Wording.** These strings are design copy for counsel's short review of the mark sentence and the sheet (legal review §7.3, counsel: yes). "What LogLoads looked at" reads "The business name the owner gave us, checked against a business document they sent us." This follows spec §7.2, which names the claimed business name and the submitted documents. Admin review copy can make it more exact.
+**Wording.** The sheet's strings are the ones `describeMarketplaceVerificationSheet` returns (`packages/contracts`, #412), set on the frames in #439. No verification path records documents, so no state says "documents". "What LogLoads looked at" reads "This business's identity." in the reviewed, last reviewed and no-date states, and is absent for "Not yet reviewed". "What LogLoads did not check" is the limits sentence in every state. Once the lapse job runs, a lapsed mark reads "Not yet reviewed". The table is in [the verification sheet wording](#the-verification-sheet-wording-412).
 
 ### Self-audit against quality bar v1 (#336)
 
@@ -218,7 +286,7 @@ Before #281, Light `color/text-muted` measured 5.13:1 on the sunken well and Lig
 
 | Component | Figma node | Variants and properties | Promoted from |
 |---|---|---|---|
-| BottomActionBar | [213:1239](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=213-1239) | 2: Layout (single, split); Summary, Show summary. The primary and secondary buttons are exposed instances. | Audit G4, H6, E6, P2, R1 |
+| BottomActionBar | [213:1239](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=213-1239) | 2: Layout (single, split); Summary, Show summary. The primary and secondary buttons are exposed instances. Since #352 also Layout=stacked, and since #439 Breakpoint (mobile 390 px, tablet 768 px with the 24 px gutter). | Audit G4, H6, E6, P2, R1 |
 | FreshnessChip | [205:1174](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=205-1174) | 4: State (confirmed, aging, stale, waiting). Icons: check, clock, warning, dashed circle. "Confirmed 3 days ago", "Confirmed 6 days ago", "Not confirmed for 12 days", "Waiting for the poster to confirm". | Audit H3, R5 |
 | Notice | [207:1206](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=207-1206) | 4: Tone (info, success, warning, critical); Show title, Show action. The action is a 48 px Button. | Page 04 local Note banners, page 07 Field / Notice |
 | Note | [207:1215](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=207-1215) | Text | Page 04 `52:1122` (audit S8) |
@@ -484,7 +552,7 @@ The four code follow-ups for JobResultRow, JobSummary, JobDetail and PageHeader 
 - **Page 01 (#257):** done in #334 and #352 (PlanCard, StepIndicator, StepIndicator / Narrow and BottomActionBar).
 - **Page 02 (#295):** swap the local Composed parts listed in [#352](#remaining-gaps-and-promotions-352) for the promoted 00 System components once #295 lands.
 - **Page 02, after #426:** swap the 46 local wide `Composed / FindWorkRow` rows for JobResultRow Layout=wide, Context=hauler, and the 12 local `Composed / JobDecision` sheets for JobSummary or JobDetail. Move the 390 px Find Work header's Filters button to Show title action, and swap the 17 headers at 768 px to Breakpoint=tablet. Then delete the two local components and close gaps 1 to 3 in the FG02 README.
-- **Pages 01, 03, 04 and 06, after #426:** their 768 px frames use PageHeader Breakpoint=mobile (9, 18, 33 and 16 instances). They can move to Breakpoint=tablet when each page is next touched. Page 04 also uses the mobile variant at 1440 px.
+- **Pages 01, 03, 04 and 06, after #426:** their 768 px frames use PageHeader Breakpoint=mobile (9, 18, 33 and 16 instances). They can move to Breakpoint=tablet when each page is next touched. Page 04 also uses the mobile variant at 1440 px. Done: #434 moved the 768 px frames (page 06's four admin headers followed in #439), and #439 moved page 04's 1440 px frames to desktop.
 - **Page 02:** the aging wording "Last confirmed 9 days ago — check with the poster" is too long for a chip at 390 px. Use "Confirmed 9 days ago" and keep the advice in the job sheet.
 
 ## What the code has that Figma does not represent
