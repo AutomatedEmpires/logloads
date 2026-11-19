@@ -7,9 +7,17 @@ export default defineConfig({
   testDir: ".",
   // The design-system suite needs Marketplace V2 on and has its own server: design-system.config.mjs. The normalized
   // loop needs its own disposable store and runs only in normalized-e2e-loop.yml: v2-normalized-loop.config.mjs.
-  // field-conditions.spec.ts and v2-flow-c.spec.ts need Marketplace V2, so they run with design-system.config.mjs
-  // (#327, #328).
-  testIgnore: ["design-system.spec.ts", "field-conditions.spec.ts", "v2-flow-c.spec.ts", "v2-normalized-loop.spec.ts"],
+  // field-conditions.spec.ts, v2-flow-c.spec.ts and the V2 UI task specs (#422, #423, #424) need Marketplace V2, so
+  // they run with design-system.config.mjs (#327, #328).
+  testIgnore: [
+    "design-system.spec.ts",
+    "field-conditions.spec.ts",
+    "v2-flow-c.spec.ts",
+    "v2-job-notices.spec.ts",
+    "v2-directory-listing.spec.ts",
+    "v2-privacy-request.spec.ts",
+    "v2-normalized-loop.spec.ts"
+  ],
   timeout: 60_000,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
