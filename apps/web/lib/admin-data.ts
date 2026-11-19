@@ -74,7 +74,8 @@ const VISIBILITY_LABELS: Record<string, string> = {
   direct_offer: "Direct offer",
   open_network: "Open network",
   private_network: "Partner load",
-  verified_network: "Verified network"
+  // Same words as the cockpits' visibilityLabel: the gate is an identity review, never a bare "Verified" (#428).
+  verified_network: "Identity-reviewed carriers only"
 }
 
 function titleCase(value: string): string {

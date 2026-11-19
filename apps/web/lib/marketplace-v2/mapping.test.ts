@@ -1,4 +1,4 @@
-import { MARKETPLACE_EQUIPMENT_TYPES, MARKETPLACE_VERIFICATION_SCOPES } from "@logloads/contracts"
+import { describeMarketplaceVerification, MARKETPLACE_EQUIPMENT_TYPES, MARKETPLACE_VERIFICATION_SCOPES } from "@logloads/contracts"
 import { createInMemoryDatabase } from "@logloads/db"
 import { marketplaceJobStatus } from "@logloads/services"
 import { describe, expect, it } from "vitest"
@@ -58,6 +58,18 @@ describe("pilot poster verification (#150)", () => {
   it.each(["pending", "rejected", "suspended"] as const)("claims nothing for a %s organization", (verificationStatus) => {
     expect(pilotPosterVerification({ ...organization, verificationStatus }, [record])).toBeNull()
   })
+
+  it.each(["pending", "rejected", "suspended"] as const)(
+    "a %s organization that was reviewed before reads as no current review, never as not reviewed, and gives no reason (#412)",
+    (verificationStatus) => {
+      // The record keeps the earlier review's date, so LogLoads did review this business: "has not reviewed" would be false.
+      const { label, meaning } = describeMarketplaceVerification(pilotPosterVerification({ ...organization, verificationStatus }, [record]), "2026-11-18T17:00:00.000Z")
+
+      expect(label).toBe("Not yet reviewed")
+      expect(meaning).toMatch(/^LogLoads has no current review of this business's identity\./)
+      expect(meaning).not.toMatch(/has not reviewed|reject|suspend|pending|lapse|Oregon|registry/i)
+    }
+  )
 
   it("claims nothing for an unknown organization", () => {
     expect(pilotPosterVerification(undefined, [record])).toBeNull()

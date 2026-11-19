@@ -63,7 +63,7 @@ export function DecisionList({ items, title }: { items: Array<{ body: string; ti
 export function RelationshipGrid({ network }: { network: NetworkView }) {
   return (
     <section className="relationship-grid">
-      {network.privateNetwork.length === 0 ? <EmptyState title="No operating relationships yet." body="Invite trusted carriers or hosts to share work and selected availability." /> : network.privateNetwork.map((relationship) => <article key={relationship.id}><Badge tone={relationship.status === "active" ? "success" : "warning"}>{relationship.status}</Badge><h2>{relationship.partnerName}</h2><p>{relationship.notes ?? "Trusted partner relationship."}</p><span>{formatHuman(relationship.scope)}</span></article>)}
+      {network.privateNetwork.length === 0 ? <EmptyState title="No operating relationships yet." body="Invite trusted carriers or hosts to share work and selected availability." /> : network.privateNetwork.map((relationship) => <article key={relationship.id}><Badge tone={relationship.status === "active" ? "success" : "warning"}>{relationship.status}</Badge><h2>{relationship.partnerName}</h2><p>{relationship.notes ?? "No relationship note on file."}</p><span>{formatHuman(relationship.scope)}</span></article>)}
     </section>
   )
 }

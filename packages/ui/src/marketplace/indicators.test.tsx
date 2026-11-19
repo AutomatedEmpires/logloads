@@ -1,4 +1,4 @@
-import { MARKETPLACE_EQUIPMENT_TYPES } from "@logloads/contracts"
+import { MARKETPLACE_EQUIPMENT_TYPES, MARKETPLACE_VERIFICATION_LIMITS } from "@logloads/contracts"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
@@ -45,12 +45,29 @@ describe("VerificationIndicator (Gate 5, #150)", () => {
 
     expect(textOf(html)).toBe("Business identity reviewed by LogLoads on Oct 5, 2026")
     expect(openingTag(html, /title=/)).toContain('data-state="reviewed"')
-    expect(openingTag(html, /title=/)).toContain("On Oct 5, 2026, LogLoads reviewed documents this business sent to show its business identity.")
+    expect(openingTag(html, /title=/)).toContain("On Oct 5, 2026, LogLoads reviewed this business&#x27;s identity.")
     expect(openingTag(html, /title=/)).toContain(
       "LogLoads did not check insurance, operating authority, licences, safety record, equipment condition or ability to do the work. " +
         "Check these yourself before you agree to a haul."
     )
+    // No verification path records a document (#412).
+    expect(html).not.toMatch(/document/i)
     expect(html).toContain('aria-hidden="true"')
+  })
+
+  it("with limits, shows the limits sentence as text a phone or a keyboard can reach, not only in a title (#412)", () => {
+    for (const [reviewedOn, label] of [
+      ["2026-10-05", "Business identity reviewed by LogLoads on Oct 5, 2026"],
+      ["2025-11-01", "Business identity last reviewed by LogLoads on Nov 1, 2025"],
+      [null, "Business identity reviewed by LogLoads, date not on record"]
+    ] as const) {
+      const html = renderToStaticMarkup(<VerificationIndicator limits now={NOW} verification={{ reviewedOn, scope: "business_identity" }} />)
+
+      expect(textOf(html), label).toBe(`${label} ${MARKETPLACE_VERIFICATION_LIMITS}`)
+      expect(html, label).not.toContain("title=")
+      expect(openingTag(html, /data-limits/), label).toContain("data-state=")
+    }
+    expect(renderToStaticMarkup(<VerificationIndicator limits now={NOW} verification={null} />)).toBe("")
   })
 
   it("shows a review older than 12 months as last reviewed, with its date (#337)", () => {

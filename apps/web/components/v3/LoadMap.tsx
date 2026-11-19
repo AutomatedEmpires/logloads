@@ -583,7 +583,8 @@ export function RoutePackPreview({ load, locked = false }: { load: NetworkLoadVi
       <p className="route-pack-footnote">
         {snapshot
           ? `Issued for your assignment ${formatDateTime(snapshot.capturedAt)}. These are the instructions that govern this haul; you will be told if they change.`
-          : `Verified ${formatDateTime(pack.lastVerifiedAt)}`}
+          : // The pack's lastVerifiedAt is the moment it was built (services/route-packs), not a check by anyone.
+            `Issued ${formatDateTime(pack.lastVerifiedAt)}.`}
       </p>
     </section>
   )

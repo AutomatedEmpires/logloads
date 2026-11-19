@@ -39,9 +39,11 @@ function reviewTone(status: string): "success" | "warning" | "critical" | "info"
   return "info"
 }
 
+// The stored status is `verified`, but only an active platform administrator can set it (reviewVerificationRecord and
+// reviewOrganization), so the label says who did what. Never the bare word (legal review §7.3 item 1, #428).
 function reviewLabel(status: string): string {
   if (status === "verified") {
-    return "Verified"
+    return "Reviewed by LogLoads"
   }
 
   if (status === "pending") {
@@ -289,7 +291,7 @@ export function AdminOrganizationsPage({
         <SectionHeader eyebrow="Operating registry" title="Review posture" />
         <div className="command-grid admin-registry-summary">
           <Metric label="Pending review" value={pendingCount} />
-          <Metric label="Verified" value={verifiedCount} />
+          <Metric label="Identity reviewed" value={verifiedCount} />
           <Metric label="Restricted" value={restrictedCount} />
         </div>
       </section>

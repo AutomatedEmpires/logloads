@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest"
 
+import { reviewTagSchema } from "./enums"
 import {
   formatRate,
   rateTone,
   reputationBand,
   reputationLabel,
+  reviewTagLabel,
   summarizeReviews,
   type ReviewLike
 } from "./reputation"
@@ -57,6 +59,20 @@ describe("reputation summary", () => {
     expect(rateTone(0.95)).toBe("success")
     expect(rateTone(0.75)).toBe("warning")
     expect(rateTone(0.4)).toBe("critical")
+  })
+
+  it("labels the reviewer's safety tag as what they saw, never the bare word Safe (#428)", () => {
+    // A chip reading "Safe" beside a carrier reads as "safe to hire" (legal review §7.1, §7.3 item 1). The stored tag
+    // stays `safe`; only its label changes.
+    expect(reviewTagLabel("safe")).toBe("Worked safely")
+
+    const bare = /^(?:verified|trusted|approved|vetted|safe|certified|background[ -]checked)$/i
+    for (const tag of reviewTagSchema.options) {
+      expect(reviewTagLabel(tag)).not.toMatch(bare)
+    }
+
+    const summary = summarizeReviews([review(5, ["safe"]), review(5, ["safe", "on_time"])])
+    expect(summary.topTags[0]).toMatchObject({ count: 2, label: "Worked safely", tag: "safe" })
   })
 
   it("never emits a raw NN/100 style score in the label", () => {

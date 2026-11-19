@@ -1624,7 +1624,7 @@ export function HostCarriers({
             <article key={relationship.id}>
               <Badge tone="success">Active partner</Badge>
               <h2>{relationship.partnerName}</h2>
-              <p>{relationship.notes ?? "Trusted partner relationship."}</p>
+              <p>{relationship.notes ?? "No relationship note on file."}</p>
               <span>{formatHuman(relationship.scope)}</span>
             </article>
           ))

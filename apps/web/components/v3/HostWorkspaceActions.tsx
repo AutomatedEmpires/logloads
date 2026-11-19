@@ -328,7 +328,7 @@ export function LandingDetailsForm({
         <button className="action-link" disabled={pending} type="submit">
           {pending ? "Saving…" : "Save and verify briefing"}
         </button>
-        {saved ? <span className="action-note">Verified for future Route Packs.</span> : null}
+        {saved ? <span className="action-note">Saved. Future Route Packs use this briefing.</span> : null}
       </div>
       {error ? <p className="action-error" role="alert">{error}</p> : null}
     </form>

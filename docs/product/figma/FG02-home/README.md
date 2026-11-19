@@ -1,8 +1,8 @@
 # FG02 Home: landing Overview and hauler Find Work in Figma
 
-**Status:** TARGET. First built on 2026-11-10 (#258). Revised on 2026-11-11 (#295) to pass design audit 2 (#285) with zero blockers. Updated on 2026-11-18 (#367) to use the components promoted in #352 and to fix design audit 4's page 02 findings (see [the #367 section](#00-system-swap-and-design-audit-4-367-2026-11-18)). It is not approved yet. These are key screens, so they need the founder's approval before anyone builds a change from them (AE-Control `policy/designops.md`).
+**Status:** TARGET. First built on 2026-11-10 (#258). Revised on 2026-11-11 (#295) to pass design audit 2 (#285) with zero blockers. Updated on 2026-11-18 (#367) to use the components promoted in #352 and to fix design audit 4's page 02 findings (see [the #367 section](#00-system-swap-and-design-audit-4-367-2026-11-18)). Updated on 2026-11-19 (#434) to use the 00 System variants that #426 added (see [the #434 section](#00-system-variants-from-426-adopted-434-2026-11-19)). It is not approved yet. These are key screens, so they need the founder's approval before anyone builds a change from them (AE-Control `policy/designops.md`).
 **Figma page:** [02 Home](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=35-79) in the LogLoads file (jackson.cole's team).
-**Built from:** page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) (#256, #281, #352, `docs/product/figma/FG00-system/README.md`): its components, variables and text styles, including the #281 field layer merged at `13dc399` (FreshnessChip, BottomActionBar, Notice, Offline, PermissionDenied, Fact, Input, FormField at 16 px, the Touch mode and the Dark mode) and the parts #352 promoted from page 02 (JobResultRow narrow, PageHeader, FindWorkSummary, SegmentedControl, ResponsiveNavigation landing). Page 00 was not edited in #295 or #367. No UI code changed in either task.
+**Built from:** page [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2) (#256, #281, #352, `docs/product/figma/FG00-system/README.md`): its components, variables and text styles, including the #281 field layer merged at `13dc399` (FreshnessChip, BottomActionBar, Notice, Offline, PermissionDenied, Fact, Input, FormField at 16 px, the Touch mode and the Dark mode) and the parts #352 promoted from page 02 (JobResultRow narrow, PageHeader, FindWorkSummary, SegmentedControl, ResponsiveNavigation landing). Since #434 it also uses the #426 variants: JobResultRow `Layout=wide`, JobDetail with its JobSummary, and PageHeader's Show title action and `Breakpoint=tablet`. Page 00 was not edited in #295, #367 or #434. No UI code changed in any of these tasks.
 **Standards:** quality bar v1 (#235 comment 6783016152) and the field design bar FD1 to FD8 (#235 comment 6784066522).
 
 ## What changed in the audit 2 revision
@@ -15,6 +15,33 @@ The page now has 61 screen frames in four sections (51 Light frames at 390, 768 
 - The dark theme is decided: it follows the phone. The 10 key 390 px screens have a Dark copy that sets the Color collection to Dark.
 - Overlays are one viewport tall (390 × 844, 768 × 1024, 1440 × 900). The page behind is an inert copy of the matching results frame under the backdrop.
 - The example data is the same in every frame: the hauler is Granite Creek Hauling (GC, the hauler on page 03), the landing business is North Ridge Logging on the Pro plan, and the new subscriber is Cedar Flat Logging on Basic. Places are Oregon towns from `apps/web/lib/marketplace-v2/places.ts`.
+
+## 00 System variants from #426 adopted (#434, 2026-11-19)
+
+#426 closed the three 00 System gaps that #367 recorded, and the lead approved it on [#426](https://github.com/AutomatedEmpires/logloads/issues/426#issuecomment-6997766496). #434 moves page 02 onto those variants. Every instance was swapped in place, not cloned, so each one is linked to its 00 main component. Every text is the same as before the swap; a script compared the visible text of each instance before and after. Page 02 has no prototype links. The annotation [266:8451](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=266-8451) has a matching section.
+
+| Page 02 part (before) | Now | Count | Where |
+|---|---|---|---|
+| Local Composed / FindWorkRow, `Layout=wide` | 00 JobResultRow `Layout=wide, Context=hauler`, `State=default` (43) or `State=selected` (3) | 46 | Every 768 and 1440 px Find Work frame that shows results |
+| Local Composed / JobDecision | 00 JobDetail, `Breakpoint=mobile` (6 sheets) or `desktop` (3 dialogs, 3 panels), with its exposed JobSummary | 12 | Job selected, Interest sent and Interest waiting for signal, at 390, 768, 1440 and Dark 390 |
+| "Filters · N" as PageHeader's one action, on its own row | PageHeader Show title action, beside the title, with Show actions off | 18 | Every 390 px Find Work frame, Light and Dark |
+| PageHeader `Breakpoint=mobile` at 768 px | PageHeader `Breakpoint=tablet` | 17 | Every 768 px frame |
+
+How each instance is set:
+
+- **Wide job rows.** Title, poster and product use the row's properties, and pay and basis use its PayFigure. Trailer and distance stay one line ("Log truck, pole trailer · 6 mi from you") in the EquipmentRequirement with `Fit=fits` or `not_in_setups`; the chip-van rows keep "Not one of your trucks". The row's area line is hidden, as in the narrow rows, because the distance is on the first line. The FreshnessChip keeps its state and wording (`confirmed` or `aging`). The dates, the duration and the demand are copied as written. The verification line shows on the same rows as before. The row beside an open DetailPanel is `State=selected` (it had local fill and stroke overrides before).
+- **Job sheet, dialog and panel.** JobDetail has Show haul details off, so its sections are Road and access, Weather near the landing and About North Ridge Logging, as before. The note is the Foot property. JobSummary's properties hold the title, trailer and distance, duration and demand, the fit and the poster, and its five Fact rows hold the same values as before. JobDetail carries the 24 px side padding itself, so the sheet, dialog and panel bodies now have no side padding. The text still sits 24 px from the edge (H9).
+- **390 px Find Work header.** The exposed `title action` Button has the old button's label ("Filters · 2" or "Filters · 1") and the filter icon. The header is 211 px tall (it was 258).
+- **768 px headers.** Only the variant changed. The slot content (FindWorkSummary, or the three Overview actions) and every text are kept. No header changed height, and the content is now 720 px wide inside the 24 px gutter, the same gutter as the page body.
+
+What looks different, on purpose:
+
+- At 768 px a wide row is 220 px tall, or 272 px with the verification line (the local row was 255 and 283). At 1440 px it is 228 px (it was 231).
+- The row's fit line is the 00 tick and "Fits your trucks" in the row's text colour. The local row had a circled check.
+- The dates and the demand sit on one line 12 px apart with no "·" between them ("Nov 17 – Dec 8 · about 22 days", then "6 trucks, 3 a day"). That is the 00 layout.
+- The job detail's foot note has the 00 tinted band, and the disclosure rows use the 00 chevron.
+
+The local Composed / FindWorkRow and Composed / JobDecision had no instance left anywhere in the file, so they are deleted. Figma's version history keeps them.
 
 ## 00 System swap and design audit 4 (#367, 2026-11-18)
 
@@ -42,7 +69,7 @@ What looks different, on purpose:
 - The 390 px Find Work header is 99 px taller (Filters has its own row). At 768 and 1440 px the Overview actions sit under the title instead of beside it. PageHeader has no action slot beside the title.
 - SegmentedControl's selected option is the 00 filled style with a check, and the control hugs its options instead of filling the form. Density is hidden at 768 px, as before.
 
-**Still local, because 00 System has no matching variant.** These were not changed in 00 (another task owns page 00) and are reported to the lead:
+**Still local after #367, because 00 System had no matching variant.** #426 added the variants and #434 swapped both, so neither is local now:
 
 1. **Composed / FindWorkRow, `Layout=wide` (46 rows at 768 and 1440 px).** 00 JobResultRow `Layout=wide` still has the four-column labelled fact grid ("Truck and trailer"), an icon-only Save and AvailabilityStatus. Swapping would undo H3, H4 and the audit 3 item. 00 needs a wide hauler row with this order and a labelled Save.
 2. **Composed / JobDecision (12: the job sheet, dialog and DetailPanel).** 00 JobSummary and JobDetail put freshness and the poster before trailer and distance (H7). They use a two-column labelled grid and add an inline "I'm interested" next to the BottomActionBar's Send interest (H6). They have no "Open the job's page" link, no Pickup, Delivers to or Pay rows, and no text properties. 00 needs a JobDetail in the page 02 order.
@@ -104,12 +131,12 @@ The app-level parts stay local as before: ResultsHead, FindWorkFilterForm, TextL
 - **Overview · Still available confirmed.** The success Notice replaces the due row: "Job confirmed. Hog fuel from Green Peter now shows as confirmed today." with Undo.
 - **Overview · New subscriber checklist.** Cedar Flat Logging on Basic: Get started with an empty circle or a check per step and its 48 px action, Basic allowances, and the Landings empty state with Add a landing.
 - **Overview · Loading, Load failed, Offline.** Loading keeps the header and the card titles and shows LoadingState rows. Load failed uses ErrorState ("Nothing is lost.") with Try again. Offline shows the Offline banner ("This is your overview from 6:40 AM", Retry) above the saved overview.
-- **Find Work · Results.** The 00 PageHeader has the title, a description from 768 px, and the 00 FindWorkSummary bar; "Filters · 2" is inside the bar from 768 px and the header's action at 390 px. The results head has the count, Sort, Show map, and Density at 1440 px only. Each job row (00 JobResultRow at 390 px, the local wide row at 768 and 1440 px) reads pay and basis, title, trailer and distance, fit, freshness, then the poster, the dates and the demand. Every row has a labelled Save. No row is Sponsored.
+- **Find Work · Results.** The 00 PageHeader has the title, a description from 768 px, and the 00 FindWorkSummary bar; "Filters · 2" is inside the bar from 768 px and beside the title at 390 px (PageHeader Show title action). The results head has the count, Sort, Show map, and Density at 1440 px only. Each job row (00 JobResultRow, `Layout=narrow` at 390 px and `Layout=wide` at 768 and 1440 px) reads pay and basis, title, trailer and distance, fit, freshness, then the poster, the dates and the demand. Every row has a labelled Save. No row is Sponsored.
 - **Find Work · Empty.** "No open jobs within 50 mi of Burns, OR", with Widen to 100 mi and Include filled and closed jobs. The text wraps and the buttons stack at 390 px.
 - **Find Work · Loading, Load failed, Offline, More than 100 jobs.** Loading keeps the search readable and shows LoadingState rows. Load failed says the search is kept, with Try again. Offline shows the banner with the time of the saved results and the saved rows. More than 100 jobs ends the first 25 with "Show 25 more" and "Narrow my search".
 - **Find Work · Filters open.** Use my location first, then Near, Distance (25, 50, 100, 200 mi) and Trucks (My trucks, Any truck) as 00 SegmentedControl taps, then Product, Pay basis and Starting as 00 System FormField selects, Keywords (optional) and the closed-jobs checkbox. At 390 px the sheet foot is the BottomActionBar: Reset and "Show 3 jobs".
 - **Find Work · Filters, location blocked.** The ending of "Use my location" when the phone or browser blocks it: 00 System PermissionDenied ("Location is blocked for LogLoads") says where to allow it, offers "Type a town instead", and sits above the form, so the hauler is never stuck.
-- **Find Work · Job selected.** JobDecision in a sheet, a dialog or the DetailPanel beside the list. The foot is the BottomActionBar: Save, the 56 px "Send interest", and the summary "1 log truck · from Nov 17 as Granite Creek Hauling", so a returning hauler sends in one tap from the sheet.
+- **Find Work · Job selected.** 00 JobDetail in a sheet, a dialog or the DetailPanel beside the list. The foot is the BottomActionBar: Save, the 56 px "Send interest", and the summary "1 log truck · from Nov 17 as Granite Creek Hauling", so a returning hauler sends in one tap from the sheet.
 - **Find Work · Interest sent and waiting for signal.** The foot becomes a success Notice ("Interest sent", See my inquiries) or a warning Notice ("Waiting for signal. Saved on this phone. It sends by itself once you have signal.", Cancel sending).
 
 ## Audit 2 findings fixed
@@ -160,19 +187,17 @@ Page 02 had no blockers in audit 2. Every major and polish finding for 02 Home i
 | Touch mode on 390 px frames | Set on every 390 and 768 px frame, including overlays and Dark frames. |
 | Dark theme decided | 10 Dark frames of the key 390 px screens. |
 
-**Flow A check at 390 × 844.** After #367, in Find Work Results 390 the first job's pay ends at y 452, its trailer and distance at y 556, and its freshness chip at y 600. All three are above the tab bar, which starts at y 777 (844 − 67). The second job's pay ends at y 760, but its title is now below the fold, because the 00 PageHeader is taller than the old local header. (Before #367: y 362, 476 and 552, with the second job's title in view.)
+**Flow A check at 390 × 844.** After #434, the 390 px header is 211 px tall, and in Find Work Results 390 the first job's pay ends at y 405, its title at y 452, its trailer and distance at y 484, and its freshness chip at y 553. All are above the tab bar, which starts at y 777 (844 − 67). The second job's pay ends at y 713 and its title at y 760, so the second title is in view again. (After #367, with Filters on its own row: y 452, 556 and 600, and the second job's title below the fold. Before #367: y 362, 476 and 552.)
 
 ## Local components (section [249:3492](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=249-3492))
 
-Each one is composed from 00 System components, variables and text styles. #367 deleted the local FindWorkSearchBar, FindWorkHeader, OverviewHeader and SegmentedField, and FindWorkRow's narrow and Sponsored variants. Figma's version history keeps them.
+Each one is composed from 00 System components, variables and text styles. #367 deleted the local FindWorkSearchBar, FindWorkHeader, OverviewHeader and SegmentedField, and FindWorkRow's narrow and Sponsored variants. #434 deleted the rest of FindWorkRow (`249:3615`) and JobDecision (`253:3681`). Figma's version history keeps them.
 
 | Component | Node | Why it is local |
 |---|---|---|
-| Composed / FindWorkRow (Layout=wide, Tone=default only) | [249:3615](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=249-3615) | 00 System JobResultRow `Layout=wide` still has the four-column labelled fact grid, an icon-only Save and AvailabilityStatus (gap 1). The narrow row is 00 JobResultRow. |
-| Composed / JobDecision | [253:3681](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=253-3681) | 00 System JobDetail and JobSummary put freshness and the poster before trailer and distance, use a two-column labelled grid and an inline "I'm interested" (gap 2). |
 | Composed / ResultsHead (narrow, wide) | [250:3660](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=250-3660) | App component. Its density control is 00 SegmentedControl. |
 | Composed / FindWorkFilterForm | [252:3649](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=252-3649) | App component. Distance and Trucks are 00 SegmentedControl with a 16 px label. |
-| Composed / TextLink | [254:3831](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=254-3831) | No 48 px text link in 00 System. |
+| Composed / TextLink | [254:3831](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=254-3831) | No 48 px text link in 00 System. The Overview cards use it ("Billing and plan", "All landings"). The job detail's "Open the job's page" link is JobSummary's own since #434. |
 | Composed / NeedsAttention (narrow, wide × due, confirmed) | [253:4016](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=253-4016) | App component (`OverviewAttention`). |
 | Composed / BillingCycle | [254:3836](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=254-3836) | App component (`OverviewAllowance`), built from 00 System Fact. |
 | Composed / Landings (list, empty) | [254:3914](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=254-3914) | App component (`OverviewLandings`). |
@@ -180,17 +205,36 @@ Each one is composed from 00 System components, variables and text styles. #367 
 
 ## Gaps
 
-These are follow-ups. They were not changed here, because page 00 belongs to another task (#379 while #367 ran) and the rest needs its own task or a founder decision. Gaps 1 to 4 of the #295 revision were closed by #352 and #367: 00 promoted JobResultRow narrow, SegmentedControl, FindWorkSummary, the landing navigation and PageHeader, and page 02 now uses them.
+These are follow-ups. Gaps 1 to 4 of the #295 revision were closed by #352 and #367. Gaps 1 to 3 below, from #367, are closed: #426 added the 00 variants and #434 moved page 02 onto them. The numbers are kept, because other notes refer to them.
 
-1. **00 System JobResultRow `Layout=wide`** (from #367). It still has the four-column labelled fact grid ("Truck and trailer"), an icon-only Save and AvailabilityStatus. Page 02's 768 and 1440 px rows stay the local wide FindWorkRow until 00 has a wide hauler row in the page 02 order, with a labelled Save and FreshnessChip.
-2. **00 System JobSummary and JobDetail** (from #367). They put freshness and the poster before trailer and distance and use a two-column labelled grid. They add an inline "I'm interested" that would repeat the BottomActionBar's Send interest. They have no "Open the job's page" link, no Pickup, Delivers to and Pay rows, and no text properties. The job sheet, dialog and panel stay the local JobDecision until 00 has this order.
-3. **00 System PageHeader** (from #367). It has no action beside the title on mobile, so the 390 px Find Work header is 99 px taller and the second job's title drops below the fold. It has no tablet breakpoint, so 768 px uses the mobile variant with 16 px side padding against page 02's 24 px gutter, as page 03 does.
+1. **Closed (#426, #434). 00 System JobResultRow `Layout=wide`.** The 46 rows at 768 and 1440 px are 00 JobResultRow `Layout=wide, Context=hauler`.
+2. **Closed (#426, #434). 00 System JobSummary and JobDetail.** The 12 job sheets, dialogs and panels are 00 JobDetail.
+3. **Closed (#426, #434). 00 System PageHeader.** The 390 px Find Work header uses Show title action, and the 17 headers at 768 px are `Breakpoint=tablet`.
 4. **00 System navigation text under 16 px.** The navigation labels are 16 px since #352. The only text under 16 px on page 02 is 14 px inside the 00 navigation: the count badges, the BusinessSwitcher initials, and at 1440 px the BusinessSwitcher role line and the AccountMenu "Account" label. The landing tab still says "Landing inbox" in 00 (#379 renames it to "Inquiries"; page 02 already overrides it to "Inquiries").
 5. **Not designed here:** the saved-jobs list that Save leads to, a "Mark filled" action (flow E), the map view, alerts and saved searches in the empty state, and the inquiry screens behind "See inquiries" and "See my inquiries" (flow C).
 6. **Dark frames at 768 and 1440 px** are not drawn. They switch through the Color collection the same way as the 390 px ones.
 7. **Code.** The loading, error, offline, more-than-100, interest-sent and waiting states, the reconfirm-with-Undo flow and one-tap Send interest are not in the code yet. They need their own build tasks after approval.
+8. **00 System JobResultRow `Layout=wide`: the mark's minimum width** (from #434). The verification mark inside the wide row has a 420 px minimum width, so that it takes its own line. At 768 px the row's content column is 404 px, so in the eight 768 px rows that show the mark its layer is 16 px wider than the column that clips it. The sentence wraps inside the column and nothing is cut (checked by screenshot). An instance cannot override a minimum width. The fix is in 00: lower the minimum to 380 px or less, or let the mark fill the column. Page 00 was not edited here.
+9. **The wide and narrow rows word one demand differently** (found in #434, not changed). The Lebanon mill job reads "6 trucks, 3 a day" in the wide rows and "6 trucks for the job · 3 a day" in the narrow rows. Both were copied as written. Pick one wording when the rows are next touched.
 
 ## Checks
+
+### After #434 (2026-11-19)
+
+- **Swapped:** 46 wide rows, 12 job details, 18 title actions at 390 px and 17 tablet headers. A script compared the visible text of every swapped instance before and after and found no difference. No local FindWorkRow or JobDecision instance is left in the file.
+- **Screenshots.** The four sections were captured after the change with `get_screenshot` at full size and cut into frames. Every changed frame was looked at (43 frames): the 18 Find Work frames at 390 px, Light and Dark; all 17 frames at 768 px; and the 8 frames at 1440 px with rows or the panel. Four were also captured on their own: Results 390 and 768, Job selected as a sheet, a dialog and a panel. Nothing was clipped, overlapping or left as placeholder text.
+- **Read-only audit of the 61 screen frames** (10,070 visible nodes, 2,717 instances, 3,188 texts). Every text is IBM Plex Sans or IBM Plex Sans Condensed.
+  - Text under 14 px: none.
+  - Controls under 44 px: none. Disabled controls: none.
+  - Fills or strokes without a variable or a style: none.
+  - Text outside its frame or a clipping container: one kind, the verification label in the eight 768 px rows that show it (gap 8). It is 16 px wider than its column; nothing is cut.
+  - Overlapping frames, or overlapping children in an auto-layout frame: none.
+  - "verified" in any text: none.
+  - Instances without a main component: none.
+  - Prototype links: none on this page, before or after.
+- Top-level instances in the screen frames: 00 JobResultRow 87 (41 narrow, 43 wide default, 3 wide selected), PageHeader 61 (27 mobile, 17 tablet, 17 desktop), JobDetail 12 (6 mobile, 6 desktop), ResponsiveNavigation 44, GlobalNavigation 61. Local app components: ResultsHead 33, FindWorkFilterForm 7, NeedsAttention 11, BillingCycle 15, Landings 15, GetStarted 4 and TextLink 26.
+- Every 390 and 768 px frame is still in Touch mode and every 1440 px frame in Comfortable; the 10 Dark frames still set the Color collection to Dark.
+- Nothing was checked in a browser.
 
 ### After #367 (2026-11-18)
 
