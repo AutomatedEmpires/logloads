@@ -3,6 +3,13 @@ import type { AccountMenuProps } from "@logloads/ui/layout"
 /** The V2 business switch route (#124): it lists the account's real memberships and revalidates on the server. */
 export const V2_SWITCH_PATH = "/v2/switch"
 
+/**
+ * The in-app privacy request (#424, drawn in #336). The frames put its button on the Account screen (`362:7717`,
+ * `362:7723`, `362:7729`); V2 has no Account screen yet, so the account menu carries it. A plain path: the request,
+ * the person and their address never go in a URL.
+ */
+export const V2_PRIVACY_REQUEST_PATH = "/v2/privacy-request"
+
 /** Who the V2 shell shows the account menu to, resolved from the session on the server. */
 export type V2ShellAccount =
   | { kind: "visitor" }
@@ -28,7 +35,8 @@ function signInHref(pathname: string | null): string {
 /**
  * The account menu for the V2 shell, without the app-supplied action (the sign-out control). A member gets
  * "Switch business", which works even when the selected business is no longer available and the business name
- * is not shown; a visitor gets "Sign in" back to the current page. Everyone gets the preview notice.
+ * is not shown, and "Make a privacy request" (#424), which is about the person, so it needs no business. A visitor
+ * gets "Sign in" back to the current page, and asks for privacy by email. Everyone gets the preview notice.
  */
 export function v2AccountMenuFor(account: V2ShellAccount, pathname: string | null): Omit<AccountMenuProps, "action"> {
   const preview = { note: { body: V2_PREVIEW_NOTE.body, title: V2_PREVIEW_NOTE.title }, tag: V2_PREVIEW_TAG }
@@ -43,7 +51,10 @@ export function v2AccountMenuFor(account: V2ShellAccount, pathname: string | nul
 
   return {
     ...preview,
-    links: [{ href: V2_SWITCH_PATH, id: "switch", label: "Switch business" }],
+    links: [
+      { href: V2_SWITCH_PATH, id: "switch", label: "Switch business" },
+      { href: V2_PRIVACY_REQUEST_PATH, id: "privacy-request", label: "Make a privacy request" }
+    ],
     person: account.person.email ? { email: account.person.email, name: account.person.name } : { name: account.person.name }
   }
 }

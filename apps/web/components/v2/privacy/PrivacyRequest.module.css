@@ -1,0 +1,236 @@
+/*
+ * The privacy request (#424), Figma 04 Settings: form 362:5445 / 362:5666 / 362:5831, nothing chosen 362:5995 /
+ * 362:6177 / 362:6352, sent 362:6527 / 362:6695 / 362:6854, offline 362:7013 / 362:7196 / 362:7371, dark 362:7546.
+ * Semantic --ll-* tokens only, so the dark theme follows the tokens.
+ *
+ * The notice, note, offline banner and fact rows follow the 00 System parts the frames use (Notice 207:1206, Note
+ * 207:1215, Offline 208:1223, Fact 212:1217). PageNotice does not draw the icon and the 4 px edge yet (FG00 follow-up),
+ * so they are composed here from the primitives' tokens.
+ */
+
+/* The frames' white body under the header, with the form in their 720 px column (362:5836). */
+.body {
+  padding-block: var(--ll-space-4) var(--ll-space-6);
+  background: var(--ll-color-surface);
+}
+
+.column {
+  display: grid;
+  gap: var(--ll-space-4);
+  max-width: 45rem;
+  margin-inline: auto;
+  min-width: 0;
+}
+
+.form {
+  display: grid;
+  gap: var(--ll-space-4);
+  margin: 0;
+  min-width: 0;
+}
+
+.choices {
+  display: grid;
+  gap: var(--ll-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  padding: 0;
+  margin-bottom: var(--ll-space-4);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+}
+
+/* Two lines tall at rest, as the frames draw it. */
+.details {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.text {
+  margin: 0;
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.text :where(a) {
+  color: var(--ll-color-action);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Inside a notice the link takes the notice's text colour, so it keeps the notice's 7:1 contrast. */
+.notice :where(a) {
+  color: inherit;
+  font-weight: var(--ll-weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Notice: icon, words and the 4 px edge in the tone's colour, so the tone never rests on colour alone. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-3);
+  margin: 0;
+  padding: var(--ll-space-4);
+  border-left: 4px solid var(--ll-color-status-neutral);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-status-neutral-bg);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.notice[data-tone="critical"] {
+  border-left-color: var(--ll-color-status-critical);
+  background: var(--ll-color-status-critical-bg);
+}
+
+.notice[data-tone="positive"] {
+  border-left-color: var(--ll-color-status-positive);
+  background: var(--ll-color-status-positive-bg);
+}
+
+.notice:focus { outline: none; }
+
+.notice:focus-visible {
+  outline: var(--ll-focus-width) solid var(--ll-focus-color);
+  outline-offset: var(--ll-focus-offset);
+}
+
+.noticeIcon {
+  display: inline-flex;
+  flex: none;
+  color: var(--ll-color-status-neutral);
+}
+
+.notice[data-tone="critical"] .noticeIcon { color: var(--ll-color-status-critical); }
+.notice[data-tone="positive"] .noticeIcon { color: var(--ll-color-status-positive); }
+
+.noticeText {
+  display: grid;
+  gap: var(--ll-space-1);
+  min-width: 0;
+}
+
+.noticeText :where(p) { margin: 0; }
+
+.noticeTitle { font-weight: var(--ll-weight-semibold); }
+
+/* Note: a quiet aside on the sunken well, never for an error. */
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-2);
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-space-4) var(--ll-space-3) var(--ll-space-3);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-sunken);
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+}
+
+/* The 20 px icon sits on the first 24 px line. */
+.noteIcon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 2px;
+}
+
+/* Offline: one line with a 48 px Retry. The WifiSlash icon and the words carry the state. */
+.offline {
+  display: flex;
+  align-items: center;
+  gap: var(--ll-space-3);
+  min-height: 56px;
+  margin: 0;
+  padding: var(--ll-space-2) var(--ll-space-2) var(--ll-space-2) var(--ll-space-4);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-status-neutral-bg);
+  color: var(--ll-color-text);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+}
+
+.offline > p {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.offlineIcon {
+  display: inline-flex;
+  flex: none;
+}
+
+/* Fact rows: label in text-secondary, value semibold. */
+.facts {
+  display: grid;
+  margin: 0;
+}
+
+.fact {
+  display: grid;
+  gap: 2px;
+  min-height: var(--ll-target-touch);
+  padding-block: var(--ll-space-3);
+  border-bottom: 1px solid var(--ll-color-border);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+}
+
+.fact :where(dt) { color: var(--ll-color-text-secondary); }
+
+.fact :where(dd) {
+  margin: 0;
+  color: var(--ll-color-text);
+  font-weight: var(--ll-weight-semibold);
+}
+
+/* The actions: in a row at 600 px and up (362:5982), a stacked BottomActionBar below it (362:5643). */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ll-space-3);
+}
+
+@container ll-app (max-width: 599px) {
+  .actions {
+    position: sticky;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    z-index: var(--ll-z-sticky);
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--ll-space-2);
+    margin-inline: calc(-1 * var(--ll-gutter));
+    padding: var(--ll-space-3) var(--ll-gutter) var(--ll-space-5);
+    border-top: 1px solid var(--ll-color-border-strong);
+    background: var(--ll-color-surface);
+  }
+
+  .actions > * { width: 100%; }
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
