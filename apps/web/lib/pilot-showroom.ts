@@ -583,7 +583,7 @@ const driverSurfaces: readonly PilotSurface[] = [
 
 export const pilotRoles: Record<PilotRole, PilotRoleSpec> = {
   driver: {
-    commercialTruth: "Driver access is free forever. The stated driver pay is a direct host-to-driver obligation and is never reduced by a LogLoads fee.",
+    commercialTruth: "Driver access is free. The stated driver pay is a direct host-to-driver obligation and is never reduced by a LogLoads fee.",
     contactLabel: "Plan a driver rehearsal",
     eyebrow: "Driver experience",
     icon: "truck.log",
@@ -608,7 +608,7 @@ export const pilotRoles: Record<PilotRole, PilotRoleSpec> = {
     ]
   },
   fleet: {
-    commercialTruth: "Fleet workspace access is free forever. No current subscription enrollment exists, and LogLoads never reduces driver pay.",
+    commercialTruth: "Fleet workspace access is free. No current subscription enrollment exists, and LogLoads never reduces driver pay.",
     contactLabel: "Plan a fleet rehearsal",
     eyebrow: "Fleet experience",
     icon: "nav.fleet",

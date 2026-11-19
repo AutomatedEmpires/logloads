@@ -44,7 +44,7 @@ export interface LiquidityReading {
 }
 
 export const LIQUIDITY_COLUMNS = [
-  { key: "verifiedLandings", label: "Verified landings" },
+  { key: "verifiedLandings", label: "Identity-reviewed landings" },
   { key: "activeJobs", label: "Active jobs" },
   { key: "jobsConfirmed", label: `Confirmed in ${LIQUIDITY_WINDOW_DAYS} days` },
   { key: "haulersAvailable", label: "Haulers available" },
