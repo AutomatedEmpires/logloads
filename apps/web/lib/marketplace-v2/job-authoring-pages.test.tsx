@@ -575,6 +575,11 @@ describe("job editor: review and publish", () => {
     expect(back).toContain("title=Oak")
     expect(publishButton(html)).toContain('data-size="lg"')
     expect(html).toMatch(/<noscript><button[^>]*data-size="lg"/)
+
+    // The bar shows the <noscript> fallback only without scripting: with scripting on, its content is plain text.
+    const rules = readFileSync(fileURLToPath(new URL("../../components/v2/JobEditor.module.css", import.meta.url)), "utf8").replace(/\/\*[\s\S]*?\*\//g, "")
+    expect(rules.match(/noscript/g)).toHaveLength(1)
+    expect(rules).toMatch(/@media \(scripting: none\) \{\s*\.form \.actions > :last-child > noscript \{ display: contents; \}\s*\}/)
   })
 
   it("sets the Before you publish legend in 16 px regular, as CE-06 238:3597 draws it", async () => {

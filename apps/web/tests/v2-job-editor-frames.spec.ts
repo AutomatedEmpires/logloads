@@ -62,8 +62,13 @@ const describeField = (page: Page) => page.locator("input#productOther")
 const next = (page: Page) => page.getByRole("button", { exact: true, name: "Next" })
 
 async function capture(page: Page, name: string, width: number) {
-  // The full page without the bottom tabs, and the screen as the browser shows it.
-  await page.screenshot({ fullPage: true, path: join(shotsDir(), `${name}-${width}.png`), style: ".ll-app > nav { display: none !important; }" })
+  // The full page without the bottom tabs and with the bottom bar in the flow at the end of the form, as the frames
+  // draw a whole page (a sticky bar would otherwise cover what sits under it); then the screen as the browser shows it.
+  await page.screenshot({
+    fullPage: true,
+    path: join(shotsDir(), `${name}-${width}.png`),
+    style: ".ll-app > nav { display: none !important; } form > div:last-child { position: static !important; }"
+  })
   await page.screenshot({ path: join(shotsDir(), `${name}-${width}-screen.png`) })
 }
 
@@ -156,7 +161,13 @@ for (const width of [390, 768, 1440]) {
     const legend = page.getByRole("group", { name: "Before you publish" }).locator("legend")
     expect(await legend.evaluate((element) => [getComputedStyle(element).fontSize, getComputedStyle(element).fontWeight])).toEqual(["16px", "400"])
     await expect(page.getByRole("group", { name: "Before you publish" })).toContainText("Publishing is subject to the LogLoads Posting Rules.")
+    // The bar holds one 56 px Publish job, and the <noscript> fallback stays hidden text while scripts run.
+    const publishForm = page.locator("form#job-publish-form")
+    expect(await publishForm.innerText()).not.toContain("<button")
+    expect(Math.round((await page.getByRole("button", { name: "Publish job" }).boundingBox())!.height)).toBe(56)
     await capture(page, "ce06", width)
+    await legend.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(shotsDir(), `ce06-publish-${width}-screen.png`) })
     await expectNoSeriousAxeViolations(page)
 
     // Edit versus new: Back from the review reopens step 2 with the draft, and "The job" reopens step 1 with it.
@@ -188,5 +199,15 @@ test.describe("without JavaScript", () => {
     await page.locator("select#product").selectOption("Other")
     await expect(describeField(page)).toBeVisible()
     await capture(page, "ce03b-other-no-js", 390)
+
+    // The review without scripts: the <noscript> Publish job fills the bar at 56 px (unavailable on the pilot store).
+    const landingId = await page.locator("select#landingId option").nth(1).getAttribute("value")
+    const draft = { durationDays: "10", equipment: "log_truck", landingId: landingId!, payAmount: "525", payUnit: "per_load", product: "Saw logs", startsOn: "2026-12-01", title: TITLE, trucksRequested: "6" }
+    await openV2(page, `${PREVIEW}?${new URLSearchParams(draft)}`)
+    await expect(stepHeading(page)).toHaveText("Step 3 of 3 · Review and publish")
+    const publish = page.getByRole("button", { name: "Publish job" })
+    await expect(publish).toBeVisible()
+    expect(Math.round((await publish.boundingBox())!.height)).toBe(56)
+    await capture(page, "ce06-no-js", 390)
   })
 })

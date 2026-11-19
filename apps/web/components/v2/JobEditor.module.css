@@ -272,8 +272,8 @@
 }
 
 /* The frames' BottomActionBar (213:1239): a surface bar edge to edge of the column with a border-strong top, 12 px
-   above and 24 px below, and the 56 px primary filling what Back leaves. FormActions keeps it sticky above the
-   bottom tabs below bp-sm. `.form .actions` outranks FormActions' own rule whatever order the sheets load in. */
+   above and 24 px below, and the 56 px primary filling what Back leaves. `.form .actions` outranks FormActions' own
+   rule whatever order the sheets load in. */
 .form .actions {
   flex-wrap: nowrap;
   margin-inline: calc(-1 * var(--ll-gutter));
@@ -284,8 +284,22 @@
 
 .form .actions > :last-child { flex: 1 1 auto; }
 .form .actions > :last-child :is(a, button) { flex: 1 1 auto; }
-/* Without scripting the <noscript> Publish button takes the scripted one's place in the bar. */
-.form .actions > :last-child > noscript { display: contents; }
+
+/* Sticky above the bottom tabs wherever they show (below bp-lg, ResponsiveNavigation), as the 390 and 768 frames
+   draw the bar; FormActions alone sticks only below bp-sm. */
+@container ll-app (max-width: 959px) {
+  .form .actions {
+    position: sticky;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    z-index: var(--ll-z-sticky);
+  }
+}
+
+/* Without scripting the <noscript> Publish button takes the scripted one's place in the bar. Only then: with
+   scripting on, a <noscript>'s content is plain text, which must stay hidden. */
+@media (scripting: none) {
+  .form .actions > :last-child > noscript { display: contents; }
+}
 
 /* Review step */
 .previewLabel { margin: 0 0 var(--ll-space-2); font-size: var(--ll-text-base); font-weight: var(--ll-weight-semibold); }
