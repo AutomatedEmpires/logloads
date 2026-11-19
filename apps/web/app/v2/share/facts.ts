@@ -5,7 +5,12 @@ import {
   type MarketplacePay,
   type MarketplacePublicJobView
 } from "@logloads/contracts"
-import { demandText, equipmentLabels, payParts } from "@logloads/ui/marketplace"
+// The text formatters only, not the "@logloads/ui/marketplace" barrel (#432). The share card (opengraph-image.tsx)
+// imports this file, and Next.js imports the card into the share page's server entry through a loader request. When
+// that entry is the last one Next.js visits, every client component on that path joins its main-app bundle, and their
+// CSS is requested as a <script> on every page. The barrel also exports client components (LocalTime,
+// MessageComposer); the format module has none.
+import { demandText, equipmentLabels, payParts } from "@logloads/ui/marketplace/format"
 
 /**
  * Public copy for the signed-out share page and its preview card (#287).

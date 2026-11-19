@@ -48,9 +48,11 @@ export interface AvailabilityStatusProps { state: FreshnessState; label: string 
  * DEVIATION: takes the contract's `MarketplaceVerification | null` (#150) instead of a free `scope` string and
  * `reviewedOn`. The visible label is then always `describeMarketplaceVerification`'s whole dated sentence, so no
  * caller can pass a generic "Verified" (Gate 5). `null` renders nothing. `now` is the request's ISO 8601 instant:
- * a review is shown as current for 12 months, and a component must not read the clock (#337).
+ * a review is shown as current for 12 months, and a component must not read the clock (#337). `limits` shows what
+ * LogLoads did not check as text under the mark, where a phone or a keyboard can read it, in place of the title
+ * (#412). The profile pages set it; #419 moves the text into the sheet the mark opens.
  */
-export interface VerificationIndicatorProps { verification: MarketplaceVerification | null; now: string }
+export interface VerificationIndicatorProps { verification: MarketplaceVerification | null; now: string; limits?: boolean }
 
 /** No props: one wording everywhere. */
 export type SponsoredIndicatorProps = Record<string, never>

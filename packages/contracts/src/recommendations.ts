@@ -99,8 +99,10 @@ function visibilityReason(visibility: RecommendationVisibility): string | null {
     return "Sent to you directly"
   }
 
+  // The gate is the viewer organization's business identity review, so the reason names that review rather than calling
+  // the work verified (legal review §7.3 item 1, #428).
   if (visibility === "verified_network") {
-    return "Verified regional work"
+    return "Open to identity-reviewed carriers"
   }
 
   return null

@@ -139,8 +139,10 @@ export function visibilityLabel(load: Pick<NetworkLoadView, "visibilityMode">): 
     return "Direct offer"
   }
 
+  // Shown on the public load page. The gate is the viewer organization's business identity review, so the label says
+  // that rather than calling the load or its network verified (legal review §7.3 item 1, #428).
   if (load.visibilityMode === "verified_network") {
-    return "Verified network"
+    return "Identity-reviewed carriers only"
   }
 
   return "Open network"

@@ -43,7 +43,9 @@ const TAG_LABELS: Record<ReviewTag, string> = {
   on_time: "On time",
   poor_communication: "Poor communication",
   professional: "Professional",
-  safe: "Safe",
+  // What the reviewer saw on the job. A bare "Safe" beside a carrier reads as "safe to hire" (legal review §7.1 and
+  // §7.3 item 1, #428). The stored tag stays `safe`.
+  safe: "Worked safely",
   unsafe_access: "Unsafe access"
 }
 

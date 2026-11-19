@@ -1,5 +1,6 @@
 "use client"
 
+import { Icon } from "@logloads/ui/icons"
 import { Button } from "@logloads/ui/primitives"
 import { useCallback, useEffect, useId, useRef, useState, useTransition, type ReactNode, type RefObject } from "react"
 
@@ -17,13 +18,16 @@ import {
   heldFields,
   HOLD_MS,
   holdSend,
-  msLeft,
+  openHeld,
   readHeld,
   withReason,
   writeHeld,
   type HeldDecision,
-  type HeldSend
+  type HeldSend,
+  type HeldViewer
 } from "./_lib/held-send"
+import { heldPhone, keepHeld, presetReason } from "./_lib/held-phone"
+import heldStyles from "./HeldReplies.module.css"
 
 /** C7 "Add a reason (optional)": the hauler sees the one picked as the landing's last message. */
 export const DECLINE_REASONS = ["We have enough trucks", "Wrong truck or trailer", "The dates do not work"] as const
@@ -44,25 +48,7 @@ export interface DeclineConfirmation {
   triggerLabel: string
 }
 
-type Phase = "idle" | "holding" | "sending" | "offline" | "error"
-
-function phoneStorage(): Storage | null {
-  try {
-    return window.localStorage
-  } catch {
-    return null
-  }
-}
-
-function keep(write: (storage: Storage) => void): void {
-  const storage = phoneStorage()
-  if (!storage) return
-  try {
-    write(storage)
-  } catch {
-    // Storage full or blocked: the answer stays held in this page until it closes.
-  }
-}
+type Phase = "idle" | "holding" | "sending" | "offline" | "error" | "stale"
 
 /**
  * A new answer makes the last redirect's `updated` or `error` stale. They are dropped from the address, so a reload
@@ -96,10 +82,15 @@ function isNavigation(error: unknown): boolean {
  * `124:609`, C-error `124:641`): "Reply in one tap" with the ready replies, then the typed reply and Decline.
  *
  * With scripts, a ready reply and a confirmed decline are held on the phone for one minute, so Undo works, and then
- * they go once through the page's server action. Hidden pages send at once (the minute ends when the page does).
- * Offline, the answer waits and goes when the signal is back; a failed send stays, with Send again. The held answer
- * is kept in local storage until the server says it arrived, so a closed tab does not lose it either: the next visit
- * to this inquiry sends it. Without scripts a ready reply posts straight away and the decline confirms in the page.
+ * they go once through the page's server action. Until then the card says the answer is waiting to send, never that
+ * it was sent (#411): only the server's redirect says that. Hidden pages send at once (the minute ends when the page
+ * does). Offline, the answer waits and goes when the signal is back; a failed send stays, with Send again.
+ *
+ * The held answer is kept in local storage, under the person and the business that held it (`viewer`), until the
+ * server says it arrived. When its minute ran out while no page held it, the next visit gives a fresh minute of Undo
+ * and says it has not gone yet; a week-old one waits for Send now. The inbox sends the held answers of the inquiries
+ * that are not open (HeldAnswersInbox). Without scripts a ready reply posts straight away and the decline confirms in
+ * the page.
  *
  * The typed reply (InquiryReplyComposer) sends when Send is pressed, as before.
  */
@@ -110,7 +101,8 @@ export function LandingReplyBar({
   interestId,
   readyReplies,
   recipientName,
-  replyFields
+  replyFields,
+  viewer
 }: {
   action: (formData: FormData) => void | Promise<void>
   decline: DeclineConfirmation
@@ -119,14 +111,17 @@ export function LandingReplyBar({
   readyReplies: readonly ReadyReply[]
   recipientName: string
   replyFields: Readonly<Record<string, string>>
+  /** The session's person and business (page.tsx): a held answer is theirs alone. */
+  viewer: HeldViewer
 }) {
-  const [held, setHeld] = useState<HeldSend | null>(null)
+  const [answer, setAnswer] = useState<HeldSend | null>(null)
   const [phase, setPhase] = useState<Phase>("idle")
   const [returnFocus, setReturnFocus] = useState(false)
   const [, startTransition] = useTransition()
   const card = useRef<HTMLDivElement>(null)
   const firstReady = useRef<HTMLButtonElement>(null)
   const labelId = useId()
+  const { organizationId, userId } = viewer
 
   const send = useCallback(
     (item: HeldSend) => {
@@ -153,14 +148,15 @@ export function LandingReplyBar({
     [action]
   )
 
-  // A held answer from an earlier visit: settled, failed, still within its minute, or due now.
+  // A held answer from an earlier visit: settled, failed, still within its minute, given a fresh one, or a week old.
   useEffect(() => {
-    const storage = phoneStorage()
+    const storage = heldPhone()
     if (!storage) return
 
+    const owner = { organizationId, userId }
     let saved: HeldSend | null = null
     try {
-      saved = readHeld(storage, interestId, Date.now())
+      saved = readHeld(storage, owner, interestId, Date.now())
     } catch {
       return
     }
@@ -168,23 +164,30 @@ export function LandingReplyBar({
 
     const params = new URLSearchParams(window.location.search)
     if (heldDelivered(saved, params)) {
-      keep((store) => clearHeld(store, interestId))
+      keepHeld((store) => clearHeld(store, owner, interestId))
+      return
+    }
+    if (heldFailed(saved, params)) {
+      setAnswer(saved)
+      setPhase("error")
       return
     }
 
-    setHeld(saved)
-    if (heldFailed(saved, params)) setPhase("error")
-    else if (msLeft(saved, Date.now()) > 0) setPhase("holding")
-    else send(saved)
-  }, [interestId, send])
+    // Never sent the moment the thread opens: a fresh minute of Undo when the last one ran out unseen (#411).
+    const opened = openHeld(saved, Date.now(), holdMs)
+    if (opened.changed) keepHeld((store) => writeHeld(store, opened.held))
+    setAnswer(opened.held)
+    setPhase(opened.phase)
+  }, [holdMs, interestId, organizationId, userId])
 
-  // The minute of Undo. A page that is hidden sends at once: nobody can press Undo on it.
+  // The minute of Undo. A page that is hidden sends a fresh answer at once: nobody can press Undo on it, and the person
+  // has just chosen it. One reopened after its minute ran out unseen keeps its whole minute instead (#411).
   useEffect(() => {
-    if (phase !== "holding" || !held) return
+    if (phase !== "holding" || !answer) return
 
-    const timer = window.setTimeout(() => send(held), msLeft(held, Date.now()))
+    const timer = window.setTimeout(() => send(answer), Math.max(0, answer.dueAt - Date.now()))
     const flush = () => {
-      if (document.visibilityState === "hidden") send(held)
+      if (document.visibilityState === "hidden" && !answer.reopened) send(answer)
     }
 
     document.addEventListener("visibilitychange", flush)
@@ -192,20 +195,20 @@ export function LandingReplyBar({
       window.clearTimeout(timer)
       document.removeEventListener("visibilitychange", flush)
     }
-  }, [phase, held, send])
+  }, [phase, answer, send])
 
   // Back in range: the saved answer goes once.
   useEffect(() => {
-    if (phase !== "offline" || !held) return
+    if (phase !== "offline" || !answer) return
 
-    const retry = () => send(held)
+    const retry = () => send(answer)
     window.addEventListener("online", retry)
     return () => window.removeEventListener("online", retry)
-  }, [phase, held, send])
+  }, [phase, answer, send])
 
   // Focus follows the answer: to its card while it is held or needs attention, back to the bar after Undo.
   useEffect(() => {
-    if (phase === "holding" || phase === "offline" || phase === "error") card.current?.focus()
+    if (phase === "holding" || phase === "offline" || phase === "error" || phase === "stale") card.current?.focus()
   }, [phase])
 
   useEffect(() => {
@@ -215,53 +218,53 @@ export function LandingReplyBar({
   }, [phase, returnFocus])
 
   function hold(decision: HeldDecision, body: string, replyId: string): boolean {
-    const item = holdSend({ body, decision, interestId, replyId }, Date.now(), holdMs)
+    const item = holdSend({ body, decision, interestId, recipientName, replyId, viewer: { organizationId, userId } }, Date.now(), holdMs)
     if (!item) return false
 
     dropAnswerParams()
-    keep((storage) => writeHeld(storage, item))
-    setHeld(item)
+    keepHeld((storage) => writeHeld(storage, item))
+    setAnswer(item)
     setPhase("holding")
     return true
   }
 
   function undo() {
-    keep((storage) => clearHeld(storage, interestId))
-    setHeld(null)
+    keepHeld((storage) => clearHeld(storage, { organizationId, userId }, interestId))
+    setAnswer(null)
     setPhase("idle")
     setReturnFocus(true)
   }
 
   function pickReason(reason: string) {
-    if (!held) return
-    const next = withReason(held, held.body === reason ? "" : reason)
-    keep((storage) => writeHeld(storage, next))
-    setHeld(next)
+    if (!answer) return
+    const next = withReason(answer, answer.body === reason ? "" : reason)
+    keepHeld((storage) => writeHeld(storage, next))
+    setAnswer(next)
   }
 
   /** C-error "Change my reply": the words go to the typed reply, which keeps them on the phone (#288). */
   function changeReply() {
-    if (held) {
-      const words = held.body
-      const replyId = replyFields.replyId ?? held.replyId
-      keep((storage) => {
+    if (answer) {
+      const words = answer.body
+      const replyId = replyFields.replyId ?? answer.replyId
+      keepHeld((storage) => {
         clearReplyDraft(storage, interestId)
         writeReplyDraft(storage, interestId, words, replyId)
-        clearHeld(storage, interestId)
+        clearHeld(storage, { organizationId, userId }, interestId)
       })
     }
-    setHeld(null)
+    setAnswer(null)
     setPhase("idle")
   }
 
-  if (held && phase !== "idle") {
+  if (answer && phase !== "idle") {
     return (
       <HeldAnswer
+        answer={answer}
         cardRef={card}
-        held={held}
         onChangeReply={changeReply}
         onPickReason={pickReason}
-        onSend={() => send(held)}
+        onSend={() => send(answer)}
         onUndo={undo}
         phase={phase}
         recipientName={recipientName}
@@ -318,10 +321,35 @@ export function LandingReplyBar({
   )
 }
 
+/** What the held, waiting, failed or week-old answer card says (C4, C7, C-offline, C-error; #411). */
+function heldCopy(phase: Exclude<Phase, "idle">, reply: boolean, reopened: boolean, recipientName: string): { text: string; title: string } {
+  switch (phase) {
+    case "holding": {
+      // Waiting, not sent (#411): only the server's redirect says "Reply sent".
+      const notYet = reopened ? "It has not gone yet. " : ""
+      return reply
+        ? { text: `${notYet}${recipientName} gets it in 1 minute. You can undo it until then.`, title: "Reply waiting to send" }
+        : { text: `${notYet}${recipientName} is told in 1 minute. Undo before then.`, title: "Decline waiting to send" }
+    }
+    case "sending":
+      return { text: "This takes a moment.", title: reply ? "Sending your reply" : "Sending your decline" }
+    case "offline":
+      return { text: "We send it once when you are back in range.", title: reply ? "Your reply is saved." : "Your decline is saved." }
+    case "error":
+      return reply
+        ? { text: "It is still here. Try again.", title: "Your reply did not send" }
+        : { text: "The inquiry is still open. Try again.", title: "Your decline did not send" }
+    case "stale":
+      return reply
+        ? { text: `It waited more than a week, so it only goes if you send it. ${recipientName} has not seen it.`, title: "Your reply was not sent" }
+        : { text: `It waited more than a week, so it only goes if you send it. The inquiry is still open.`, title: "Your decline was not sent" }
+  }
+}
+
 /** The held, waiting or failed answer, in the place of the bar (C4, C7, C-offline, C-error). */
 function HeldAnswer({
+  answer,
   cardRef,
-  held,
   onChangeReply,
   onPickReason,
   onSend,
@@ -329,8 +357,8 @@ function HeldAnswer({
   phase,
   recipientName
 }: {
+  answer: HeldSend
   cardRef: RefObject<HTMLDivElement | null>
-  held: HeldSend
   onChangeReply: () => void
   onPickReason: (reason: string) => void
   onSend: () => void
@@ -338,41 +366,30 @@ function HeldAnswer({
   phase: Exclude<Phase, "idle">
   recipientName: string
 }) {
-  const reply = held.decision === "replied"
-  const typedReason = !reply && held.body !== "" && !(DECLINE_REASONS as readonly string[]).includes(held.body)
+  const reply = answer.decision === "replied"
+  const preset = !reply && presetReason(answer.body, DECLINE_REASONS)
+  const typedReason = !reply && answer.body !== "" && !preset
   const reasonsId = useId()
-
-  const copy = {
-    error: reply
-      ? { text: "It is still here. Try again.", title: "Your reply did not send" }
-      : { text: "The inquiry is still open. Try again.", title: "Your decline did not send" },
-    holding: reply
-      ? { text: "You can undo it for the next minute.", title: "Reply sent" }
-      : { text: `${recipientName} is told in 1 minute. Undo before then.`, title: "Declined" },
-    offline: {
-      text: "We send it once when you are back in range.",
-      title: reply ? "Your reply is saved." : "Your decline is saved."
-    },
-    sending: { text: "This takes a moment.", title: reply ? "Sending your reply" : "Sending your decline" }
-  }[phase]
-  const bodyState = phase === "offline" ? "Waiting to send" : phase === "error" ? "Not sent" : null
+  const copy = heldCopy(phase, reply, answer.reopened, recipientName)
+  // Under the words, as the C-offline frame draws it. While held, the card's title already says it is waiting.
+  const bodyState = phase === "offline" ? "Waiting to send" : phase === "error" || phase === "stale" ? "Not sent" : null
 
   return (
     <div
       className={styles.held}
-      data-decision={held.decision}
+      data-decision={answer.decision}
       data-flow-c=""
-      data-phase={phase}
+      data-phase={phase === "stale" ? "offline" : phase}
       ref={cardRef}
       role={phase === "error" ? "alert" : "status"}
       tabIndex={-1}
     >
       <p className={styles.heldTitle}>{copy.title}</p>
       <p className={styles.heldText}>{copy.text}</p>
-      {held.body && (reply || typedReason) ? (
+      {answer.body && (reply || typedReason) ? (
         <figure className={styles.heldBody}>
           <blockquote className={styles.heldQuote}>
-            <p>{held.body}</p>
+            <p>{answer.body}</p>
           </blockquote>
           {bodyState ? <figcaption className={styles.heldState}>{bodyState}</figcaption> : null}
         </figure>
@@ -381,20 +398,29 @@ function HeldAnswer({
         <div aria-labelledby={reasonsId} className={styles.reasons} role="group">
           <p className={styles.reasonsLabel} id={reasonsId}>Add a reason (optional)</p>
           <div className={styles.reasonChips}>
-            {DECLINE_REASONS.map((reason) => (
-              <button aria-pressed={held.body === reason} className={styles.reasonChip} key={reason} onClick={() => onPickReason(reason)} type="button">
-                {reason}
-              </button>
-            ))}
+            {DECLINE_REASONS.map((reason) => {
+              const picked = answer.body === reason
+
+              return (
+                <button aria-pressed={picked} className={`${styles.reasonChip} ${heldStyles.chip}`} key={reason} onClick={() => onPickReason(reason)} type="button">
+                  {picked ? <Icon aria-hidden name="status.assigned" size={20} /> : null}
+                  {reason}
+                </button>
+              )
+            })}
           </div>
         </div>
       ) : null}
+      {/* The picked reason in words, not only as the chip's tint (#411, quality bar V4). */}
+      {preset ? <p className={heldStyles.reasonLine} data-reason="">Reason: {answer.body}</p> : null}
       {phase === "sending" ? null : (
         <div className={styles.heldActions}>
           {phase === "error" ? <Button className={styles.heldPrimary} label="Send again" onClick={onSend} size="lg" /> : null}
+          {phase === "stale" ? <Button className={styles.heldPrimary} label="Send now" onClick={onSend} size="lg" /> : null}
           {phase === "offline" ? <Button label="Retry" onClick={onSend} variant="secondary" /> : null}
           {phase === "error" && reply ? <Button label="Change my reply" onClick={onChangeReply} variant="secondary" /> : null}
-          {phase === "error" && !reply ? <Button label="Keep the inquiry open" onClick={onUndo} variant="secondary" /> : null}
+          {(phase === "error" || phase === "stale") && !reply ? <Button label="Keep the inquiry open" onClick={onUndo} variant="secondary" /> : null}
+          {phase === "stale" && reply ? <Button label="Don’t send" onClick={onUndo} variant="secondary" /> : null}
           {phase === "holding" || phase === "offline" ? <Button label={reply ? "Undo reply" : "Undo"} onClick={onUndo} variant={phase === "holding" ? "secondary" : "ghost"} /> : null}
         </div>
       )}
