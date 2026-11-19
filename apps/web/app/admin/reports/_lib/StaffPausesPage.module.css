@@ -1,0 +1,15 @@
+/* The pause section on its own (#403), for staff the pilot cockpit does not know. The cockpit pages do not load the
+   V2 token sheet, so each token has the cockpit's own value as its fallback. */
+.page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--ll-space-6, 24px) var(--ll-space-4, 16px);
+}
+
+.title {
+  margin: 0 0 var(--ll-space-4, 16px);
+  font-size: var(--ll-text-2xl, 1.5rem);
+  line-height: var(--ll-leading-snug, 1.25);
+}

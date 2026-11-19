@@ -134,7 +134,7 @@ describe("the board", () => {
 
   it("has one column per figure, each with a heading", () => {
     expect(LIQUIDITY_COLUMNS.map((column) => column.label)).toEqual([
-      "Verified landings",
+      "Identity-reviewed landings",
       "Active jobs",
       "Confirmed in 14 days",
       "Haulers available",

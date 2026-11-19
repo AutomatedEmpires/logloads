@@ -1,10 +1,57 @@
 # FG07 Flows: flows A to E as prototypes
 
-**Status:** TARGET. Drawn for the lead's audit and then founder review on 2026-11-10 (#300, strategy item P0-9), then revised on 2026-11-12 for design audit 3 and the lead's page 07 decisions (#334), again on 2026-11-12 for LL-D12 (#352), and on 2026-11-18 for the legal review message safety and consent changes (#336, see [Legal review changes (#336)](#legal-review-changes-336)). These screens are not approved. Approval is a founder comment on the design issue that begins with `approved` (AE-Control `policy/designops.md`).
+**Status:** TARGET. Drawn for the lead's audit and then founder review on 2026-11-10 (#300, strategy item P0-9), then revised on 2026-11-12 for design audit 3 and the lead's page 07 decisions (#334), again on 2026-11-12 for LL-D12 (#352), on 2026-11-18 for the legal review message safety and consent changes (#336, see [Legal review changes (#336)](#legal-review-changes-336)), and the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)). These screens are not approved. Approval is a founder comment on the design issue that begins with `approved` (AE-Control `policy/designops.md`).
 **Figma page:** [07 Flows](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=106-2) in the LogLoads file.
 **Sources:** the strategy and field design bar ([#235 comment](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6784066522)), the founder decisions of 2026-11-10 ([#235 comment](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6784468462)), quality bar v1 ([#235 comment](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6783016152)), design audit 2 (#285), the lead's page 07 decisions on #334, the reconfirm interval on #114, the signed-link rules on #292, the SMS rules on #291 and #293, `docs/product/LOGLOADS_UX_FUNCTIONAL_SPEC_v1.0.md`, and the draft copy deck from #274. No UI code changed.
 
 Link base: `https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=` plus the node id with `-` in place of `:`.
+
+## Design audit 4 (#379)
+
+Design audit 4 ([logloads#235 comment 6831966093](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6831966093)) found two blockers, four majors and two minors on this page. The lead's decisions are [comment 6832164895](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6832164895). #379 built on #336's thread, consent and report frames and kept them.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| The day-14 job page led to "This job is filled". On A-waiting `315:1308`, "See open jobs nearby" opened A-expired `111:553`. | Blocker | A new frame, [A-nearby · Open jobs near Sweet Home](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-2885) (`420:2885`), shows A-expired's job list without the Filled chip and the "This job is filled" heading. A-waiting, A-error "See other jobs" and A-expired "See all jobs near Sweet Home" link there now. A-expired is kept for jobs that really are filled. |
+| First contact shared the hauler's phone by default. On A5 `111:313`, Checkbox `311:692` "Oak Landing can call or text me" was ticked. | Blocker | The box starts unticked, and the hauler opts in (lead decision 1). The hint is "Off unless you tick it. Oak Landing sees your number only after they reply, and only they see it." The phone still appears only after the landing replies (C4 and C5). Flow A's taps do not change, because the box is optional. |
+| "Landing inbox" wrapped the tab bar to 91 px on B1 and C-inbox | Major | The tab reads "Inquiries" from 00 System. B1 `313:1024` had its own "Landing inbox" override, which is reset. Both bars are 67 px. |
+| C-inbox had no current tab and an extra "Waiting" queue | Major | On C-inbox `313:1113`, Inquiries is the current tab. The queues are New (2), Replied and Closed, as UX-12 fixes them. The "Waiting" chip is removed there and from the inquiries list in C3 1440, C3b 1440 and C8 1440. |
+| The verification mark did not name the type and the date: "Business checked by LogLoads" | Major | The text is now the 00 System VerificationIndicator, State=reviewed: "Business identity reviewed by LogLoads on Oct 14, 2026". It is on A2 (`422:3198`), A7 (`422:3205`), A-offline (`422:3211`), A2 768 (`422:3217`), A2 1440 (`422:3223`), A-waiting (`422:3229`) and A2 Dark (`422:3235`). The old green SealCheck icon beside it (Icon/status.verified) is removed from those 7 poster rows, because legal review §7.3 bans a green tick on a seal. The sentence does not say that documents were reviewed. |
+| Buttons with no prototype link | Major | See the link list below. |
+| The A4 bar primary "Send it again" was 48 px | Minor | It is the 56 px lg size on A4 and A4-sent. |
+| Other unlinked buttons | Minor | See the link list below. |
+
+**New frames** (each uses 00 System components and keeps the frame it was copied from in the Touch mode)
+
+| Frame | Node | For |
+|---|---|---|
+| A-nearby · Open jobs near Sweet Home | [420:2885](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-2885) | The ending of A-waiting, A-error, A-expired and A6 "See more jobs near Sweet Home" |
+| A-inquiries · My inquiries | [420:2963](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-2963) | A6 "See my inquiries": one InquiryRow, "Waiting for Oak Landing to reply" |
+| A4-sent · New link sent | [420:3053](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-3053) | A4 "Send it again" |
+| A4b-sent · New code sent | [420:3088](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-3088) | A4b "Send a new code" |
+| B6-copied · Link copied | [420:3123](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-3123) | B6 "Share job link" and "Copy link" |
+| B-expired-sent · New link sent | [420:3175](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-3175) | B-expired "Email me a new link" |
+| C-expired-sent · New link sent | [420:3226](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-3226) | C-expired "Email me a new link" |
+| D-nearby · Open jobs near Lebanon | [420:2933](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-2933) | D3 "See 4 jobs near Lebanon" and D5 "See jobs near Lebanon" |
+| D-expired-sent · New link sent | [420:3275](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-3275) | D-expired "Send me a new link" |
+| E-expired-sent · New link sent | [420:3325](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=420-3325) | E-expired "Email me a new link" |
+
+Each new-link state says "The new link works once, for 72 hours." and keeps the sign-in action. A frame cannot link to itself, so "Send it again" on A4-sent goes back to A4, "Send a new code" on A4b-sent goes back to A4b, and Share or Copy on B6-copied goes back to B6.
+
+**Prototype links added (92 buttons)**
+
+- Flow A: A4 "Send it again" → A4-sent. A4b "Send a new code" → A4b-sent. A6 "Take back my interest" → A7 (the job page with Send interest again), "See more jobs near Sweet Home" → A-nearby and "See my inquiries" → A-inquiries. A-offline "Retry" → A2 and "Send interest" → A6. A-error "See other jobs", A-expired "See all jobs near Sweet Home" and A-waiting "See open jobs nearby" → A-nearby. A-inquiries → A-nearby.
+- Flow B: B6 "Share job link" and "Copy link" → B6-copied. B-offline "Retry" → B3 and "Next: dates and review" → B4. B-expired "Email me a new link" → B-expired-sent.
+- Flow C: every Report button (the icon buttons at 390 and Dark, the labelled ones at 768 and 1440) → C8 at the same width. Every Block button → C10. C8, C8-error and C8-offline (all widths): Close and Cancel → the thread at the same width, Send report and Retry → C9. C10: Close and Cancel → C3, Block → C11. C11 "Unblock" → C3. C-offline "Retry" → C4. C3b 1440 "Send reply" → C4. C-expired "Email me a new link" → C-expired-sent.
+- Flow D: D3 and D5 → D-nearby. D-offline "Retry" → D3. D-expired "Send me a new link" → D-expired-sent and "Sign in" → D2. D-expired-sent "Sign in" → D2.
+- Flow E: E-offline "Retry" → E3. E-expired "Sign in to answer" → E2 and "Email me a new link" → E-expired-sent. E-expired-sent "Sign in to answer" → E2.
+
+**Still without a link (6 of 245 visible buttons)**
+
+- Five Report and Block buttons in the thread behind an open sheet: C8 (all widths and Dark) and C10 "Block Granite Creek Hauling". The sheet or dialog covers them, and their destination is the frame they are in.
+- C-denied "Go to my home page". The person's home page is on page 02, and a Figma prototype cannot link across pages.
+
+**Check** (read-only script over every frame on the page, 2026-11-18): no control under 44 px, no disabled control, no unbound fill or stroke, no text outside its frame, no bare "verified" and no overlapping frames or labels. Nine texts are under 14 px. All of them are in the share-card picture on A1, B6 and its copy B6-copied, the recorded exception. These frames were checked by screenshot: A5, A-waiting, C-inbox, A-nearby, A-inquiries and D-expired-sent. Nothing was checked in Present mode on a phone.
 
 ## Legal review changes (#336)
 
@@ -86,8 +133,8 @@ The full audit 3 report is not on the issue. The #334 body names four majors on 
 
 ## What is on the page
 
-- 87 frames: 64 screens at 390 px (51 from #300, 7 states from #334 and 6 from #336), 8 key screens at 768 px, 8 at 1440 px, 6 Dark copies at 390 px, and the share card at 1200 × 630. #336 added C3b at 768 and 1440, C8 at 390, 768, 1440 and Dark, and C8-error, C8-offline, C9, C10 and C11.
-- The #300 prototype links and 8 flow starting points, plus links on the new frames: A2 → A3 (email), A-waiting → A-expired, D1b → D2, E1b → E2. The 1440 and Dark frames keep the links of the frames they copy. Press Present on the page and pick a flow.
+- 87 frames: 64 screens at 390 px (51 from #300, 7 states from #334 and 6 from #336), 8 key screens at 768 px, 8 at 1440 px, 6 Dark copies at 390 px, and the share card at 1200 × 630. #336 added C3b at 768 and 1440, C8 at 390, 768, 1440 and Dark, and C8-error, C8-offline, C9, C10 and C11. #379 added 10 more 390 px frames, so there are 97: A-nearby, A-inquiries, A4-sent, A4b-sent, B6-copied, B-expired-sent, C-expired-sent, D-nearby, D-expired-sent and E-expired-sent.
+- The #300 prototype links and 8 flow starting points, plus links on the new frames: A2 → A3 (email), A-waiting → A-nearby (it went to A-expired before #379), D1b → D2, E1b → E2. #379 linked 92 more buttons (see [Design audit 4 (#379)](#design-audit-4-379)). The 1440 and Dark frames keep the links of the frames they copy. Press Present on the page and pick a flow.
 - One notes panel per flow with the tap count and the target.
 - The panel "Field parts: replaced by 00 System (#334, #352)" (`106:3`). No local Field part is left; the panel says what is still built from variables.
 
@@ -119,14 +166,18 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | A3b Sign up with a phone (secondary) | `111:179` | The phone path. Its own unticked SMS box (#336). Consent words pending legal review. |
 | A4 Check your email | `111:255` | Tap 5: open the emailed link |
 | A4b Enter the code (phone path) | `111:232` | The phone path's code step |
-| A5 Confirm your trucks | `111:313` | Taps 6 to 8: business name, the unticked Terms box (#336), then Send interest. Truck, count and start day are filled in from the job. |
+| A5 Confirm your trucks | `111:313` | Taps 6 to 8: business name, the unticked Terms box (#336), then Send interest. Truck, count and start day are filled in from the job. The optional "Oak Landing can call or text me" box starts unticked (#379). |
 | A6 Interest sent | `111:356` | The ending: what was sent, what happens next (an email when they reply), and "Take back my interest" |
 | A7 Job page, returning hauler | `111:423` | Signed in. The bottom bar says what will be sent. 2 taps in all. |
 | A-offline | `111:488` | The saved job still shows, and the send waits for signal |
 | A-error | `111:511` | The job did not load: Try again, or See other jobs |
 | A-expired | `111:553` | The job is filled, so the page offers open jobs nearby |
 | A-loading | `315:1233` | Skeleton in the job page layout |
-| A-waiting | `315:1308` | Day 14: "Waiting for the poster to confirm", no new interest |
+| A-waiting | `315:1308` | Day 14: "Waiting for the poster to confirm", no new interest. "See open jobs nearby" goes to A-nearby (#379). |
+| A-nearby | `420:2885` | Open jobs near Sweet Home, without a Filled chip (#379) |
+| A-inquiries | `420:2963` | My inquiries, from A6 (#379) |
+| A4-sent | `420:3053` | A new email link is on its way (#379) |
+| A4b-sent | `420:3088` | A new code is on its way, phone path (#379) |
 | A3-error | `315:1388` | The email is incomplete; what was typed stays |
 | A2 at 768 px | `131:922` | The facts sit in two columns |
 | A2 at 1440 px | `313:1154` | Two columns: the job, then the Send interest card and the poster |
@@ -145,6 +196,8 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | B-error | `118:589` | Publish failed. The draft stays. |
 | B-expired | `118:612` | An old "finish your job" link. Each link works once, for 72 hours. |
 | B2-error | `315:1427` | Step 1 with two missing fields |
+| B6-copied | `420:3123` | The link is copied (#379) |
+| B-expired-sent | `420:3175` | A new link is on its way (#379) |
 | B5 at 768 px | `131:969` | |
 | B5 at 1440 px | `313:1204` | Two columns: the audience, then the publish card |
 
@@ -154,7 +207,7 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 |---|---|---|
 | C1 Text about a new inquiry | `124:261` | The notification as a text, for when texts are on. Tap 1. |
 | C2 Email about a new inquiry | `124:300` | The notification as an email, with Reply and Decline. The working channel now. |
-| C-inbox Inquiries | `124:341` | The signed-in way to the same thread. Tab bar: Landing inbox. |
+| C-inbox Inquiries | `124:341` | The signed-in way to the same thread. Tab bar: Inquiries, current. Queues: New, Replied and Closed (#379). |
 | C3 Inquiry thread with the reply bar | `124:390` | What they can bring, their note, two ready replies, Decline and "Write a reply". Tap 2. |
 | C3b Write a reply | `124:463` | The typed reply |
 | C4 Reply sent, phone number offer | `124:509` | Undo for 1 minute, and the opt-in to show the landing's number to this one hauler |
@@ -164,6 +217,7 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | C-error | `124:641` | The reply did not send and is still there |
 | C-expired | `124:664` | An old inquiry link |
 | C-denied | `315:1506` | Permission denied: signed in to another business |
+| C-expired-sent | `420:3226` | A new link is on its way (#379) |
 | C3 at 768 px | `124:439` | |
 | C3 at 1440 px | `313:1254` | The inquiries list beside the thread and its reply card |
 
@@ -180,6 +234,8 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | D-offline | `124:909` | The answer waits on the phone |
 | D-error | `124:949` | It did not save. The same two answers stay. |
 | D-expired | `124:972` | An old link: "Send me a new link" |
+| D-nearby | `420:2933` | Open jobs near Lebanon, from D3 and D5 (#379) |
+| D-expired-sent | `420:3275` | A new link is on its way (#379) |
 | D2 at 768 px | `124:755` | |
 | D2 at 1440 px | `313:1301` | Two columns: the facts, then the answer card |
 
@@ -196,6 +252,7 @@ Counting rules: opening the link counts as a tap in flows A and C, where the tar
 | E-offline | `131:654` | The answer waits on the phone |
 | E-error | `131:692` | It did not save. The same three answers stay. |
 | E-expired | `131:715` | An old link |
+| E-expired-sent | `420:3325` | A new link is on its way (#379) |
 | E2 at 768 px | `131:520` | |
 | E2 at 1440 px | `313:1330` | Two columns: the job, then the three answers |
 
@@ -250,7 +307,7 @@ Used from 00 System: Brand, Icon/*, Button, BottomActionBar, StepIndicator / Nar
 
 - **Closed in #352:** the Input error state now binds Value, Hint and a new Error property (A3-error and B2-error use them); FreshnessChip has filled and paused states; the 1440 frames are in columns, with the inquiries list beside the thread; the bottom bars and the flow B step indicator are 00 System instances.
 - **Still local:** the top bars, segmented controls, choice chips, number steppers, fact rows and message bubbles listed above. 00 System has NumberStepper and SegmentedControl, but these frames were not swapped in #352.
-- **The landing bottom tab bar** on B1 and C-inbox is 91 px tall since #352, because 00 System tab labels are 16 px and "Landing inbox" wraps.
+- **The landing bottom tab bar** on B1 and C-inbox was 91 px tall after #352, because "Landing inbox" wrapped. Closed in #379: the tab is "Inquiries" and the bar is 67 px.
 - **Present mode.** The prototype was not checked in Present mode on a phone. The bar is pinned to the frame bottom; on frames taller than 844 px it should be checked there.
 - **Text consent words** (S1 to S3, the phone sign-up and the first-text copy) wait for the legal review (#291, #293) before any text goes out. #291 item 17 asks for one unticked box per message category; S1 still has one switch.
 - **Short links** such as `logloads.com/j/oak-cascade` are examples. The link shape belongs to P0-4 and P0-6.

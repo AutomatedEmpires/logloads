@@ -1,10 +1,22 @@
 # FG03 Create and edit: job editor, job management, and the interest sheet
 
-**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#296), on 2026-11-12 for design audit 3 (#334), and on 2026-11-18 for the legal review notices (#336, see [Legal review notices (#336)](#legal-review-notices-336)). The lead audits this pass. It is not a founder approval. Key screens still need the founder's approval before anyone builds them (AE-Control `policy/designops.md`).
+**Status:** TARGET. Revised on 2026-11-10 for design audit 2 (#296), on 2026-11-12 for design audit 3 (#334), on 2026-11-18 for the legal review notices (#336, see [Legal review notices (#336)](#legal-review-notices-336)), and the same day for design audit 4 (#379, see [Design audit 4 (#379)](#design-audit-4-379)). The lead audits this pass. It is not a founder approval. Key screens still need the founder's approval before anyone builds them (AE-Control `policy/designops.md`).
 **Figma page:** [03 Create and edit](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=43-77) in the LogLoads file (jackson.cole's team).
 **Source of truth:** the coded V2 screens on `work/logloads-repair`, the changes spec §4.4, §4.5, §4.6, and §5.4, and design audit 2 (#285). No UI code changed in this task. Every control is an instance from [00 System](https://www.figma.com/design/bh4lvK95UsdRT1WVEbeOB6?node-id=9-2), bound to that file's variables. No new styles or components were created.
 
 Example data is the seeded North Pine Logging job at Oak Landing, "Oak saw-log morning run" ($525.00 per load, log truck and pole trailer, destined for Cascade Mill · Springfield, OR, from Mon, Nov 16, 2026), plus "Douglas-fir poles, Hills Creek" ($68.00 per load). Interest is from Granite Creek Hauling (1 log truck with pole trailer, from Nov 16). Sam Carter sends that interest at 10:42 am. The landing's number, shown only after a reply if the landing opts in, is (541) 555-0188.
+
+## Design audit 4 (#379)
+
+Design audit 4 ([logloads#235 comment 6831966093](https://github.com/AutomatedEmpires/logloads/issues/235#issuecomment-6831966093)) found one major and two minors on this page, and no blockers.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| Every landing tab bar and desktop link said "Landing inbox", so the 390 bars were 91 px | Major | The 00 System tab is "Inquiries" now, and the 390 and 768 bars inherit it at 67 px. The 16 desktop GlobalNavigation links that overrode the label now say Inquiries. While checking, the CE-12 to CE-17 tab bars at 390 and 768 had no current tab (12 bars). Inquiries is now current there, as it already was at 1440. |
+| The bottom bars were 51 local "Bottom action" frames, not 00 BottomActionBar | Minor | All 51 are BottomActionBar instances now, in the same place in each frame and filling its width. Single is used for one button, with the summary line on CE-07 ("1 log truck, from Nov 16"). A bar whose only button was secondary (CE-14 Hide my number, CE-16 Undo reply) sets the exposed button to secondary. CE-12 is Split, with Decline on the left and Reply as the primary on the right. CE-15 is Stacked: Undo as the primary over Back to inquiries. The labels were kept. None of the old buttons had a prototype link. The page now has 51 BottomActionBar instances, and its 390 primaries are 56 px. |
+| No day-14 state in Job postings | Minor | CE-01 has a third published row at 390 (`414:5668`), 768 (`414:5683`) and 1440 (`414:5697`): "Pulpwood to the Albany mill", a FreshnessChip State=waiting ("Waiting for the poster to confirm"), "No one has confirmed this job for 14 days. It stays published, but it is off Find Work and takes no new interest until you confirm it." and its Still available button. The counts read "3 published jobs" and "Confirm all (3)". A board note under CE-01 390 (`414:5711`) says that a day-14 job never moves to Expired or Paused, and that Expired is only for a job whose end date has passed. |
+
+**Check** (read-only script over the 61 screen frames, 2026-11-18): no text under 14 px, no control under 44 px, no disabled control, no unbound fill or stroke, no bare "verified", and no overlapping frames. One text ran outside its frame. On CE-07 1440, the business name "Granite Creek Hauling" wrapped to two lines and rose above the top of the navigation. The fix was in 00 System: BusinessSwitcher now keeps the name on one line with an ellipsis, as the code does. CE-01 390, CE-12 390 and CE-15 390 were checked by screenshot.
 
 ## Legal review notices (#336)
 
@@ -79,7 +91,7 @@ Each screen, including the new endings and the inquiry thread, is drawn at 390, 
 - **CE-05** is that same step with two errors: the pay amount is empty, and no truck type is chosen. The draft stays.
 - **CE-09** is publish failed. The draft is kept, and Try again is the primary button.
 - **CE-10** is the editor offline. The draft stays on the phone.
-- **Job postings.** The saved draft has Continue. Two published jobs each have one "Still available" button, plus "Confirm all (2)" and Undo. Status labels stay on one line.
+- **Job postings.** The saved draft has Continue. Three published jobs each have one "Still available" button, plus "Confirm all (3)" and Undo. The third is a day-14 job with the "Waiting for the poster to confirm" chip (#379). It stays under Published. Status labels stay on one line.
 - **Job management** has "Still available" at the top as the one primary action, then Edit job and Pause job, and Duplicate and Close under More. The tabs are What haulers see, Inquiries and Updates. There is no Promote action while billing is closed (audit 3). Close uses Cancel and a danger "Close job". Closing does not record a completed load.
 - **Interest sheet.** The job title is the heading. Pay is directly under it. "Sending as Granite Creek Hauling" is one 16 px line with Change. Send interest is in the bottom bar: "1 log truck, from Nov 16."
 - **Inquiry.** Reply and Decline sit together. CE-13 offers the landing's number only after the reply. CE-14 shows (541) 555-0188 to Granite Creek Hauling. CE-15 is the decline, with Undo. CE-16 keeps the reply while offline. CE-17 keeps it when send fails.

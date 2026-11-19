@@ -1,7 +1,7 @@
 "use client"
 
 import { AppLink as Link } from "../AppLink"
-import { useMemo, useState, useTransition } from "react"
+import { useMemo, useState, useTransition, type ReactNode } from "react"
 import { Badge, Icon } from "@logloads/ui"
 
 import type {
@@ -423,7 +423,8 @@ function MarkInquiryReadButton({ inquiryId, title }: { inquiryId: string; title:
   )
 }
 
-export function AdminReportsPage({ account, reports }: { account: ShellAccount; reports: AdminReportsData }) {
+/** `children`: server-rendered moderation sections shown first, such as the phone-reveal pauses (#403). */
+export function AdminReportsPage({ account, children, reports }: { account: ShellAccount; children?: ReactNode; reports: AdminReportsData }) {
   const [statusFilter, setStatusFilter] = useState<"attention" | "all" | "terminal">("attention")
   const [kindFilter, setKindFilter] = useState<"all" | "problem" | "feature_request">("all")
   const filteredRequests = useMemo(
@@ -440,6 +441,7 @@ export function AdminReportsPage({ account, reports }: { account: ShellAccount; 
 
   return (
     <AppShell account={account} kicker={KICKER} role="admin" title="Feedback">
+      {children}
       <section className="app-section admin-panel" id="contact-inquiries">
         <SectionHeader
           eyebrow={`${reports.inquiries.filter((inquiry) => !inquiry.read).length} unread · ${reports.inquiries.length} total`}

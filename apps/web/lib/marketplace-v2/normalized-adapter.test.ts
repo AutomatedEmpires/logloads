@@ -722,6 +722,20 @@ describe("normalized adapter: inquiries stay inside the active business", () => 
     expect(Object.keys(respond?.args ?? {})).not.toContain("p_share_private_details")
   })
 
+  it("never shares from a reply, even when the form carries a share field; Show my number is the disclosure adapter's (#403)", async () => {
+    await adapter().respondToInterest(landingViewer, {
+      body: "Yes, we can use you. Call me.",
+      decision: "replied",
+      interestId: INTEREST,
+      p_share_private_details: true,
+      replyId: REPLY,
+      sharePrivateDetails: true
+    })
+
+    const respond = recorded.find((call) => call.fn === "respond_to_interest")
+    expect(respond?.args).toEqual({ p_body: "Yes, we can use you. Call me.", p_interest_id: INTEREST, p_reply_id: REPLY, p_status: "replied" })
+  })
+
   it("validates the form input before reaching the store", async () => {
     await expect(adapter().respondToInterest(landingViewer, { decision: "replied", interestId: INTEREST, replyId: REPLY })).rejects.toThrow("A reply needs a message")
     await expect(adapter().withdrawInterest(haulerViewer, "nope")).rejects.toBeInstanceOf(MarketplaceRefusalError)
