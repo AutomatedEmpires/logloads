@@ -18,10 +18,19 @@
   overflow-wrap: anywhere;
 }
 
-/* The inbox's held answers, above the list. The status line stays in the page so every change is announced. */
-.inbox {
-  display: grid;
-  gap: var(--ll-space-3);
+/* The inbox's held answers, above the list. The wrapper draws no box: its parts sit in the list column's own grid, and
+   with nothing held or said the inbox looks exactly as before (#148 visual baselines). */
+.inbox { display: contents; }
+
+/* The status line stays in the page so every change is announced; empty, it is out of the flow and takes no space. */
+.announce:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .announce {

@@ -79,6 +79,8 @@ const readyBar = (page: Page) => page.getByRole("group", { name: "Reply in one t
 const composer = (page: Page) => page.locator("form:has(textarea[aria-label^='Reply to'])")
 const messages = (page: Page) => page.getByRole("log").locator("li")
 const heldInbox = (page: Page) => page.locator("[data-held-inbox]")
+/** The inbox's visible parts: the waiting list, or the status line once it says something. The wrapper draws no box. */
+const HELD_INBOX_SHOWN = "[data-held-inbox] > :not(:empty)"
 const accountMenu = (page: Page) => page.locator(".ll-app > header details")
 
 /** The inbox without New River's inquiry open: its Closed tab. The inbox there sends held answers of other inquiries. */
@@ -439,7 +441,7 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
       await expect(waiting.getByRole("link", { name: "Open inquiry" })).toHaveAttribute("href", new RegExp(`inquiry=${inquiryId}`))
       await expectNoSeriousAxeViolations(page)
       await expectTouchTargets(page)
-      await shoot(page, "c-inbox-waiting", width, "[data-held-inbox]")
+      await shoot(page, "c-inbox-waiting", width, HELD_INBOX_SHOWN)
     }
 
     // Opening the thread does not send it either (the review's Monday-to-Thursday decline): the bar holds it, with Undo.
@@ -484,7 +486,7 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
     await expect(page).toHaveURL(/[?&]tab=closed/)
     await expect(page).not.toHaveURL(/[?&](updated|inquiry)=/)
     await expectNoSeriousAxeViolations(page)
-    await shoot(page, "c-inbox-sent", 390, "[data-held-inbox]")
+    await shoot(page, "c-inbox-sent", 390, HELD_INBOX_SHOWN)
     expect(await heldKeys(page)).toEqual([])
 
     await openV2(page, inquiryLink(inquiryId!))
@@ -528,6 +530,9 @@ test.describe("flow C: a landing answers an inquiry (#328)", () => {
     await openV2(page, inquiryLink(inquiryId!))
     await expect(composer(page)).toHaveCount(1)
     await expect(heldInbox(page).getByRole("region")).toHaveCount(0)
+    // With nothing held or said, the inbox takes no space: the page is exactly as before (#148 visual baselines).
+    const silent = await heldInbox(page).getByRole("status").boundingBox()
+    expect(silent?.height ?? 0, "the empty status line is out of the flow").toBeLessThanOrEqual(1)
     await page.clock.fastForward(TWO_HOLDS)
     await openV2(page, inquiryLink(inquiryId!))
     await expect(composer(page), "the colleague's decline was not sent").toHaveCount(1)
