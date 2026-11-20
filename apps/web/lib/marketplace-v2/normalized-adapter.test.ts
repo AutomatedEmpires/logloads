@@ -399,6 +399,7 @@ function ownLandingRow(overrides: Record<string, unknown> = {}) {
     active_jobs: 1, county: null, exact_lat: 44.15432, exact_lng: -122.48765, gate_instructions: "Green gate 4417", id: LANDING,
     name: "Upper Spur Landing", public_area_label: "Near Vida, OR", public_lat: 44.2, public_lng: -122.5, site_contact_name: "Lee",
     site_contact_phone: "+15415550100", state_code: "OR", status: "active", updated_at: "2026-11-03T11:00:00+00:00",
+    typical_hours: "5 a.m. to 3 p.m.", public_road_notes: "Gravel the last 6 miles",
     ...overrides
   }
 }
@@ -425,6 +426,7 @@ describe("normalized adapter: landing workspace", () => {
       ["Layng Creek", "paused", null]
     ])
     expect(landings[0]?.privateDetails).toEqual({ exactLocation: { lat: 44.15432, lng: -122.48765 }, gateInstructions: "Green gate 4417", siteContactName: "Lee", siteContactPhone: "+15415550100" })
+    expect([landings[0]?.typicalHours, landings[0]?.publicRoadNotes]).toEqual(["5 a.m. to 3 p.m.", "Gravel the last 6 miles"])
     expect(recorded.find((call) => call.fn === "statement:own_landings")?.args).toEqual({ values: [LAND, null] })
     expect(recorded.every((call) => call.readOnly === true)).toBe(true)
   })
@@ -448,7 +450,7 @@ describe("normalized adapter: landing workspace", () => {
 
     expect(await adapter().saveLanding(landingViewer, NEW_LANDING)).toEqual({ landingId: LANDING })
     expect(storeCalls()).toEqual(["get_viewer_marketplace_access", "statement:insert_landing", "statement:save_landing_private"])
-    expect(recorded.find((call) => call.fn === "statement:insert_landing")?.args).toEqual({ values: [LAND, "Hills Creek Unit 4", "inactive", "Oakridge, OR", null, null, "OR", null] })
+    expect(recorded.find((call) => call.fn === "statement:insert_landing")?.args).toEqual({ values: [LAND, "Hills Creek Unit 4", "inactive", "Oakridge, OR", null, null, "OR", null, null, null] })
     expect(recorded.at(-1)?.readOnly).toBe(false)
   })
 
@@ -470,10 +472,12 @@ describe("normalized adapter: landing workspace", () => {
     statements.update_landing = [{ id: LANDING }]
     statements.save_landing_private = [{ id: LANDING }]
 
-    await adapter().saveLanding(landingViewer, { ...NEW_LANDING, exactLat: "44.15432", exactLng: "-122.48765", landingId: LANDING, recruiting: "1" })
+    await adapter().saveLanding(landingViewer, {
+      ...NEW_LANDING, exactLat: "44.15432", exactLng: "-122.48765", landingId: LANDING, publicRoadNotes: "Gravel the last 6 miles", recruiting: "1", typicalHours: "5 a.m. to 3 p.m."
+    })
     expect(storeCalls()).toEqual(["get_viewer_marketplace_access", "statement:own_landings", "statement:update_landing", "statement:save_landing_private"])
     expect(recorded.find((call) => call.fn === "statement:update_landing")?.args).toEqual({
-      values: [LANDING, LAND, "Hills Creek Unit 4", "Oakridge, OR", "44.15432", "-122.48765", "OR", null]
+      values: [LANDING, LAND, "Hills Creek Unit 4", "Oakridge, OR", "44.15432", "-122.48765", "OR", null, "5 a.m. to 3 p.m.", "Gravel the last 6 miles"]
     })
 
     recorded = []

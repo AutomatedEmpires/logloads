@@ -76,8 +76,10 @@ function landing(overrides: Partial<MarketplaceLandingView> = {}): MarketplaceLa
     id: UPPER,
     name: "Upper Spur Landing",
     privateDetails: { exactLocation: { lat: 44.15432, lng: -122.48765 }, gateInstructions: SECRETS[0]!, siteContactName: SECRETS[3]!, siteContactPhone: SECRETS[4]! },
+    publicRoadNotes: "Gravel the last 6 miles",
     stateCode: "OR",
     status: "active",
+    typicalHours: "5 a.m. to 3 p.m.",
     updatedAt: "2026-11-03T12:00:00.000Z",
     ...overrides
   }
@@ -175,6 +177,22 @@ describe("the landing editor (#127, B3)", () => {
     expect(page).toContain(`name="landingId" value="${UPPER}"`)
     expect(page).toContain("Preview: landings are read from the current LogLoads store")
     expect(mocks.getOwnLanding).toHaveBeenCalledWith(viewer, UPPER)
+  })
+
+  it("puts typical hours and public road notes in the Seen by haulers panel, capped like the store (migration 26)", async () => {
+    const page = await html(EditLandingPage({ params: Promise.resolve({ landingId: UPPER }) }))
+    const publicAt = page.indexOf("aria-label=\"Seen by haulers\"")
+    const privateAt = page.indexOf("aria-label=\"Private · your team only\"")
+    const publicPanel = page.slice(publicAt, privateAt)
+
+    expect(publicAt).toBeGreaterThan(0)
+    expect(publicPanel).toMatch(/<input[^>]*maxLength="120"[^>]*name="typicalHours"[^>]*value="5 a.m. to 3 p.m."|<input[^>]*name="typicalHours"/)
+    expect(publicPanel).toContain("5 a.m. to 3 p.m.")
+    expect(publicPanel).toMatch(/<textarea[^>]*name="publicRoadNotes"/)
+    expect(publicPanel).toContain("Gravel the last 6 miles")
+    expect(publicPanel).toMatch(/name="typicalHours"[^>]*maxLength="120"|maxLength="120"[^>]*name="typicalHours"/)
+    expect(publicPanel).toMatch(/maxLength="1000"[^>]*name="publicRoadNotes"|name="publicRoadNotes"[^>]*maxLength="1000"/)
+    expect(page.slice(privateAt)).not.toContain("name=\"typicalHours\"")
   })
 
   it("is not found for a landing that is not the business's own", async () => {

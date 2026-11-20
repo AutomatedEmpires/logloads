@@ -481,10 +481,12 @@ const ownLandingRowSchema = z.object({
   public_area_label: z.string(),
   public_lat: coordinateValue,
   public_lng: coordinateValue,
+  public_road_notes: nullableText,
   site_contact_name: nullableText,
   site_contact_phone: nullableText,
   state_code: z.string(),
   status: z.enum(["active", "inactive", "archived"]),
+  typical_hours: nullableText,
   updated_at: nullableTimestamp
 })
 
@@ -509,8 +511,10 @@ export function landingViewFromRow(row: unknown): MarketplaceLandingView {
       siteContactName: landing.site_contact_name,
       siteContactPhone: landing.site_contact_phone
     },
+    publicRoadNotes: landing.public_road_notes,
     stateCode: landing.state_code.trim(),
     status: STORE_LANDING_STATUS[landing.status],
+    typicalHours: landing.typical_hours,
     updatedAt: landing.updated_at
   }
 }
@@ -546,15 +550,19 @@ function coordinateText(value: number | undefined): string | null {
   return value === undefined ? null : String(value)
 }
 
-/** The public row's values for `insert_landing` ($2–$8 after the org) and `update_landing` ($3–$8 after id and org). */
-export function landingPublicValues(input: MarketplaceLandingInput): [string, string, string | null, string | null, string, string | null] {
+/** The public row's values for `insert_landing` ($2–$10 after the org, status at $3) and `update_landing` ($3–$10). */
+export function landingPublicValues(
+  input: MarketplaceLandingInput
+): [string, string, string | null, string | null, string, string | null, string | null, string | null] {
   return [
     input.name,
     input.areaLabel,
     coordinateText(input.exactLocation?.lat),
     coordinateText(input.exactLocation?.lng),
     input.stateCode,
-    input.county
+    input.county,
+    input.typicalHours,
+    input.publicRoadNotes
   ]
 }
 

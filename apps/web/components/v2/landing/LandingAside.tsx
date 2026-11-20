@@ -35,7 +35,7 @@ export function WhoSeesWhat() {
   return (
     <Section title="Who sees what">
       <ul className={styles.checklist}>
-        <li><Icon aria-hidden name="status.verified" size={16} /><span>Haulers see the landing name and its approximate area on each job.</span></li>
+        <li><Icon aria-hidden name="status.verified" size={16} /><span>Haulers can see the landing name, its approximate area, typical hours and public road notes.</span></li>
         <li><Icon aria-hidden name="status.verified" size={16} /><span>Your landing team sees everything on a landing&rsquo;s page.</span></li>
         <li><Icon aria-hidden name="status.lock" size={16} /><span>The exact location, gate and access instructions and the site contact are never on a listing or a map.</span></li>
       </ul>

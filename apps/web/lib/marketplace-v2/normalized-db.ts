@@ -153,7 +153,7 @@ export const LANDING_STATEMENTS = {
   own_landings: {
     params: 2,
     text: `select to_jsonb(r) as row from (
-  select l.id, l.name, l.status, l.public_area_label, l.state_code, l.county, l.updated_at,
+  select l.id, l.name, l.status, l.public_area_label, l.state_code, l.county, l.typical_hours, l.public_road_notes, l.updated_at,
          extensions.st_y(l.public_point::extensions.geometry) as public_lat,
          extensions.st_x(l.public_point::extensions.geometry) as public_lng,
          extensions.st_y(p.exact_point::extensions.geometry) as exact_lat,
@@ -167,18 +167,19 @@ export const LANDING_STATEMENTS = {
   order by case l.status when 'active' then 0 when 'inactive' then 1 else 2 end, l.name, l.id
 ) as r`
   },
-  /** $1 org, $2 name, $3 status, $4 area label, $5 lat, $6 lng, $7 state code, $8 county. */
+  /** $1 org, $2 name, $3 status, $4 area label, $5 lat, $6 lng, $7 state code, $8 county, $9 typical hours, $10 public road notes. */
   insert_landing: {
-    params: 8,
-    text: `insert into marketplace.landings (org_id, name, status, public_area_label, public_point, state_code, county)
-values ($1::text::uuid, $2::text, $3::text, $4::text, ${publicPoint("$5", "$6")}, $7::text, $8::text)
+    params: 10,
+    text: `insert into marketplace.landings (org_id, name, status, public_area_label, public_point, state_code, county, typical_hours, public_road_notes)
+values ($1::text::uuid, $2::text, $3::text, $4::text, ${publicPoint("$5", "$6")}, $7::text, $8::text, $9::text, $10::text)
 returning jsonb_build_object('id', id) as row`
   },
-  /** $1 landing, $2 org, $3 name, $4 area label, $5 lat, $6 lng, $7 state code, $8 county. Never the status. */
+  /** $1 landing, $2 org, $3 name, $4 area label, $5 lat, $6 lng, $7 state code, $8 county, $9 hours, $10 road notes. Never the status. */
   update_landing: {
-    params: 8,
+    params: 10,
     text: `update marketplace.landings
-set name = $3::text, public_area_label = $4::text, public_point = ${publicPoint("$5", "$6")}, state_code = $7::text, county = $8::text
+set name = $3::text, public_area_label = $4::text, public_point = ${publicPoint("$5", "$6")}, state_code = $7::text, county = $8::text,
+    typical_hours = $9::text, public_road_notes = $10::text
 where id = $1::text::uuid and org_id = $2::text::uuid
 returning jsonb_build_object('id', id) as row`
   },

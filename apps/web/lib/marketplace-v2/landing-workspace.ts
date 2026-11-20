@@ -68,9 +68,11 @@ export function landingFormValues(landing?: MarketplaceLandingView | null): Land
     exactLng: text(landing.privateDetails.exactLocation?.lng),
     gateInstructions: text(landing.privateDetails.gateInstructions),
     name: landing.name,
+    publicRoadNotes: text(landing.publicRoadNotes),
     siteContactName: text(landing.privateDetails.siteContactName),
     siteContactPhone: text(landing.privateDetails.siteContactPhone),
-    stateCode: landing.stateCode
+    stateCode: landing.stateCode,
+    typicalHours: text(landing.typicalHours)
   }
 }
 
