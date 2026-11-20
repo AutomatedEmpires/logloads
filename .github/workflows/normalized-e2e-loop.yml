@@ -24,6 +24,7 @@ on:
       - apps/web/components/v2/**
       - apps/web/lib/marketplace-v2/**
       - apps/web/lib/session*.ts
+      - apps/web/next.config.ts
       - apps/web/tests/v2-normalized-loop.*
       - packages/contracts/src/marketplace*.ts
       - packages/ui/src/**
