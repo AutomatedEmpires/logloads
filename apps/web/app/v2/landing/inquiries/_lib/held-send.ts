@@ -17,6 +17,11 @@
  *   lets it go.
  */
 
+import { HELD_PREFIX as PREFIX, heldNames } from "./held-keys"
+
+// Sign-out's clear lives with the keys, so the sign-out button can use it without this module (#447).
+export { clearAllHeld } from "./held-keys"
+
 /** How long Undo works. The frames say "for the next minute" and "told in 1 minute". */
 export const HOLD_MS = 60_000
 
@@ -28,7 +33,6 @@ export const HELD_BODY_MAX = 2000
 
 const RECIPIENT_MAX = 200
 const ID_MAX = 128
-const PREFIX = "logloads:flow-c:held:"
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export type HeldDecision = "replied" | "declined"
@@ -199,22 +203,6 @@ export function writeHeld(storage: Pick<HeldStore, "setItem">, held: HeldSend): 
 
 export function clearHeld(storage: Pick<HeldStore, "removeItem">, viewer: HeldViewer, interestId: string): void {
   storage.removeItem(key(viewer, interestId))
-}
-
-function heldNames(storage: HeldStore): string[] {
-  const names: string[] = []
-
-  for (let index = 0; index < storage.length; index += 1) {
-    const name = storage.key(index)
-    if (name?.startsWith(PREFIX)) names.push(name)
-  }
-
-  return names
-}
-
-/** Sign-out (#411): every held answer on this phone goes, whoever held it, older records included. */
-export function clearAllHeld(storage: HeldStore): void {
-  for (const name of heldNames(storage)) storage.removeItem(name)
 }
 
 /** Every readable held answer on this phone, whoever held it: what sign-out tries to send first. */
