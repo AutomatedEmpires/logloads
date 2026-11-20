@@ -7,6 +7,16 @@ export interface RateLimitRequest {
   bucket: string
   key: string
   windowMs: number
+  /**
+   * How long a shared store may take to answer before the check fails closed.
+   * Omitted, the store's own default applies. Process-local stores answer at
+   * once and ignore it.
+   */
+  timeoutMs?: number
+}
+
+export interface RateLimitCheckOptions {
+  timeoutMs?: number
 }
 
 /** Provider-neutral contract for one atomic fixed-window increment. */
@@ -40,19 +50,28 @@ export class RateLimiter {
     private readonly now = () => Date.now()
   ) {}
 
-  async check(bucket: string, key: string, limit: number, windowMs: number): Promise<void> {
+  async check(
+    bucket: string,
+    key: string,
+    limit: number,
+    windowMs: number,
+    { timeoutMs }: RateLimitCheckOptions = {}
+  ): Promise<void> {
     if (
       !bucket ||
       !key ||
       !Number.isInteger(limit) ||
       limit < 1 ||
       !Number.isInteger(windowMs) ||
-      windowMs < 1
+      windowMs < 1 ||
+      (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs < 1))
     ) {
       throw new Error("Rate limit configuration is invalid")
     }
 
-    const state = await this.store.consume({ bucket, key, windowMs })
+    const state = await this.store.consume(
+      timeoutMs === undefined ? { bucket, key, windowMs } : { bucket, key, timeoutMs, windowMs }
+    )
 
     if (state.count > limit) {
       throw new RateLimitError(Math.max(1, Math.ceil((state.resetAt - this.now()) / 1_000)))

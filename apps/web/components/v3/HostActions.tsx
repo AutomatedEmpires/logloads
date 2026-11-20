@@ -2,6 +2,7 @@
 
 import {
   FEE_BPS_SCALE,
+  LOAD_POSTING_TITLE_MAX_LENGTH,
   OPERATIONAL_NOTICE_LIMITS,
   PLATFORM_FEE_BPS,
   createMoney,
@@ -970,6 +971,7 @@ export function OpportunityBuilder({ options }: { options: HostPublishingOptions
           <label className="host-field--full">
             Work title
             <input
+              maxLength={LOAD_POSTING_TITLE_MAX_LENGTH}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="e.g. Blue River saw-log morning block"
               type="text"

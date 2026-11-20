@@ -91,4 +91,11 @@ describe("public pages share the short-lived board (HF-09)", () => {
     await expect(getPublicLoads()).resolves.toEqual(boardAt(testClock))
     expect(mocks.readState).toHaveBeenCalledTimes(2)
   })
+
+  it("offers no public reader that bypasses the board", async () => {
+    // #187: the unused `getPublicNetwork` built the public projection from a
+    // full state download on every call. It is gone, so a new public page
+    // cannot pick it up instead of `getPublicLoads`.
+    expect(Object.keys(await import("./v3"))).not.toContain("getPublicNetwork")
+  })
 })

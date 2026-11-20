@@ -4,6 +4,7 @@ import {
   MemoryRateLimitStore,
   RateLimitError,
   RateLimiter,
+  type RateLimitRequest,
   type RateLimitStore
 } from "./rate-limit-core"
 
@@ -52,5 +53,27 @@ describe("RateLimiter with a memory store", () => {
     await expect(limiter.check("contact", "client", 0, 60_000)).rejects.toThrow(
       "Rate limit configuration is invalid"
     )
+    await expect(limiter.check("contact", "client", 1, 60_000, { timeoutMs: 0 })).rejects.toThrow(
+      "Rate limit configuration is invalid"
+    )
+  })
+
+  it("hands the store a check's own time budget, and none when the check sets none", async () => {
+    const requests: RateLimitRequest[] = []
+    const limiter = new RateLimiter({
+      consume: async (request) => {
+        requests.push(request)
+
+        return { count: 1, resetAt: 2_000 }
+      }
+    })
+
+    await limiter.check("contact", "client", 1, 60_000)
+    await limiter.check("trip-event-create", "user", 30, 60_000, { timeoutMs: 8_000 })
+
+    expect(requests).toEqual([
+      { bucket: "contact", key: "client", windowMs: 60_000 },
+      { bucket: "trip-event-create", key: "user", timeoutMs: 8_000, windowMs: 60_000 }
+    ])
   })
 })

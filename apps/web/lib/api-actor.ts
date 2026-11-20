@@ -12,8 +12,9 @@ import {
 import { NextResponse } from "next/server"
 
 import { OPERATING_STATE_FULL_MESSAGE } from "./operating-state-messages"
-import { RateLimitError, RateLimitUnavailableError, checkRateLimit } from "./rate-limit"
+import { RateLimitError, RateLimitUnavailableError, checkRateLimit, checkWriteLimit } from "./rate-limit"
 import { getSessionActor, type SessionActor } from "./session"
+import type { WriteLimit } from "./write-limits"
 
 export class ApiError extends Error {
   constructor(
@@ -50,14 +51,9 @@ export function rateLimitApiError(error: unknown): ApiError | null {
   return null
 }
 
-export async function enforceApiRateLimit(
-  bucket: string,
-  actorUserId: string,
-  limit: number,
-  windowMs: number
-): Promise<void> {
+async function asApiRateLimitError(check: Promise<void>): Promise<void> {
   try {
-    await checkRateLimit(bucket, actorUserId, limit, windowMs)
+    await check
   } catch (error) {
     const apiError = rateLimitApiError(error)
 
@@ -67,6 +63,23 @@ export async function enforceApiRateLimit(
 
     throw error
   }
+}
+
+export async function enforceApiRateLimit(
+  bucket: string,
+  actorUserId: string,
+  limit: number,
+  windowMs: number
+): Promise<void> {
+  await asApiRateLimitError(checkRateLimit(bucket, actorUserId, limit, windowMs))
+}
+
+/**
+ * Spend one of the actor's per-user write limits (`write-limits.ts`), with the
+ * same time budget the cockpit action for the same write gets.
+ */
+export async function enforceApiWriteLimit(writeLimit: WriteLimit, actorUserId: string): Promise<void> {
+  await asApiRateLimitError(checkWriteLimit(writeLimit, actorUserId))
 }
 
 async function requireBaseApiActor(): Promise<SessionActor> {
