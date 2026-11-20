@@ -260,6 +260,70 @@ test("(b) #428: the copy deck never writes a bare verification word as product c
   assertPasses("bare-verification-word", "docs/DECISIONS.md", [`**Tabs:** Pending, Verified, Denied, Suspended`])
 })
 
+// #448 (review pass 3 of PR 445). The #428 patterns fired only when the word started or ended a whole string. Two
+// strings on live screens passed: the word in the middle of a sentence, and a noun, the word and then a date.
+test("(b) #448: the word in front of its noun inside a sentence, and a noun plus the word plus a date, fire", () => {
+  // The strings that were on screen before #448, each in the file that held it.
+  assertFires("bare-verification-word", "apps/web/lib/v3-shared.ts", [
+    `        points: ["Keep it inside your carrier circle", "Open it to verified carriers in the region", "Or post it for everyone"]`
+  ])
+  assertFires("bare-verification-word", "apps/web/components/v3/HostPages.tsx", [
+    "                      ? `Details verified ${formatDateTime(landing.lastVerifiedAt)}`",
+    `                      : "Details not yet verified"`
+  ])
+
+  // The sentence form: verified, vetted or certified, then the thing it describes, anywhere in a string or a JSX text.
+  assertFires("bare-verification-word", COCKPIT, [
+    `const body = "Only vetted haulers see this load."`,
+    `const body = 'Work with certified local drivers near you.'`,
+    "const body = `Post to ${count} verified fleets today`",
+    `<p>Open it to verified carriers in the region.</p>`,
+    `<p>\n  Post the work to our Verified carriers and wait.\n</p>`,
+    `<Field hint="Seen by verified organizations only" />`
+  ])
+  // A noun, the word, then a date from the code.
+  assertFires("bare-verification-word", COCKPIT, [
+    "const note = `Record approved on ${day}`",
+    "const note = `Last saved. Business identity verified since ${day}.`",
+    `<span>Details verified {formatDateTime(landing.lastVerifiedAt)}</span>`,
+    `<span>Equipment certified {formatDate(reviewedAt)}</span>`
+  ])
+  // "Not yet" in front of the word still says a verification exists.
+  assertFires("bare-verification-word", COCKPIT, [`<span>Identity not yet verified</span>`, `label: "Organization not verified"`])
+})
+
+test("(b) #448: what replaced the two strings, 'trusted' in a sentence, negations and code pass", () => {
+  assertPasses("bare-verification-word", "apps/web/lib/v3-shared.ts", [
+    `        points: ["Keep it inside your carrier circle", "Open it to identity-reviewed carriers in the region", "Or post it for everyone"]`,
+    "  return lastSavedAt ? `Details saved ${formatDateTime(lastSavedAt)}` : \"No briefing saved yet\"",
+    `  "LogLoads reviews the business identity details you send and records the date. This identity review does not cover insurance, authority or safety."`
+  ])
+  assertPasses("bare-verification-word", COCKPIT, [
+    // "Trusted" stays out of the sentence form: the person, not LogLoads, decides whom they trust.
+    `<p>Invite trusted carriers or hosts to share work and selected availability.</p>`,
+    `const body = "Share availability with trusted fleets you already work with."`,
+    // Saying what was not done is not a claim.
+    `const body = "LogLoads has not verified carriers' insurance."`,
+    `const body = "Self-reported by the hauler; never certified records."`,
+    `const body = "Unverified carriers see public work only."`,
+    // The verifier is named, and the word between is not lower case.
+    `<span>Verified Clerk identity</span>`,
+    // A broken invariant about a stored status is not a label. The same words in a label still fire (below).
+    `        throw new RangeError("A verified business has no review date")`,
+    // Stored values, keys and code.
+    `  ["verified_network", "Identity-reviewed carriers", "Only hauling organizations whose business identity LogLoads has reviewed see it."]`,
+    `const verified = records.filter((record) => record.status === "verified" && record.documents.length > 0)`,
+    `if (status === "verified") return carriers`,
+    `const label = isVerified ? "verified" : carriers.length > 0 ? "pending" : "none"`,
+    `<Icon aria-hidden name="status.verified" size={14} /> You rated {trip.reviewable.counterpartyName}.`,
+    // The billing record sentence in the host cockpit is about LogLoads' own record, with the verb after its noun.
+    `              : "Live publication is held until the billing record is verified."}`,
+    "          : `Issued ${formatDateTime(pack.lastVerifiedAt)}.`}",
+    `          {pending ? "Saving…" : "Save and verify briefing"}`
+  ])
+  assertFires("bare-verification-word", COCKPIT, [`const note = "A verified business has no review date"`])
+})
+
 test("(b) a public marketplace component takes the verification object, never a bare verified flag", () => {
   assertFires("public-verified-flag", V2_COMPONENT, [`  verified: boolean`, `  verified?: boolean`, `<CompanyProfileHeader verified={true} />`, `<CompanyProfileHeader verified />`])
   assertFires("public-verified-flag", "packages/ui/src/marketplace/CompanyProfileHeader.tsx", [`  isVerified: boolean`])

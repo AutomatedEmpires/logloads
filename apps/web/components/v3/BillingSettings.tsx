@@ -21,6 +21,7 @@ import type {
 import { TERMS_2026_08_03_PATH } from "@/lib/legal-archive"
 import type { BillingView, SettingsView } from "@/lib/plans"
 import type { HostSubscriptionBillingView } from "@/lib/subscription-billing-data"
+import { BUSINESS_IDENTITY_REVIEW_HINT } from "@/lib/v3-shared"
 import type { VerificationRecordView } from "@/lib/verification-data"
 import { AppShell, EmptyState, SectionHeader, type ShellAccount } from "./Shells"
 import {
@@ -35,12 +36,12 @@ type CockpitRole = "fleet" | "host"
 
 const ORG_VERIFICATION_OPTIONS: Record<CockpitRole, VerificationTypeOption[]> = {
   fleet: [
-    { value: "organization", label: "Business identity", hint: "LogLoads reviews the business identity details you send and records the date. It does not check insurance, authority or safety." },
+    { value: "organization", label: "Business identity", hint: BUSINESS_IDENTITY_REVIEW_HINT },
     { value: "carrier_identifier", label: "Carrier authority", hint: "Name the public authority record a reviewer should check. Do not enter a full private credential here." },
     { value: "insurance_document", label: "Insurance", hint: "Name the insurer and evidence available. Do not enter a full policy number here." }
   ],
   host: [
-    { value: "organization", label: "Business identity", hint: "LogLoads reviews the business identity details you send and records the date. It does not check insurance, authority or safety." },
+    { value: "organization", label: "Business identity", hint: BUSINESS_IDENTITY_REVIEW_HINT },
     { value: "facility_control", label: "Facility control", hint: "Evidence you control the landing or mill you post from." },
     { value: "landing_authorization", label: "Landing authorization", hint: "Authorization to move wood from this landing." }
   ]

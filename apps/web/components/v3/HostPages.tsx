@@ -12,7 +12,7 @@ import type {
 } from "@/lib/host-data"
 import { hostLivePublicationIsAvailable } from "@/lib/host-publishing-options"
 import type { NetworkLoadView, NetworkView } from "@/lib/network"
-import { formatDateTime, formatHuman, tripStatusLabel } from "@/lib/v3-shared"
+import { formatDateTime, formatHuman, landingDetailsSavedLabel, tripStatusLabel } from "@/lib/v3-shared"
 import {
   CancelAssignmentButton,
   CapacityApprovalList,
@@ -1547,9 +1547,7 @@ export function HostLandings({
               <footer>
                 <span>
                   {landing.isActive
-                    ? landing.lastVerifiedAt
-                      ? `Details verified ${formatDateTime(landing.lastVerifiedAt)}`
-                      : "Details not yet verified"
+                    ? landingDetailsSavedLabel(landing.lastVerifiedAt)
                     : "Retired — not available for new work"}
                 </span>
                 <HostOpportunityAction

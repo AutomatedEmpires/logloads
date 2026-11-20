@@ -187,7 +187,7 @@ test.describe.serial("host workspace setup", () => {
       await page.waitForLoadState("domcontentloaded")
       const refreshed = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()
       await expect(refreshed.locator("dd").filter({ hasText: "heel-boom loader" })).toBeVisible()
-      await expect(refreshed.getByText(/Details verified/)).toBeVisible()
+      await expect(refreshed.getByText(/Details saved/)).toBeVisible()
     }).toPass({ timeout: 30_000 })
 
     const refreshed = page.locator(".host-landing-card").filter({ hasText: LANDING }).first()

@@ -224,6 +224,22 @@ export function formatDateTime(value: string | null): string {
   }).format(new Date(value))
 }
 
+/**
+ * The footer of a host's landing card. `lastSavedAt` is the landing details' `lastVerifiedAt`, which is only the time
+ * the host last saved the briefing (services/host-workspace). Nobody checked it, so the card says "saved" (#448).
+ */
+export function landingDetailsSavedLabel(lastSavedAt: string | null): string {
+  return lastSavedAt ? `Details saved ${formatDateTime(lastSavedAt)}` : "No briefing saved yet"
+}
+
+/**
+ * The hint under "Business identity" on the fleet and host settings pages. The limit is on this review, not on
+ * LogLoads: the options beside it ("Carrier authority", "Insurance") name records a LogLoads reviewer does look at
+ * (#448). What a reviewed authority or insurance record may claim is a question for counsel (legal review §7.3 item 6).
+ */
+export const BUSINESS_IDENTITY_REVIEW_HINT =
+  "LogLoads reviews the business identity details you send and records the date. This identity review does not cover insurance, authority or safety."
+
 export function userPlanFeatures(product: string): string[] {
   if (product === "fleet_operations") {
     return ["Dispatch board", "Truck planning", "Partner work", "Route packs", "Trip documents"]
@@ -233,7 +249,7 @@ export function userPlanFeatures(product: string): string[] {
     return ["Private opportunities", "Live board", "Carrier network", "Route briefings", "Capacity planning"]
   }
 
-  return ["Verified access", "Team seats", "Support"]
+  return ["Workspace access", "Team seats", "Support"]
 }
 
 export interface PricingPlan {
@@ -403,7 +419,7 @@ export const storyPages: Record<string, PublicStoryPage> = {
       {
         title: "Post the work",
         body: "A landing or timber operation posts what needs to move: how many loads, the schedule, the equipment it takes, and who gets to see it.",
-        points: ["Keep it inside your carrier circle", "Open it to verified carriers in the region", "Or post it for everyone"]
+        points: ["Keep it inside your carrier circle", "Open it to identity-reviewed carriers in the region", "Or post it for everyone"]
       },
       {
         title: "Match and commit",

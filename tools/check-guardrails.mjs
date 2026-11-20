@@ -205,7 +205,9 @@ const BARE_LABEL =
 const LABELLED_NOUN =
   "(?:business(?:es)?|haulers?|carriers?|landings?|posters?|fleets?|compan(?:y|ies)|profiles?|jobs?|trucks?|operators?|organi[sz]ations?|drivers?|members?|partners?|identity" +
   // #428: what the pilot cockpits label.
-  "|networks?|work|loads?|hauls?|equipment|rigs?|units?|records?|credentials?|documents?)"
+  "|networks?|work|loads?|hauls?|equipment|rigs?|units?|records?|credentials?|documents?" +
+  // #448: a landing card said "Details verified {date}" for the time its briefing was saved.
+  "|details)"
 // The word alone, or with the thing it describes and at most one lower-case word between ("Trusted local carriers").
 const BARE_LABEL_PHRASE = `${BARE_LABEL}(?:[ \\t]+(?:[a-z]+[ \\t]+)?${LABELLED_NOUN})?`
 const OUTCOME_STATUS = "(?:accepted|awarded|assigned|booked|hired)"
@@ -387,6 +389,39 @@ const legalChecks = [
     id: "bare-verification-word",
     message: BARE_LABEL_MESSAGE,
     pattern: new RegExp(`(?:\`|>)\\s*${BARE_LABEL}[ \\t]+(?:on[ \\t]+|since[ \\t]+)?(?:\\$\\{|\\{)`, "g"),
+    include: isVerificationLabelSurface,
+    skipComments: true
+  },
+  {
+    // #448. The patterns above read a whole string. A sentence can carry the same claim in the middle: "Open it to
+    // verified carriers in the region". This reads verified, vetted or certified in front of the thing it describes,
+    // with at most one word between, anywhere in a string or a JSX text: after the opening quote or tag on the same
+    // line, or on a line of text that holds no code. "Trusted" is not in this form: "Invite trusted carriers" is the
+    // person's own judgement, not a LogLoads check. "Not verified carriers" says what was not done, and passes.
+    // The word between is lower case, as in the whole-string form, so "Verified Clerk identity" (the verifier is
+    // named) passes. A thrown RangeError or TypeError states a broken invariant about a stored status; it is not a
+    // label, and passes too.
+    id: "bare-verification-word",
+    message: BARE_LABEL_MESSAGE,
+    pattern: new RegExp(
+      `(?:(?<!\\b(?:Range|Type)Error\\(\\s*)(?:["'\`]|>)[^"'\`<>\\n]*?|^[ \\t]*[A-Za-z][^"'\`<>={};()\\n]*?)` +
+        `(?<!\\b(?:[Nn]ot|[Nn]ever|[Nn]o|nor)[ \\t]+)\\b(?:[Vv]erified|VERIFIED|[Vv]etted|VETTED|[Cc]ertified|CERTIFIED)[ \\t]+(?:[a-z]+[ \\t]+)?${LABELLED_NOUN}\\b`,
+      "gm"
+    ),
+    include: isVerificationLabelSurface,
+    skipComments: true
+  },
+  {
+    // #448. A noun, the word, then a date from the code ("Details verified ${when}", "Record approved on {day}") is
+    // the #428 dated label with its noun in front. So is "not" or "not yet" before the word at the end of a label
+    // ("Details not yet verified"): it still says a verification exists.
+    id: "bare-verification-word",
+    message: BARE_LABEL_MESSAGE,
+    pattern: new RegExp(
+      `\\b${LABELLED_NOUN}[ \\t]+(?:verified|approved|vetted|certified)[ \\t]+(?:on[ \\t]+|since[ \\t]+)?(?:\\$\\{|\\{)` +
+        `|(?:["'\`]|>)\\s*(?:[A-Za-z]+[ \\t]+)?${LABELLED_NOUN}[ \\t]+not[ \\t]+(?:yet[ \\t]+)?(?:verified|vetted|certified)\\s*[.!]?\\s*(?:["'\`]|<)`,
+      "gi"
+    ),
     include: isVerificationLabelSurface,
     skipComments: true
   },
