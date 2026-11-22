@@ -16,6 +16,7 @@ import type {
   AdminVerificationItem
 } from "@/lib/admin-data"
 import { markNotificationReadAction } from "@/lib/cockpit-actions"
+import { withReviewedRequests, type ReviewedSupportRequest } from "@/lib/support-review-view"
 import { AdminBillingActions } from "./AdminBillingActions"
 import { toneForNotice } from "./Common"
 import { AdminReportDecision, OrganizationDecision, ResolveNoticeButton, VerificationDecision } from "./AdminActions"
@@ -429,8 +430,12 @@ function MarkInquiryReadButton({ inquiryId, title }: { inquiryId: string; title:
 export function AdminReportsPage({ account, children, reports }: { account: ShellAccount; children?: ReactNode; reports: AdminReportsData }) {
   const [statusFilter, setStatusFilter] = useState<"attention" | "all" | "terminal">("attention")
   const [kindFilter, setKindFilter] = useState<"all" | "problem" | "feature_request">("all")
+  // Decisions this admin saved, as the review endpoint answered them. Each stays on its card until the page itself
+  // has rendered that decision (#450).
+  const [reviewed, setReviewed] = useState<Record<string, ReviewedSupportRequest>>({})
+  const requests = useMemo(() => withReviewedRequests(reports.requests, reviewed), [reports.requests, reviewed])
   const filteredRequests = useMemo(
-    () => reports.requests.filter((request) => {
+    () => requests.filter((request) => {
       const statusMatches = statusFilter === "all"
         || (statusFilter === "attention" && (request.status === "open" || request.status === "in_review"))
         || (statusFilter === "terminal" && (request.status === "resolved" || request.status === "closed"))
@@ -438,7 +443,7 @@ export function AdminReportsPage({ account, children, reports }: { account: Shel
 
       return statusMatches && kindMatches
     }),
-    [kindFilter, reports.requests, statusFilter]
+    [kindFilter, requests, statusFilter]
   )
 
   return (
@@ -549,6 +554,7 @@ export function AdminReportsPage({ account, children, reports }: { account: Shel
                 </div>
                 <AdminReportDecision
                   expectedUpdatedAt={request.updatedAt}
+                  onReviewed={(saved) => setReviewed((current) => ({ ...current, [saved.id]: saved }))}
                   requestId={request.id}
                   status={request.status}
                 />

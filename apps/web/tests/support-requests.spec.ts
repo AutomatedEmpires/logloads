@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from "@playwright/test"
+import { expect, test, type Browser, type Page, type Route } from "@playwright/test"
 
 import { fillWhenReady, selectWhenReady } from "./builder-input"
 
@@ -143,8 +143,19 @@ test("driver feedback is triaged and resolved without losing retry state", async
   await selectWhenReady(reviewer.page, "Request status", "all")
   let adminCard = reviewer.page.locator("article").filter({ has: reviewer.page.getByRole("heading", { name: title }) }).first()
   await expect(adminCard).toBeVisible()
+  // A saved decision reaches its card from the review endpoint's own answer (#450). The page refresh that follows is
+  // held here until the card has been read, so nothing else can have changed it.
+  const heldRefreshes: Route[] = []
+  await reviewer.page.route("**/admin/reports?_rsc=*", (route) => {
+    heldRefreshes.push(route)
+  })
   await adminCard.getByRole("button", { name: "Start review" }).click()
   await expect(adminCard.getByText("Request marked in review.", { exact: true })).toBeVisible({ timeout: 15_000 })
+  await expect(adminCard.getByText("In review", { exact: true })).toBeVisible()
+  await expect(adminCard.getByRole("button", { name: "Start review" })).toHaveCount(0)
+  await expect.poll(() => heldRefreshes.length).toBeGreaterThan(0)
+  await Promise.all(heldRefreshes.map((route) => route.continue()))
+  await reviewer.page.unroute("**/admin/reports?_rsc=*")
   await reviewer.page.reload()
   await reviewer.page.waitForLoadState("domcontentloaded")
   await selectWhenReady(reviewer.page, "Request status", "all")
