@@ -15,6 +15,7 @@ import {
   reviewVerificationAction,
   type ActionResult
 } from "@/lib/cockpit-actions"
+import { reviewedRequestFrom, type ReviewedSupportRequest } from "@/lib/support-review-view"
 
 function useDecision() {
   const [pending, startTransition] = useTransition()
@@ -431,19 +432,19 @@ const RESOLUTION_OPTIONS: Array<{ label: string; value: ResolutionCode }> = [
 async function supportDecisionRequest(
   requestId: string,
   body: Record<string, unknown>
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; request?: unknown }> {
   const response = await fetch(`/api/admin/support-requests/${requestId}`, {
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
     method: "PATCH"
   })
   const text = await response.text()
-  let result: { error?: string } = {}
+  let result: { error?: string; request?: unknown } = {}
 
   try {
     const value = JSON.parse(text) as unknown
     if (value && typeof value === "object" && !Array.isArray(value)) {
-      result = value as { error?: string }
+      result = value as { error?: string; request?: unknown }
     }
   } catch {
     // A generic message below is safer than exposing an upstream response body.
@@ -458,10 +459,13 @@ async function supportDecisionRequest(
 
 export function AdminReportDecision({
   expectedUpdatedAt,
+  onReviewed,
   requestId,
   status
 }: {
   expectedUpdatedAt: string
+  /** The request as the endpoint saved it. The page puts it on the card without waiting for its refresh (#450). */
+  onReviewed: (request: ReviewedSupportRequest) => void
   requestId: string
   status: SupportRequestStatus
 }) {
@@ -480,7 +484,13 @@ export function AdminReportDecision({
     setSuccess("")
 
     try {
-      await supportDecisionRequest(requestId, body)
+      const reviewed = reviewedRequestFrom(await supportDecisionRequest(requestId, body))
+
+      // The saved request goes on the card now. The refresh below brings the rest of the page (the bell, the
+      // counts, the order), but it is a second request and a transition that may be late or never commit.
+      if (reviewed) {
+        onReviewed(reviewed)
+      }
       setSuccess(message)
       setConfirmReopen(false)
       // The next decision starts from a blank form: a reopened request must
