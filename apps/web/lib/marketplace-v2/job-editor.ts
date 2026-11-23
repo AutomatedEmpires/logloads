@@ -10,22 +10,23 @@ import {
 import { draftInput, LANDING_NOT_OWNED, validateDraftValues, type DraftFormValues, type DraftTextField } from "./draft-params"
 
 /**
- * The job editor's four steps (UX 02 §B4–B7, spec §4.5, #128). Pure: no session, no store, no React.
+ * The job editor's three steps (UX 02 §B4–B7, spec §4.5, #128), as the approved page 03 Create and edit frames draw
+ * them (#431; Figma CE-03 "The job", CE-04 "Pay and trucks", CE-06 "Review and publish"). Pure: no session, no
+ * store, no React.
  *
  * Every step is a GET form that carries the whole draft in the URL (`draft-params.ts`). Moving forward is
  * validated on the server, step by step; moving back never is. The review step (`/v2/landing/jobs/preview`) is
- * reached only when steps 1–3 pass, and publishing re-checks everything in `publishJobAction`.
+ * reached only when steps 1 and 2 pass, and publishing re-checks everything in `publishJobAction`.
  */
 
 export const JOB_EDITOR_STEPS = [
-  { id: "basics", label: "Basics & location" },
-  { id: "pay", label: "Pay & scope" },
-  { id: "equipment", label: "Equipment & volume" },
-  { id: "review", label: "Review & publish" }
+  { id: "basics", label: "The job" },
+  { id: "pay", label: "Pay and trucks" },
+  { id: "review", label: "Review and publish" }
 ] as const
 
 export type JobEditorStepId = (typeof JOB_EDITOR_STEPS)[number]["id"]
-/** The three steps with form fields; the fourth is the review. */
+/** The two steps with form fields; the third is the review. */
 export type JobEditorInputStepId = Exclude<JobEditorStepId, "review">
 
 export const JOB_EDITOR_STEP_LABELS: readonly string[] = JOB_EDITOR_STEPS.map((step) => step.label)
@@ -41,15 +42,13 @@ export function jobEditorStepLabel(step: JobEditorStepId): string {
 /** Where Next leads from each input step, and where Back leads from each step (none from the first). */
 export const JOB_EDITOR_NEXT_STEP: Readonly<Record<JobEditorInputStepId, JobEditorStepId>> = Object.freeze({
   basics: "pay",
-  equipment: "review",
-  pay: "equipment"
+  pay: "review"
 })
 
 export const JOB_EDITOR_PREVIOUS_STEP: Readonly<Record<JobEditorStepId, JobEditorInputStepId | null>> = Object.freeze({
   basics: null,
-  equipment: "pay",
   pay: "basics",
-  review: "equipment"
+  review: "pay"
 })
 
 export const NEW_JOB_PATH = "/v2/landing/jobs/new"
@@ -57,17 +56,40 @@ export const REVIEW_JOB_PATH = "/v2/landing/jobs/preview"
 
 type EditorField = DraftTextField | "equipment"
 
-/** The form fields of each input step, in screen order. Every draft field belongs to exactly one step. */
+/**
+ * The form fields of each input step, in screen order: the frames' order (CE-03: job title, product, landing,
+ * destination, miles; CE-04: pay, trucks, start, truck and trailer), then the optional fields each step folds away.
+ * Every draft field belongs to exactly one step.
+ */
 export const JOB_EDITOR_STEP_FIELDS: Readonly<Record<JobEditorInputStepId, readonly EditorField[]>> = Object.freeze({
-  basics: ["landingId", "title", "product", "productOther", "destinationLabel", "estOneWayMiles"],
-  pay: ["payUnit", "payAmount", "payNote", "startsOn", "endsOn", "durationDays", "ongoing", "trucksRequested", "trucksPerDay"],
-  equipment: ["equipment", "estLoadsPerTruckPerDay", "estDailyLoads", "estTonsPerLoad", "publicRoadNotes", "description"]
+  basics: ["title", "product", "productOther", "landingId", "destinationLabel", "estOneWayMiles", "publicRoadNotes", "description"],
+  pay: [
+    "payUnit",
+    "payAmount",
+    "payNote",
+    "trucksRequested",
+    "trucksPerDay",
+    "startsOn",
+    "endsOn",
+    "durationDays",
+    "ongoing",
+    "equipment",
+    "estLoadsPerTruckPerDay",
+    "estDailyLoads",
+    "estTonsPerLoad"
+  ]
 })
 
 /** Issue fields that are not form fields, and the step that shows them. */
 const GROUP_ISSUE_FIELDS: Readonly<Record<string, JobEditorInputStepId>> = Object.freeze({ workPeriod: "pay" })
 
-const INPUT_STEPS: readonly JobEditorInputStepId[] = ["basics", "pay", "equipment"]
+const INPUT_STEPS: readonly JobEditorInputStepId[] = ["basics", "pay"]
+
+/**
+ * Step ids from the four-step editor, and the step that holds their fields now. An old link, an old form submitted
+ * from a tab left open, or a draft kept in this tab at "equipment" opens step 2.
+ */
+const RETIRED_STEPS: Readonly<Record<string, JobEditorStepId>> = Object.freeze({ equipment: "pay" })
 
 /**
  * Required fields that are validated as blank when absent, so the poster reads the contract's own message
@@ -76,7 +98,6 @@ const INPUT_STEPS: readonly JobEditorInputStepId[] = ["basics", "pay", "equipmen
  */
 const BLANK_WHEN_ABSENT: Readonly<Record<JobEditorInputStepId, readonly DraftTextField[]>> = Object.freeze({
   basics: ["landingId", "title"],
-  equipment: [],
   pay: ["trucksRequested"]
 })
 
@@ -88,8 +109,7 @@ const BLANK_WHEN_ABSENT: Readonly<Record<JobEditorInputStepId, readonly DraftTex
  */
 const LATER_STEP_STAND_INS: Readonly<Record<JobEditorInputStepId, Record<string, unknown>>> = Object.freeze({
   basics: {},
-  equipment: { equipment: ["log_truck"] },
-  pay: { payNote: "Stand-in note", payUnit: "negotiable", trucksRequested: "1" }
+  pay: { equipment: ["log_truck"], payNote: "Stand-in note", payUnit: "negotiable", trucksRequested: "1" }
 })
 
 export function jobEditorStepIndex(step: JobEditorStepId): number {
@@ -98,7 +118,7 @@ export function jobEditorStepIndex(step: JobEditorStepId): number {
 
 export function parseJobEditorStep(value: string | string[] | undefined): JobEditorStepId | null {
   const raw = Array.isArray(value) ? value[0] : value
-  return JOB_EDITOR_STEPS.find((step) => step.id === raw)?.id ?? null
+  return JOB_EDITOR_STEPS.find((step) => step.id === raw)?.id ?? (raw && Object.hasOwn(RETIRED_STEPS, raw) ? RETIRED_STEPS[raw] : undefined) ?? null
 }
 
 /** The step whose screen shows an issue. Anything unrecognised (e.g. a whole-form issue) belongs to the first step. */
@@ -165,8 +185,8 @@ function editorMessage(issue: MarketplaceDraftIssue): MarketplaceDraftIssue {
  * Everything that stands between the draft and the end of `throughStep`: the draft rules and the publishing
  * rules (product, timing) for the fields of the steps up to and including it, plus the landing being one of
  * the organization's own. Later steps' fields are replaced by stand-ins, so they never block or mask this check.
- * Through "equipment" nothing is replaced, so this is the complete pre-publish check (the attestation aside,
- * which is given on the review step per request).
+ * Through "pay" nothing is replaced, so this is the complete pre-publish check (the attestation aside, which is
+ * given on the review step per request).
  */
 export function jobEditorIssuesThrough(
   values: DraftFormValues,
@@ -238,8 +258,8 @@ export type JobEditorScreen =
  * - `step` is the screen asked for (the Next button's value, or a Back, edit or restore link); `from` is the step
  *   whose form was submitted. Asking for a later step than `from` validates every step before the one asked
  *   for, and the first that fails is shown with its issues instead. Going back is never blocked.
- * - Asking for the review, including a refused publish (which returns with `error` and no step), validates all
- *   three steps. When they pass, the caller redirects to the review page.
+ * - Asking for the review, including a refused publish (which returns with `error` and no step), validates both
+ *   input steps. When they pass, the caller redirects to the review page.
  * - A link to an input step without `from` shows it as it is, without errors.
  */
 export function resolveJobEditorScreen(
@@ -263,8 +283,22 @@ export function resolveJobEditorScreen(
 /** Screen order for focus, with the work-period group where it sits on the pay step. */
 const FOCUS_ORDER: Readonly<Record<JobEditorInputStepId, readonly string[]>> = Object.freeze({
   basics: JOB_EDITOR_STEP_FIELDS.basics,
-  equipment: JOB_EDITOR_STEP_FIELDS.equipment,
-  pay: ["payUnit", "payAmount", "payNote", "startsOn", "workPeriod", "endsOn", "durationDays", "ongoing", "trucksRequested", "trucksPerDay"]
+  pay: [
+    "payUnit",
+    "payAmount",
+    "payNote",
+    "trucksRequested",
+    "trucksPerDay",
+    "startsOn",
+    "workPeriod",
+    "endsOn",
+    "durationDays",
+    "ongoing",
+    "equipment",
+    "estLoadsPerTruckPerDay",
+    "estDailyLoads",
+    "estTonsPerLoad"
+  ]
 })
 
 /** The first field, in screen order, that has an issue: it receives focus. */
@@ -309,28 +343,19 @@ export function jobEditorPreview(
   }
 }
 
-/** The "What's required" list beside the editor (UX 02 §B4–B7), each item tied to the step that sets it. */
-export const JOB_EDITOR_REQUIREMENTS = [
-  { fields: ["landingId", "title", "product", "productOther"], label: "Landing, title and product", step: "basics" },
-  { fields: ["payUnit", "payAmount", "payNote"], label: "Pay with its basis, or Negotiable with a note", step: "pay" },
-  { fields: ["startsOn", "endsOn", "durationDays", "ongoing", "workPeriod"], label: "Start date, and an end date, a duration or Ongoing", step: "pay" },
-  { fields: ["trucksRequested", "trucksPerDay"], label: "Trucks needed for the job", step: "pay" },
-  { fields: ["equipment"], label: "At least one equipment type", step: "equipment" }
-] as const satisfies ReadonlyArray<{ fields: readonly string[]; label: string; step: JobEditorInputStepId }>
-
 /**
- * Each requirement and whether the draft meets it now, judged by the same rules as the steps rather than by how
- * far the poster has clicked. The three publish statements are not in this list: they are ticked per request.
+ * "What's required" (UX 02 §B4–B7; Figma CE-03 `153:2455`): one line per input step, named as the frames name the
+ * steps, and whether the draft meets it now, judged by the same rules as the steps rather than by how far the poster
+ * has clicked. The review's line is not here: its three publish statements are ticked per request, so it is never
+ * met before publishing.
  */
 export function jobEditorChecklist(
   values: DraftFormValues,
   ownLandings: ReadonlyArray<{ id: string }>
 ): Array<{ label: string; step: JobEditorInputStepId; met: boolean }> {
-  const issueFields = new Set(INPUT_STEPS.flatMap((step) => jobEditorStepIssues(values, ownLandings, step).map((issue) => issue.field)))
-
-  return JOB_EDITOR_REQUIREMENTS.map((requirement) => ({
-    label: requirement.label,
-    met: !requirement.fields.some((field) => issueFields.has(field)),
-    step: requirement.step
+  return INPUT_STEPS.map((step) => ({
+    label: jobEditorStepLabel(step),
+    met: jobEditorStepIssues(values, ownLandings, step).length === 0,
+    step
   }))
 }

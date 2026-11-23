@@ -1,6 +1,6 @@
 "use client"
 
-import { Button } from "@logloads/ui/primitives"
+import { Button, type Size } from "@logloads/ui/primitives"
 import { useEffect, useRef, useState } from "react"
 
 /**
@@ -16,13 +16,16 @@ export function PublishButton({
   attestationFields,
   canPublish,
   className,
-  describedBy
+  describedBy,
+  size
 }: {
   attestationFields: readonly string[]
   canPublish: boolean
   className?: string
   /** Why it is unavailable: the unavailable notice, or the "tick all three" hint. */
   describedBy: string
+  /** The Button size: `lg` in the editor's bottom bar (the frames' 56 px primary). */
+  size?: Size
 }) {
   const ref = useRef<HTMLButtonElement>(null)
   const [allTicked, setAllTicked] = useState(false)
@@ -68,6 +71,7 @@ export function PublishButton({
       className={className}
       label="Publish job"
       ref={ref}
+      size={size}
       type="submit"
     />
   )

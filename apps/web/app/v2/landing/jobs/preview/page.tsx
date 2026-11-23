@@ -9,7 +9,6 @@ import { FormCheckbox } from "@/components/v2/FormCheckbox"
 import {
   DraftHiddenFields,
   EditorNotice,
-  JobEditorAside,
   JobEditorLayout,
   jobEditorStepHref,
   JobEditorStepSection,
@@ -26,7 +25,7 @@ import { publishJobAction } from "@/lib/marketplace-v2/actions"
 import { draftQueryString, draftValuesFromQuery, hasDraftValues } from "@/lib/marketplace-v2/draft-params"
 import { v2ErrorNotice } from "@/lib/marketplace-v2/error-codes"
 import { marketplaceV2Enabled } from "@/lib/marketplace-v2/flag"
-import { firstIncompleteJobEditorStep, jobEditorChecklist, jobEditorPreview, NEW_JOB_PATH } from "@/lib/marketplace-v2/job-editor"
+import { firstIncompleteJobEditorStep, JOB_EDITOR_PREVIOUS_STEP, jobEditorPreview, NEW_JOB_PATH } from "@/lib/marketplace-v2/job-editor"
 import { pilotMarketplaceV2 } from "@/lib/marketplace-v2/pilot-adapter"
 import { resolveV2Viewer, withBusinessSwitchNote } from "@/lib/marketplace-v2/viewer"
 
@@ -39,10 +38,11 @@ function one(value: string | string[] | undefined): string {
 }
 
 /**
- * Step 4 of the job editor: review, attest and publish (UX 02 §B7, #128). It renders the draft through the same
- * components discovery uses (JobResultRow `context="preview"` and JobDetail), lists what haulers never see, and
- * asks for the three V2-DEC-03 statements. Publish stays aria-disabled until all three are ticked; the server
- * (`publishJobAction`) re-checks everything. A draft that isn't ready goes back to the step that needs fixing.
+ * Step 3 of the job editor: review, attest and publish (UX 02 §B7, #128; Figma CE-06 `58:3714`, `156:1999`, `58:3495`,
+ * #431). It renders the draft through the same components discovery uses (JobResultRow `context="preview"` and
+ * JobDetail), lists what haulers never see, and asks for the three V2-DEC-03 statements under the "Before you
+ * publish" legend (16 px regular, as CE-06 `238:3597`). Publish stays aria-disabled until all three are ticked; the
+ * server (`publishJobAction`) re-checks everything. A draft that isn't ready goes back to the step that needs fixing.
  * A notice-class product shows the advertising-only notice before the statements, and the Posting Rules line sits
  * under them (#422; Figma CE-03b `359:4602`, CE-06 `238:3596`, page 07 B5 `118:414`).
  * Taps here count toward flow B's clock, which the editor started (#330); nothing is sent from this page.
@@ -94,16 +94,23 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
   const attestations = marketplacePublishAttestations(landing.name)
   const focusStatements = failure?.code === "publish_attestation"
   const notice = advertisingOnlyNotice(values.text.product)
+  const back = JOB_EDITOR_PREVIOUS_STEP.review ?? "basics"
 
   return (
-    <JobEditorLayout aside={<JobEditorAside checklist={jobEditorChecklist(values, landings)} now={now} values={values} />} organizationName={access.organizationName}>
+    <JobEditorLayout landingName={landing.name} organizationName={access.organizationName}>
       {clientAnalyticsEnabled() ? <FlowTapCounter flow="B" /> : null}
-      {failure ? <EditorNotice tone="critical">{failure.message}</EditorNotice> : null}
-      {one(query.unavailable) === "publish" ? (
-        <EditorNotice>Publishing isn&apos;t saved yet: it needs the normalized marketplace store. Your draft is unchanged.</EditorNotice>
-      ) : null}
-      {restored ? <RestoredNotice /> : null}
-      <JobEditorStepSection step="review">
+      <JobEditorStepSection
+        notices={
+          <>
+            {failure ? <EditorNotice tone="critical">{failure.message}</EditorNotice> : null}
+            {one(query.unavailable) === "publish" ? (
+              <EditorNotice>Publishing isn&apos;t saved yet: it needs the normalized marketplace store. Your draft is unchanged.</EditorNotice>
+            ) : null}
+            {restored ? <RestoredNotice /> : null}
+          </>
+        }
+        step="review"
+      >
         <div>
           <h3 className={styles.previewLabel}>How haulers see it in search</h3>
           <JobPreviewRow job={job} now={now} />
@@ -129,7 +136,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
           <DraftHiddenFields values={values} />
           {/* The explicit attestation (V2-DEC-03): three statements, never pre-ticked, never carried in the draft or an edit link. */}
           <fieldset className={styles.fieldset}>
-            <legend className={styles.legend}>Before you publish</legend>
+            <legend className={styles.legendPlain}>Before you publish</legend>
             {attestations.map((attestation, index) => (
               <FormCheckbox
                 autoFocus={focusStatements && index === 0}
@@ -158,6 +165,7 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
             </p>
           )}
           <FormActions
+            className={styles.actions}
             primary={
               <>
                 <PublishButton
@@ -165,13 +173,14 @@ export default async function JobPreviewPage({ searchParams }: { searchParams: S
                   canPublish={canPublish}
                   className={styles.scripted}
                   describedBy={canPublish ? "publish-why" : "publish-unavailable"}
+                  size="lg"
                 />
                 <noscript>
-                  <Button aria-describedby={canPublish ? undefined : "publish-unavailable"} disabled={!canPublish} label="Publish job" type="submit" />
+                  <Button aria-describedby={canPublish ? undefined : "publish-unavailable"} disabled={!canPublish} label="Publish job" size="lg" type="submit" />
                 </noscript>
               </>
             }
-            secondary={<Button data-job-draft="carry" href={jobEditorStepHref("equipment", values)} label="Back" variant="secondary" />}
+            secondary={<Button data-job-draft="carry" href={jobEditorStepHref(back, values)} label="Back" size="lg" variant="secondary" />}
           />
         </form>
         <JobDraftSession formId={PUBLISH_FORM_ID} restorable={false} revision={`review?${draftQueryString(values)}`} scope={viewer.organizationId} step="review" />
