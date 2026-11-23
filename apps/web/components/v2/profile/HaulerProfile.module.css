@@ -109,3 +109,147 @@
 .units { font-variant-numeric: tabular-nums; font-weight: var(--ll-weight-semibold); }
 
 .previewNote { display: grid; gap: var(--ll-space-4); min-width: 0; }
+
+/* ---- The directory listing (#423; Figma 04 Settings 361:4236 to 361:7563) ----
+   The 00 System parts as drawn: Notice (207:1206), Fact (212:1199), Note (207:1215), Offline banner (208:1223) and,
+   below bp-sm, the BottomActionBar (213:1239). Tone is the icon and the 4 px edge as well as the colour. */
+
+/* The profile form's entry row: the listing's state, and the way to the notice. */
+.listingRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ll-space-3); }
+.listingRow > .readOnly { flex: 1 1 16rem; }
+
+/* The white body of the frames: a panel on the section tokens, with no clipping so the bottom bar can stick. Below
+   bp-sm it runs edge to edge, as the 390 frames draw it. */
+.listingPanel {
+  min-width: 0;
+  padding: var(--ll-space-5);
+  border: 1px solid var(--ll-color-border);
+  border-radius: var(--ll-c-section-radius);
+  background: var(--ll-color-surface);
+}
+
+@container ll-app (max-width: 599px) {
+  .listingPanel {
+    margin-inline: calc(-1 * var(--ll-gutter));
+    padding: var(--ll-space-4) var(--ll-gutter) var(--ll-space-6);
+    border-inline: 0;
+    border-radius: 0;
+  }
+}
+
+/* The frames' 720 px column, centred, which keeps lines to about 75 characters. */
+.listing { display: grid; gap: var(--ll-space-4); min-width: 0; max-width: 45rem; margin-inline: auto; }
+
+/* The app's legacy global rules set h2 in the display face; this is the system's row title. */
+.listingHeading {
+  margin: 0;
+  color: var(--ll-color-text);
+  font-family: var(--ll-font-sans);
+  font-size: var(--ll-text-lg);
+  font-weight: var(--ll-weight-semibold);
+  line-height: var(--ll-leading-snug);
+  letter-spacing: normal;
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-3);
+  padding: var(--ll-space-4);
+  border-left: 4px solid var(--ll-color-status-neutral);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-status-neutral-bg);
+  color: var(--ll-color-text);
+}
+
+.notice[data-tone="positive"] { border-left-color: var(--ll-color-status-positive); background: var(--ll-color-status-positive-bg); }
+.notice[data-tone="critical"] { border-left-color: var(--ll-color-status-critical); background: var(--ll-color-status-critical-bg); }
+.notice:focus-visible { outline: var(--ll-focus-width) solid var(--ll-focus-color); outline-offset: var(--ll-focus-offset); }
+
+.noticeIcon { margin-top: 0; }
+.notice[data-tone="neutral"] .noticeIcon { color: var(--ll-color-status-neutral); }
+.notice[data-tone="positive"] .noticeIcon { color: var(--ll-color-status-positive); }
+.notice[data-tone="critical"] .noticeIcon { color: var(--ll-color-status-critical); }
+
+.noticeText { display: grid; flex: 1 1 0; gap: var(--ll-space-1); min-width: 0; font-size: var(--ll-text-base); line-height: var(--ll-leading-normal); overflow-wrap: anywhere; }
+.noticeTitle { margin: 0; font-weight: var(--ll-weight-semibold); }
+.noticeBody { margin: 0; }
+.noticeAction { justify-self: start; }
+
+.choiceForm { display: contents; }
+
+/* The app's legacy global rules lay `dl div` out as a spaced-out flex row and set dt and dd in 900 with dd to the
+   right; each of those is set back here. */
+.facts { display: grid; gap: var(--ll-space-4); margin: 0; }
+
+.fact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  gap: calc(var(--ll-space-1) / 2);
+  min-height: 48px;
+  align-content: center;
+  padding: var(--ll-space-3) 0;
+  border-bottom: 1px solid var(--ll-color-border);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.factLabel { margin: 0; color: var(--ll-color-text-secondary); font-weight: var(--ll-weight-regular); }
+.factValue { margin: 0; padding: 0; color: var(--ll-color-text); font-weight: var(--ll-weight-semibold); text-align: start; white-space: pre-line; }
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ll-space-2);
+  margin: 0;
+  padding: var(--ll-space-3) var(--ll-space-4) var(--ll-space-3) var(--ll-space-3);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-surface-sunken);
+  color: var(--ll-color-text-secondary);
+  font-size: var(--ll-text-base);
+  line-height: var(--ll-leading-normal);
+}
+
+.noteIcon { margin-top: 2px; color: var(--ll-color-text-secondary); }
+
+.offline {
+  display: flex;
+  align-items: center;
+  gap: var(--ll-space-3);
+  min-height: 56px;
+  padding: var(--ll-space-2) var(--ll-space-2) var(--ll-space-2) var(--ll-space-4);
+  border-radius: var(--ll-radius-md);
+  background: var(--ll-color-status-neutral-bg);
+  color: var(--ll-color-text);
+}
+
+.offline:focus-visible { outline: var(--ll-focus-width) solid var(--ll-focus-color); outline-offset: var(--ll-focus-offset); }
+.offlineIcon { color: var(--ll-color-status-neutral); }
+.offlineText { flex: 1 1 0; margin: 0; font-size: var(--ll-text-base); line-height: var(--ll-leading-normal); }
+.offlineAction { flex: 0 0 auto; }
+
+.listingActions { display: flex; flex-wrap: wrap; gap: var(--ll-space-3); align-items: flex-start; }
+
+/* Below bp-sm the primary action sits in the bottom bar (FG04 390 frames): full width, in the thumb zone, above the
+   bottom tabs (as JobPage's bar), with Not now under it at 48 px. It docks at the end of the column. */
+@container ll-app (max-width: 599px) {
+  .listingActions[data-bar] {
+    position: sticky;
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+    z-index: var(--ll-z-sticky);
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--ll-space-2);
+    margin-inline: calc(-1 * var(--ll-gutter));
+    padding: var(--ll-space-3) var(--ll-gutter) var(--ll-space-5);
+    border-top: 1px solid var(--ll-color-border-strong);
+    background: var(--ll-color-surface);
+  }
+
+  .listingActions[data-bar] .listingPrimary,
+  .listingActions[data-bar] .listingSecondary { width: 100%; }
+
+  .listingActions[data-bar] .listingSecondary { height: var(--ll-c-button-h-md); }
+}

@@ -2715,7 +2715,8 @@ test.describe("hauler setup and business profile (#125)", () => {
     await openV2(page, PROFILE_PATH)
     const stops = await tabThrough(page)
     const main = stops.filter((stop) => stop.where === "main").map((stop) => stop.key)
-    expect(main).toEqual(expect.arrayContaining(["#profile-home-base", "#profile-about", "#profile-listed", "Save profile"]))
+    // #423: the listing is chosen on the directory listing screen; the profile's way there replaces the old checkbox.
+    expect(main).toEqual(expect.arrayContaining(["#profile-home-base", "#profile-about", "Review and list", "Save profile"]))
     for (const stop of stops) expectDesignSystemRing(stop)
   })
 
